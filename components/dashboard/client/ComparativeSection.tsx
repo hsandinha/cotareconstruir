@@ -48,7 +48,7 @@ export function ClientComparativeSection() {
                         Itens nas linhas, fornecedores nas colunas. O sistema destaca o melhor custo automaticamente.
                     </p>
                 </div>
-                <div className="rounded-2xl bg-slate-900/90 px-5 py-3 text-black text-xs text-black">
+                <div className="rounded-2xl bg-slate-900/90 px-5 py-3 text-xs text-white">
                     <p className="font-semibold">R$ {columnTotal("fornecedorC").toFixed(2)}</p>
                     <p>menor total estimado</p>
                 </div>
