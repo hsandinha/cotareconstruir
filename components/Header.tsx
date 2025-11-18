@@ -42,6 +42,12 @@ export function Header() {
           >
             Começar Agora
           </Link>
+          <Link
+            href="/login"
+            className="rounded-xl px-4 py-2 text-sm font-semibold text-white transition-colors duration-200 hover:text-blue-200"
+          >
+            Entrar
+          </Link>
 
           <button
             className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 text-white transition hover:border-blue-400 md:hidden"
@@ -72,6 +78,13 @@ export function Header() {
               onClick={() => setMobileOpen(false)}
             >
               Começar Agora
+            </Link>
+            <Link
+              href="/login"
+              className="block rounded-2xl px-4 py-3 text-center text-sm font-semibold text-white border border-white/10 hover:border-blue-500"
+              onClick={() => setMobileOpen(false)}
+            >
+              Entrar
             </Link>
           </div>
         </div>
