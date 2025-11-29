@@ -14,7 +14,7 @@ export function ClientExploreSection() {
     // Estado para entrada manual
     const [manualItem, setManualItem] = useState({
         name: "",
-        group: cartCategories[0],
+        group: cartCategories[0] as string,
         quantity: 1,
         unit: "unid",
         observation: ""
