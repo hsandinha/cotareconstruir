@@ -18,6 +18,8 @@ export function ClientWorksSection() {
     const [works, setWorks] = useState<Work[]>(initialWorks);
     const [selectedWork, setSelectedWork] = useState<number | null>(null);
     const [showStageModal, setShowStageModal] = useState(false);
+    const [isWorkFormVisible, setIsWorkFormVisible] = useState(false);
+    const [collapsedWorks, setCollapsedWorks] = useState<Record<number, boolean>>({});
     const [form, setForm] = useState({
         obra: "",
         centroCustos: "",
@@ -93,6 +95,7 @@ export function ClientWorksSection() {
             previsaoTermino: "",
             horarioEntrega: "",
         });
+        setIsWorkFormVisible(false);
     }
 
     function handleAddStage(e: FormEvent<HTMLFormElement>) {
@@ -172,238 +175,257 @@ export function ClientWorksSection() {
         )
         : [];
 
+    const toggleWorkVisibility = (workId: number) => {
+        setCollapsedWorks((prev) => ({
+            ...prev,
+            [workId]: !prev[workId],
+        }));
+    };
+
     return (
         <div className="space-y-6">
             {/* Formulário de Nova Obra */}
-            <form
-                onSubmit={handleSubmit}
-                className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm space-y-6"
-            >
+            <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
                 <div className="flex items-center justify-between border-b border-gray-100 pb-4">
                     <div>
                         <h2 className="text-lg font-semibold text-gray-900">Cadastrar Nova Obra</h2>
                         <p className="text-sm text-gray-500">Preencha os dados completos da obra para melhor gestão.</p>
                     </div>
                     <button
-                        type="submit"
+                        type="button"
+                        onClick={() => setIsWorkFormVisible((prev) => !prev)}
                         className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2 text-sm font-semibold text-white hover:bg-blue-700"
                     >
                         <PlusIcon className="h-5 w-5" />
-                        Salvar Obra
+                        {isWorkFormVisible ? "Ocultar" : "Cadastrar Obra"}
                     </button>
                 </div>
 
-                {/* 1. Identificação */}
-                <div>
-                    <h3 className="text-sm font-semibold uppercase tracking-wide text-blue-600 mb-4">1. Identificação</h3>
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <label className="block">
-                            <span className="text-xs font-semibold text-gray-700">Nome da Obra / Projeto *</span>
-                            <input
-                                required
-                                value={form.obra}
-                                onChange={(e) => setForm({ ...form, obra: e.target.value })}
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                placeholder="Ex: Edifício Horizonte"
-                            />
-                        </label>
-                        <label className="block">
-                            <span className="text-xs font-semibold text-gray-700">Centro de Custos (Opcional)</span>
-                            <input
-                                value={form.centroCustos}
-                                onChange={(e) => setForm({ ...form, centroCustos: e.target.value })}
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                        </label>
-                    </div>
-                </div>
-
-                {/* 2. Logística */}
-                <div>
-                    <h3 className="text-sm font-semibold uppercase tracking-wide text-blue-600 mb-4">2. Onde é a obra? (Logística)</h3>
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                        <label className="block">
-                            <span className="text-xs font-semibold text-gray-700">CEP</span>
-                            <input
-                                value={form.cep}
-                                onChange={(e) => setForm({ ...form, cep: e.target.value })}
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                placeholder="00000-000"
-                            />
-                        </label>
-                        <label className="block">
-                            <span className="text-xs font-semibold text-gray-700">Bairro *</span>
-                            <input
-                                required
-                                value={form.bairro}
-                                onChange={(e) => setForm({ ...form, bairro: e.target.value })}
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                        </label>
-                        <label className="block">
-                            <span className="text-xs font-semibold text-gray-700">Cidade / UF</span>
-                            <input
-                                value={form.cidade}
-                                onChange={(e) => setForm({ ...form, cidade: e.target.value })}
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                        </label>
-                        <label className="block md:col-span-2">
-                            <span className="text-xs font-semibold text-gray-700">Endereço Completo</span>
-                            <input
-                                value={form.endereco}
-                                onChange={(e) => setForm({ ...form, endereco: e.target.value })}
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                        </label>
-                        <label className="block">
-                            <span className="text-xs font-semibold text-gray-700">Restrições de Entrega?</span>
-                            <input
-                                value={form.restricoesEntrega}
-                                onChange={(e) => setForm({ ...form, restricoesEntrega: e.target.value })}
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                placeholder="Descreva se houver..."
-                            />
-                        </label>
-                    </div>
-                </div>
-
-                {/* 3. Características */}
-                <div>
-                    <h3 className="text-sm font-semibold uppercase tracking-wide text-blue-600 mb-4">3. Características</h3>
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-                        <label className="block">
-                            <span className="text-xs font-semibold text-gray-700">Etapa Atual</span>
-                            <select
-                                value={form.etapa}
-                                onChange={(e) => setForm({ ...form, etapa: e.target.value })}
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            >
-                                <option value="">Selecione...</option>
-                                <option value="Preliminares">Preliminares</option>
-                                <option value="Terraplenagem">Terraplenagem</option>
-                                <option value="Fundações">Fundações</option>
-                                <option value="Estrutura">Estrutura</option>
-                                <option value="Instalações Brutas">Instalações Brutas</option>
-                                <option value="Impermeabilização">Impermeabilização</option>
-                                <option value="Alvenaria e Vedações">Alvenaria e Vedações</option>
-                                <option value="Cobertura">Cobertura</option>
-                                <option value="Instalações">Instalações</option>
-                                <option value="Esquadrias">Esquadrias</option>
-                                <option value="Revestimentos">Revestimentos</option>
-                                <option value="Pintura">Pintura</option>
-                                <option value="Acabamentos Finais">Acabamentos Finais</option>
-                                <option value="Urbanização">Urbanização</option>
-                                <option value="Finalização">Finalização</option>
-                                <option value="Entrega">Entrega</option>
-                            </select>
-                        </label>
-                        <label className="block">
-                            <span className="text-xs font-semibold text-gray-700">Tipo de Obra</span>
-                            <select
-                                value={form.tipoObra}
-                                onChange={(e) => setForm({ ...form, tipoObra: e.target.value })}
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            >
-                                <option value="">Selecione...</option>
-                                <option value="Casa">Casa</option>
-                                <option value="Prédio">Prédio</option>
-                                <option value="Reforma">Reforma</option>
-                                <option value="Comercial">Comercial</option>
-                            </select>
-                        </label>
-                        <label className="block">
-                            <span className="text-xs font-semibold text-gray-700">Área em m²</span>
-                            <input
-                                type="number"
-                                value={form.area}
-                                onChange={(e) => setForm({ ...form, area: e.target.value })}
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                        </label>
-                        <label className="block">
-                            <span className="text-xs font-semibold text-gray-700">Padrão</span>
-                            <select
-                                value={form.padrao}
-                                onChange={(e) => setForm({ ...form, padrao: e.target.value })}
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            >
-                                <option value="">Selecione...</option>
-                                <option value="Baixo">Baixo</option>
-                                <option value="Médio">Médio</option>
-                                <option value="Alto">Alto</option>
-                            </select>
-                        </label>
-                    </div>
-                </div>
-
-                {/* 4. Datas e Horários */}
-                <div>
-                    <h3 className="text-sm font-semibold uppercase tracking-wide text-blue-600 mb-4">4. Datas e Recebimento</h3>
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                        <label className="block">
-                            <span className="text-xs font-semibold text-gray-700">Data Início</span>
-                            <input
-                                type="date"
-                                value={form.dataInicio}
-                                onChange={(e) => setForm({ ...form, dataInicio: e.target.value })}
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                        </label>
-                        <label className="block">
-                            <span className="text-xs font-semibold text-gray-700">Previsão Término</span>
-                            <input
-                                type="date"
-                                value={form.previsaoTermino}
-                                onChange={(e) => setForm({ ...form, previsaoTermino: e.target.value })}
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                        </label>
-                    </div>
-
-                    {/* Dias e Horários de Entrega */}
-                    <div>
-                        <h4 className="text-xs font-semibold text-gray-700 mb-3">Dias e Horários de Entrega</h4>
-                        <div className="space-y-2">
-                            {Object.entries(dayNames).map(([dayKey, dayLabel]) => (
-                                <div
-                                    key={dayKey}
-                                    className="flex items-center gap-3 p-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-2 flex-1">
-                                        <input
-                                            type="checkbox"
-                                            checked={deliverySchedule[dayKey].enabled}
-                                            onChange={() => toggleDeliveryDay(dayKey)}
-                                            className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                                        />
-                                        <span className={`text-sm font-medium min-w-[70px] ${deliverySchedule[dayKey].enabled ? "text-gray-900" : "text-gray-400"}`}>
-                                            {dayLabel}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <input
-                                            type="time"
-                                            value={deliverySchedule[dayKey].startTime}
-                                            onChange={(e) => updateDeliveryTime(dayKey, "startTime", e.target.value)}
-                                            disabled={!deliverySchedule[dayKey].enabled}
-                                            className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400 text-gray-900"
-                                        />
-                                        <span className="text-gray-400">às</span>
-                                        <input
-                                            type="time"
-                                            value={deliverySchedule[dayKey].endTime}
-                                            onChange={(e) => updateDeliveryTime(dayKey, "endTime", e.target.value)}
-                                            disabled={!deliverySchedule[dayKey].enabled}
-                                            className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400 text-gray-900"
-                                        />
-                                    </div>
-                                </div>
-                            ))}
+                {isWorkFormVisible && (
+                    <form onSubmit={handleSubmit} className="space-y-6 pt-6">
+                        {/* 1. Identificação */}
+                        <div>
+                            <h3 className="text-sm font-semibold uppercase tracking-wide text-blue-600 mb-4">1. Identificação</h3>
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <label className="block">
+                                    <span className="text-xs font-semibold text-gray-700">Nome da Obra / Projeto *</span>
+                                    <input
+                                        required
+                                        value={form.obra}
+                                        onChange={(e) => setForm({ ...form, obra: e.target.value })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        placeholder="Ex: Edifício Horizonte"
+                                    />
+                                </label>
+                                <label className="block">
+                                    <span className="text-xs font-semibold text-gray-700">Centro de Custos (Opcional)</span>
+                                    <input
+                                        value={form.centroCustos}
+                                        onChange={(e) => setForm({ ...form, centroCustos: e.target.value })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </label>
+                            </div>
                         </div>
-                    </div>
-                </div>
-            </form>
+
+                        {/* 2. Logística */}
+                        <div>
+                            <h3 className="text-sm font-semibold uppercase tracking-wide text-blue-600 mb-4">2. Onde é a obra? (Logística)</h3>
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                <label className="block">
+                                    <span className="text-xs font-semibold text-gray-700">CEP</span>
+                                    <input
+                                        value={form.cep}
+                                        onChange={(e) => setForm({ ...form, cep: e.target.value })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        placeholder="00000-000"
+                                    />
+                                </label>
+                                <label className="block">
+                                    <span className="text-xs font-semibold text-gray-700">Bairro *</span>
+                                    <input
+                                        required
+                                        value={form.bairro}
+                                        onChange={(e) => setForm({ ...form, bairro: e.target.value })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </label>
+                                <label className="block">
+                                    <span className="text-xs font-semibold text-gray-700">Cidade / UF</span>
+                                    <input
+                                        value={form.cidade}
+                                        onChange={(e) => setForm({ ...form, cidade: e.target.value })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </label>
+                                <label className="block md:col-span-2">
+                                    <span className="text-xs font-semibold text-gray-700">Endereço Completo</span>
+                                    <input
+                                        value={form.endereco}
+                                        onChange={(e) => setForm({ ...form, endereco: e.target.value })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </label>
+                                <label className="block">
+                                    <span className="text-xs font-semibold text-gray-700">Restrições de Entrega?</span>
+                                    <input
+                                        value={form.restricoesEntrega}
+                                        onChange={(e) => setForm({ ...form, restricoesEntrega: e.target.value })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        placeholder="Descreva se houver..."
+                                    />
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* 3. Características */}
+                        <div>
+                            <h3 className="text-sm font-semibold uppercase tracking-wide text-blue-600 mb-4">3. Características</h3>
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                                <label className="block">
+                                    <span className="text-xs font-semibold text-gray-700">Etapa Atual</span>
+                                    <select
+                                        value={form.etapa}
+                                        onChange={(e) => setForm({ ...form, etapa: e.target.value })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    >
+                                        <option value="">Selecione...</option>
+                                        <option value="Preliminares">Preliminares</option>
+                                        <option value="Terraplenagem">Terraplenagem</option>
+                                        <option value="Fundações">Fundações</option>
+                                        <option value="Estrutura">Estrutura</option>
+                                        <option value="Instalações Brutas">Instalações Brutas</option>
+                                        <option value="Impermeabilização">Impermeabilização</option>
+                                        <option value="Alvenaria e Vedações">Alvenaria e Vedações</option>
+                                        <option value="Cobertura">Cobertura</option>
+                                        <option value="Instalações">Instalações</option>
+                                        <option value="Esquadrias">Esquadrias</option>
+                                        <option value="Revestimentos">Revestimentos</option>
+                                        <option value="Pintura">Pintura</option>
+                                        <option value="Acabamentos Finais">Acabamentos Finais</option>
+                                        <option value="Urbanização">Urbanização</option>
+                                        <option value="Finalização">Finalização</option>
+                                        <option value="Entrega">Entrega</option>
+                                    </select>
+                                </label>
+                                <label className="block">
+                                    <span className="text-xs font-semibold text-gray-700">Tipo de Obra</span>
+                                    <select
+                                        value={form.tipoObra}
+                                        onChange={(e) => setForm({ ...form, tipoObra: e.target.value })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    >
+                                        <option value="">Selecione...</option>
+                                        <option value="Casa">Casa</option>
+                                        <option value="Prédio">Prédio</option>
+                                        <option value="Reforma">Reforma</option>
+                                        <option value="Comercial">Comercial</option>
+                                    </select>
+                                </label>
+                                <label className="block">
+                                    <span className="text-xs font-semibold text-gray-700">Área em m²</span>
+                                    <input
+                                        type="number"
+                                        value={form.area}
+                                        onChange={(e) => setForm({ ...form, area: e.target.value })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </label>
+                                <label className="block">
+                                    <span className="text-xs font-semibold text-gray-700">Padrão</span>
+                                    <select
+                                        value={form.padrao}
+                                        onChange={(e) => setForm({ ...form, padrao: e.target.value })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    >
+                                        <option value="">Selecione...</option>
+                                        <option value="Baixo">Baixo</option>
+                                        <option value="Médio">Médio</option>
+                                        <option value="Alto">Alto</option>
+                                    </select>
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* 4. Datas e Horários */}
+                        <div>
+                            <h3 className="text-sm font-semibold uppercase tracking-wide text-blue-600 mb-4">4. Datas e Recebimento</h3>
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                <label className="block">
+                                    <span className="text-xs font-semibold text-gray-700">Data Início</span>
+                                    <input
+                                        type="date"
+                                        value={form.dataInicio}
+                                        onChange={(e) => setForm({ ...form, dataInicio: e.target.value })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </label>
+                                <label className="block">
+                                    <span className="text-xs font-semibold text-gray-700">Previsão Término</span>
+                                    <input
+                                        type="date"
+                                        value={form.previsaoTermino}
+                                        onChange={(e) => setForm({ ...form, previsaoTermino: e.target.value })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </label>
+                            </div>
+
+                            {/* Dias e Horários de Entrega */}
+                            <div>
+                                <h4 className="text-xs font-semibold text-gray-700 mb-3">Dias e Horários de Entrega</h4>
+                                <div className="space-y-2">
+                                    {Object.entries(dayNames).map(([dayKey, dayLabel]) => (
+                                        <div
+                                            key={dayKey}
+                                            className="flex items-center gap-3 p-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2 flex-1">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={deliverySchedule[dayKey].enabled}
+                                                    onChange={() => toggleDeliveryDay(dayKey)}
+                                                    className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                                />
+                                                <span className={`text-sm font-medium min-w-[70px] ${deliverySchedule[dayKey].enabled ? "text-gray-900" : "text-gray-400"}`}>
+                                                    {dayLabel}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="time"
+                                                    value={deliverySchedule[dayKey].startTime}
+                                                    onChange={(e) => updateDeliveryTime(dayKey, "startTime", e.target.value)}
+                                                    disabled={!deliverySchedule[dayKey].enabled}
+                                                    className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400 text-gray-900"
+                                                />
+                                                <span className="text-gray-400">às</span>
+                                                <input
+                                                    type="time"
+                                                    value={deliverySchedule[dayKey].endTime}
+                                                    onChange={(e) => updateDeliveryTime(dayKey, "endTime", e.target.value)}
+                                                    disabled={!deliverySchedule[dayKey].enabled}
+                                                    className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400 text-gray-900"
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end">
+                            <button
+                                type="submit"
+                                className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-6 py-3 text-sm font-semibold text-white hover:bg-green-700"
+                            >
+                                <CheckCircleIcon className="h-5 w-5" />
+                                Salvar Obra
+                            </button>
+                        </div>
+                    </form>
+                )}
+            </div>
 
             {/* Lista de Obras */}
             <div className="space-y-4">
@@ -424,22 +446,31 @@ export function ClientWorksSection() {
                                         {work.etapa || "Etapa não informada"}
                                     </span>
                                 </div>
-                                <button
-                                    onClick={() => {
-                                        setSelectedWork(work.id);
-                                        setShowStageModal(true);
-                                    }}
-                                    className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
-                                >
-                                    <PlusIcon className="h-4 w-4" />
-                                    Adicionar Etapa
-                                </button>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => toggleWorkVisibility(work.id)}
+                                        className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                    >
+                                        {collapsedWorks[work.id] ? "Mostrar detalhes" : "Ocultar detalhes"}
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setSelectedWork(work.id);
+                                            setShowStageModal(true);
+                                        }}
+                                        className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+                                    >
+                                        <PlusIcon className="h-4 w-4" />
+                                        Adicionar Etapa
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
                         {/* Etapas da Obra */}
-                        {work.stages && work.stages.length > 0 ? (
-                            <div className="p-6">
+                        {!collapsedWorks[work.id] && (
+                            work.stages && work.stages.length > 0 ? (
+                                <div className="p-6">
                                 <h4 className="text-sm font-semibold text-gray-900 mb-4">
                                     Cronograma de Etapas ({work.stages.length})
                                 </h4>
@@ -517,13 +548,14 @@ export function ClientWorksSection() {
                                         </div>
                                     </div>
                                 ))}
-                            </div>
-                        ) : (
-                            <div className="p-6 text-center text-gray-500">
-                                <CalendarIcon className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                                <p className="text-sm">Nenhuma etapa cadastrada ainda</p>
-                                <p className="text-xs mt-1">Clique em "Adicionar Etapa" para planejar o cronograma</p>
-                            </div>
+                                </div>
+                            ) : (
+                                <div className="p-6 text-center text-gray-500">
+                                    <CalendarIcon className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                                    <p className="text-sm">Nenhuma etapa cadastrada ainda</p>
+                                    <p className="text-xs mt-1">Clique em "Adicionar Etapa" para planejar o cronograma</p>
+                                </div>
+                            )
                         )}
                     </div>
                 ))}

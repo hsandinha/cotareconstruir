@@ -99,7 +99,7 @@ export function ClientOpportunitiesSection() {
                     <select
                         value={selectedWorkId}
                         onChange={(e) => setSelectedWorkId(Number(e.target.value))}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 bg-white text-black border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                         {initialWorks.map((work) => (
                             <option key={work.id} value={work.id}>

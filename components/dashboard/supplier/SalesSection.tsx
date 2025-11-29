@@ -57,6 +57,11 @@ interface SaleOrder {
         availability: string; // e.g., "Imediata", "5 dias"
         validity: string;
         paymentTerms?: string;
+        items?: Record<number, {
+            quantity: number;
+            unit: string;
+            price: number;
+        }>;
         negotiation?: {
             bestPrice: number;
             currentPrice: number;
@@ -64,6 +69,12 @@ interface SaleOrder {
         };
     };
 }
+
+type ProposalItemForm = {
+    quantity: string;
+    unit: string;
+    price: string;
+};
 
 export function SupplierSalesSection() {
     const [activeTab, setActiveTab] = useState<"all" | "pending" | "negotiating" | "approved">("all");
@@ -209,14 +220,30 @@ export function SupplierSalesSection() {
         }
     ]);
 
+    const buildProposalForm = (order?: SaleOrder | null) => {
+        const itemMap: Record<number, ProposalItemForm> = {};
+        if (order) {
+            order.items.forEach((item) => {
+                const existing = order.proposal?.items?.[item.id];
+                itemMap[item.id] = {
+                    quantity: (existing?.quantity ?? item.quantity).toString(),
+                    unit: existing?.unit ?? item.unit,
+                    price: existing?.price !== undefined ? existing.price.toFixed(2) : "",
+                };
+            });
+        }
+
+        return {
+            freight: order?.proposal?.freight !== undefined ? order.proposal.freight.toString() : "",
+            availability: order?.proposal?.availability || "Imediata",
+            validity: order?.proposal?.validity || "",
+            paymentTerms: order?.proposal?.paymentTerms || "",
+            items: itemMap,
+        };
+    };
+
     // Proposal Form State
-    const [proposalForm, setProposalForm] = useState({
-        freight: "",
-        availability: "Imediata",
-        validity: "",
-        paymentTerms: "",
-        items: {} as Record<number, number> // itemId -> price
-    });
+    const [proposalForm, setProposalForm] = useState(() => buildProposalForm());
 
     const filteredOrders = orders.filter(order => {
         if (activeTab !== "all" && order.status !== activeTab) {
@@ -234,18 +261,36 @@ export function SupplierSalesSection() {
     const handleOpenOrder = (order: SaleOrder) => {
         setSelectedOrder(order);
         // Reset form if needed
-        setProposalForm({
-            freight: order.proposal?.freight.toString() || "",
-            availability: order.proposal?.availability || "Imediata",
-            validity: order.proposal?.validity || "",
-            paymentTerms: order.proposal?.paymentTerms || "",
-            items: {}
-        });
+        setProposalForm(buildProposalForm(order));
+    };
+
+    const handleItemFieldChange = (itemId: number, field: keyof ProposalItemForm, value: string) => {
+        setProposalForm((prev) => ({
+            ...prev,
+            items: {
+                ...prev.items,
+                [itemId]: {
+                    ...prev.items[itemId],
+                    [field]: value,
+                },
+            },
+        }));
     };
 
     const handleSendProposal = (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedOrder) return;
+
+        const itemsPayload = Object.fromEntries(
+            Object.entries(proposalForm.items).map(([id, data]) => [
+                Number(id),
+                {
+                    quantity: Number(data.quantity) || 0,
+                    unit: data.unit,
+                    price: Number(data.price) || 0,
+                },
+            ])
+        );
 
         // Update order status to responded/negotiating
         const updatedOrders = orders.map(o =>
@@ -255,15 +300,28 @@ export function SupplierSalesSection() {
                         freight: Number(proposalForm.freight),
                         availability: proposalForm.availability,
                         validity: proposalForm.validity,
-                        paymentTerms: proposalForm.paymentTerms
+                        paymentTerms: proposalForm.paymentTerms,
+                        items: itemsPayload,
                     }
                 }
                 : o
         );
         setOrders(updatedOrders);
-        setSelectedOrder({ ...selectedOrder, status: "responded" });
+        setSelectedOrder({
+            ...selectedOrder,
+            status: "responded",
+            proposal: {
+                freight: Number(proposalForm.freight),
+                availability: proposalForm.availability,
+                validity: proposalForm.validity,
+                paymentTerms: proposalForm.paymentTerms,
+                items: itemsPayload,
+            },
+        });
         alert("Proposta enviada com sucesso!");
     };
+
+    const canEditProposalItems = selectedOrder ? selectedOrder.status === "pending" : false;
 
     return (
         <div className="space-y-6">
@@ -490,19 +548,83 @@ export function SupplierSalesSection() {
                             <div className="p-6">
                                 <h3 className="text-sm font-bold text-gray-900 uppercase mb-4">Itens Solicitados</h3>
                                 <div className="space-y-4">
-                                    {selectedOrder.items.map((item) => (
-                                        <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
-                                            <div>
-                                                <p className="font-medium text-gray-900">{item.name}</p>
-                                                {item.observation && (
-                                                    <p className="text-xs text-gray-500 mt-1">Obs: {item.observation}</p>
-                                                )}
+                                    {selectedOrder.items.map((item) => {
+                                        const itemForm = proposalForm.items[item.id] || { quantity: "", unit: "", price: "" };
+                                        const proposalItemData = selectedOrder.proposal?.items?.[item.id];
+                                        const formattedPrice = proposalItemData?.price !== undefined
+                                            ? proposalItemData.price.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                            : null;
+
+                                        return (
+                                            <div key={item.id} className="p-4 bg-gray-50 rounded-lg border border-gray-100 space-y-3">
+                                                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                                                    <div>
+                                                        <p className="font-medium text-gray-900">{item.name}</p>
+                                                        {item.observation && (
+                                                            <p className="text-xs text-gray-500 mt-1">Obs: {item.observation}</p>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-sm text-gray-600 text-left md:text-right">
+                                                        <p className="text-xs font-semibold uppercase text-gray-500">Solicitado pelo cliente</p>
+                                                        <p className="text-sm font-bold text-gray-900">{item.quantity} {item.unit}</p>
+                                                    </div>
+                                                </div>
+
+                                                {canEditProposalItems ? (
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                        <div>
+                                                            <label className="block text-xs font-medium text-gray-700 mb-1">Quantidade</label>
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                step="0.01"
+                                                                value={itemForm.quantity}
+                                                                onChange={(e) => handleItemFieldChange(item.id, "quantity", e.target.value)}
+                                                                className="w-full rounded-lg border-gray-300 text-sm text-gray-900"
+                                                                placeholder="Ex: 50.00"
+                                                                required
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs font-medium text-gray-700 mb-1">Unidade</label>
+                                                            <input
+                                                                type="text"
+                                                                value={itemForm.unit}
+                                                                onChange={(e) => handleItemFieldChange(item.id, "unit", e.target.value)}
+                                                                className="w-full rounded-lg border-gray-300 text-sm text-gray-900"
+                                                                placeholder="Ex: unid, m³"
+                                                                required
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs font-medium text-gray-700 mb-1">Valor Unitário (R$)</label>
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                step="0.01"
+                                                                value={itemForm.price}
+                                                                onChange={(e) => handleItemFieldChange(item.id, "price", e.target.value)}
+                                                                className="w-full rounded-lg border-gray-300 text-sm text-gray-900"
+                                                                placeholder="0,00"
+                                                                required
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                ) : proposalItemData ? (
+                                                    <div className="flex flex-wrap gap-4 text-sm text-gray-700">
+                                                        <div>
+                                                            <p className="text-xs uppercase text-gray-500 font-semibold">Quantidade enviada</p>
+                                                            <p className="font-medium">{proposalItemData.quantity} {proposalItemData.unit}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs uppercase text-gray-500 font-semibold">Valor unitário</p>
+                                                            <p className="font-medium">R$ {formattedPrice}</p>
+                                                        </div>
+                                                    </div>
+                                                ) : null}
                                             </div>
-                                            <div className="text-right">
-                                                <p className="text-sm font-bold text-gray-900">{item.quantity} {item.unit}</p>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
 

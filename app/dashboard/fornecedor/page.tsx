@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SupplierProfileSection } from "../../../components/dashboard/supplier/ProfileSection";
 import { SupplierMaterialsSection } from "../../../components/dashboard/supplier/MaterialsSection";
 import { SupplierSalesSection } from "../../../components/dashboard/supplier/SalesSection";
@@ -49,6 +49,42 @@ const supplierNotifications: Notification[] = [
 
 export default function FornecedorDashboard() {
     const [tab, setTab] = useState<SupplierTabId>("perfil");
+    const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+    const userMenuRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+                setIsUserMenuOpen(false);
+            }
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
+
+    const handleMenuSelection = (action: "perfil" | "cadastros" | "vendas" | "ofertas" | "sair") => {
+        switch (action) {
+            case "perfil":
+                setTab("perfil");
+                break;
+            case "cadastros":
+                setTab("materiais");
+                break;
+            case "vendas":
+                setTab("vendas");
+                break;
+            case "ofertas":
+                setTab("ofertas");
+                break;
+            case "sair":
+                alert("Você saiu da conta.");
+                break;
+        }
+        setIsUserMenuOpen(false);
+    };
 
     function renderTabContent() {
         switch (tab) {
@@ -77,10 +113,60 @@ export default function FornecedorDashboard() {
                         </div>
                         <div className="flex items-center space-x-4">
                             <NotificationBell initialNotifications={supplierNotifications} />
-                            <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center">
-                                <span className="text-white text-sm font-medium">F</span>
+                            <div className="relative" ref={userMenuRef}>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsUserMenuOpen((prev) => !prev)}
+                                    className="flex items-center gap-2 rounded-full border border-transparent px-2 py-1 hover:border-gray-200 focus:outline-none focus:ring-2 focus:ring-green-500"
+                                >
+                                    <div className="w-9 h-9 bg-green-600 rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                                        F
+                                    </div>
+                                    <div className="hidden sm:block text-left">
+                                        <p className="text-xs text-gray-500">Bem vindo</p>
+                                        <p className="text-sm font-semibold text-gray-900 flex items-center">
+                                            Fornecedor
+                                            <svg className="ml-1 h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        </p>
+                                    </div>
+                                </button>
+                                {isUserMenuOpen && (
+                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 py-2 z-20">
+                                        <button
+                                            onClick={() => handleMenuSelection("perfil")}
+                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                        >
+                                            Perfil
+                                        </button>
+                                        <button
+                                            onClick={() => handleMenuSelection("cadastros")}
+                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                        >
+                                            Cadastros
+                                        </button>
+                                        <button
+                                            onClick={() => handleMenuSelection("vendas")}
+                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                        >
+                                            Minhas Vendas
+                                        </button>
+                                        <button
+                                            onClick={() => handleMenuSelection("ofertas")}
+                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                        >
+                                            Minhas Ofertas
+                                        </button>
+                                        <button
+                                            onClick={() => handleMenuSelection("sair")}
+                                            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-50"
+                                        >
+                                            Sair
+                                        </button>
+                                    </div>
+                                )}
                             </div>
-                            <span className="text-sm text-gray-700">Bem vindo, Fornecedor</span>
                         </div>
                     </div>
                 </div>
