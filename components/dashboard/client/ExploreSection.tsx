@@ -1,71 +1,73 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { PlusIcon, MagnifyingGlassIcon, ShoppingCartIcon, WrenchScrewdriverIcon } from "@heroicons/react/24/outline";
+import { initialWorks, cartCategories } from "../../../lib/clientDashboardMocks";
 
 export function ClientExploreSection() {
-    const [currentView, setCurrentView] = useState<"search" | "analysis" | "comparative" | "formalization">("search");
+    const [currentView, setCurrentView] = useState<"search" | "analysis" | "success">("search");
     const [searchTerm, setSearchTerm] = useState("");
-    const [cart, setCart] = useState<Array<{ id: string, name: string, quantity: number, unit: string, group: string }>>([]);
+    const [cart, setCart] = useState<Array<{ id: string, name: string, quantity: number, unit: string, group: string, observation?: string }>>([]);
     const [selectedWork, setSelectedWork] = useState("");
+    const [showManualEntry, setShowManualEntry] = useState(false);
 
-    // Simulação de dados
-    const works = [
-        { id: "1", name: "Obra Residencial - Vila Madalena", address: "Vila Madalena, São Paulo" },
-        { id: "2", name: "Reforma Comercial - Pinheiros", address: "Pinheiros, São Paulo" },
-    ];
+    // Estado para entrada manual
+    const [manualItem, setManualItem] = useState({
+        name: "",
+        group: cartCategories[0],
+        quantity: 1,
+        unit: "unid",
+        observation: ""
+    });
 
     const materialSuggestions = [
-        { name: "Cimento", group: "Aglomerante", unit: "saco" },
-        { name: "Areia", group: "Agregado", unit: "m³" },
-        { name: "Brita", group: "Agregado", unit: "m³" },
-        { name: "Cabo elétrico", group: "Elétrico", unit: "metro" },
-        { name: "Tubo PVC", group: "Hidráulico", unit: "metro" },
-        { name: "Tijolo", group: "Estrutural", unit: "milheiro" },
-    ];
-
-    const comparativeData = [
-        {
-            id: 1,
-            material: "Cimento CP-II 50kg",
-            quantity: 20,
-            unit: "saco",
-            fornecedorA: { price: 32.50, conditions: "À vista", availability: "Imediato" },
-            fornecedorB: { price: 34.00, conditions: "30 dias", availability: "24h" },
-            fornecedorC: { price: 31.80, conditions: "15 dias", availability: "48h" },
-            fornecedorD: { price: 33.20, conditions: "À vista", availability: "Imediato" }
-        },
-        {
-            id: 2,
-            material: "Areia média lavada",
-            quantity: 5,
-            unit: "m³",
-            fornecedorA: { price: 45.00, conditions: "À vista", availability: "48h" },
-            fornecedorB: { price: 42.50, conditions: "30 dias", availability: "24h" },
-            fornecedorC: { price: 46.00, conditions: "15 dias", availability: "Imediato" },
-            fornecedorD: { price: 44.20, conditions: "À vista", availability: "24h" }
-        }
+        { name: "Cimento CP-II", group: "Aglomerante", unit: "saco" },
+        { name: "Areia Média", group: "Agregado", unit: "m³" },
+        { name: "Brita 1", group: "Agregado", unit: "m³" },
+        { name: "Cabo Flexível 2.5mm", group: "Elétrico", unit: "rolo" },
+        { name: "Tubo PVC 100mm", group: "Hidráulico", unit: "barra" },
+        { name: "Tijolo Baiano", group: "Alvenaria e Vedações", unit: "milheiro" },
+        { name: "Argamassa AC-III", group: "Aglomerante", unit: "saco" },
+        { name: "Tinta Acrílica Branco Neve", group: "Pintura", unit: "lata 18L" },
     ];
 
     const addToCart = (material: string) => {
-        const suggestion = materialSuggestions.find(m => m.name.toLowerCase().includes(material.toLowerCase()));
-        if (suggestion && !cart.find(item => item.name === suggestion.name)) {
+        const suggestion = materialSuggestions.find(m => m.name.toLowerCase() === material.toLowerCase());
+        if (suggestion) {
+            // Verifica se já existe para somar ou avisar (aqui vamos permitir duplicar se quiser, ou apenas somar)
+            // Simplificação: Adiciona novo item
             setCart([...cart, {
                 id: Date.now().toString(),
                 name: suggestion.name,
                 quantity: 1,
                 unit: suggestion.unit,
-                group: suggestion.group
+                group: suggestion.group,
+                observation: ""
             }]);
         }
         setSearchTerm("");
+    };
+
+    const addManualItem = () => {
+        if (!manualItem.name) return;
+        setCart([...cart, {
+            id: Date.now().toString(),
+            name: manualItem.name,
+            quantity: manualItem.quantity,
+            unit: manualItem.unit,
+            group: manualItem.group,
+            observation: manualItem.observation
+        }]);
+        setManualItem({ name: "", group: cartCategories[0], quantity: 1, unit: "unid", observation: "" });
+        setShowManualEntry(false);
     };
 
     const removeFromCart = (id: string) => {
         setCart(cart.filter(item => item.id !== id));
     };
 
-    const updateQuantity = (id: string, quantity: number) => {
-        setCart(cart.map(item => item.id === id ? { ...item, quantity } : item));
+    const updateItem = (id: string, field: string, value: any) => {
+        setCart(cart.map(item => item.id === id ? { ...item, [field]: value } : item));
     };
 
     const filteredSuggestions = useMemo(() => {
@@ -84,177 +86,273 @@ export function ClientExploreSection() {
         return groups;
     }, [cart]);
 
+    const handleSendQuotation = () => {
+        if (!selectedWork) {
+            alert("Por favor, selecione uma obra para vincular à cotação.");
+            return;
+        }
+        if (cart.length === 0) {
+            alert("Adicione itens ao carrinho antes de enviar.");
+            return;
+        }
+        setCurrentView("success");
+    };
+
     // Renderização baseada na view atual
     if (currentView === "search") {
         return (
             <div className="space-y-6">
                 {/* Header Principal */}
-                <div className="text-center bg-gradient-to-r from-blue-50 to-green-50 rounded-lg p-8">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Carrinho de Compras Inteligente</h2>
-                    <p className="text-gray-900 max-w-2xl mx-auto">
-                        Seu analista de compras pessoal. Digite suas necessidades de forma simples e
-                        transformaremos em um plano de aquisição otimizado e pronto para uso.
-                    </p>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                    <div>
+                        <h2 className="text-xl font-bold text-slate-900">Nova Cotação Inteligente</h2>
+                        <p className="text-slate-500 text-sm">
+                            Busque materiais ou adicione manualmente. Nossa IA agrupa tudo para você.
+                        </p>
+                    </div>
+                    <div className="w-full md:w-64">
+                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                            Vincular à Obra *
+                        </label>
+                        <select
+                            value={selectedWork}
+                            onChange={(e) => setSelectedWork(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                            <option value="">Selecione...</option>
+                            {initialWorks.map((work) => (
+                                <option key={work.id} value={work.id}>
+                                    {work.obra}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Área de Pesquisa */}
-                    <div className="space-y-4">
-                        <div className="bg-white rounded-lg border border-gray-200 p-6">
-                            <h3 className="text-lg font-medium text-gray-900 mb-4">O que você precisa para sua obra?</h3>
-
-                            {/* Campo de busca livre */}
-                            <div className="relative">
-                                <input
-                                    type="text"
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    placeholder="Digite qualquer material: cimento, areia, cabo elétrico..."
-                                />
-                                <div className="absolute right-3 top-3">
-                                    <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                    </svg>
-                                </div>
-                            </div>
-
-                            {/* Sugestões */}
-                            {filteredSuggestions.length > 0 && (
-                                <div className="mt-2 border border-gray-200 rounded-lg bg-white shadow-lg max-h-48 overflow-y-auto">
-                                    {filteredSuggestions.map((material) => (
-                                        <button
-                                            key={material.name}
-                                            onClick={() => addToCart(material.name)}
-                                            className="w-full text-left px-4 py-2 hover:bg-gray-50 flex justify-between items-center"
-                                        >
-                                            <span>{material.name}</span>
-                                            <span className="text-sm text-gray-700">{material.group}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-
-                            {/* Vínculo com obra */}
-                            <div className="mt-6">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Vincular à obra (opcional)
-                                </label>
-                                <select
-                                    value={selectedWork}
-                                    onChange={(e) => setSelectedWork(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Área de Pesquisa e Adição */}
+                    <div className="lg:col-span-2 space-y-6">
+                        {/* Busca Inteligente */}
+                        <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm relative">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                                    <MagnifyingGlassIcon className="h-5 w-5 text-blue-600" />
+                                    O que você precisa comprar?
+                                </h3>
+                                <button
+                                    onClick={() => setShowManualEntry(!showManualEntry)}
+                                    className="text-sm text-blue-600 font-medium hover:underline"
                                 >
-                                    <option value="">Selecione uma obra</option>
-                                    {works.map((work) => (
-                                        <option key={work.id} value={work.id}>
-                                            {work.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* Materiais populares */}
-                        <div className="bg-white rounded-lg border border-gray-200 p-6">
-                            <h4 className="text-base font-medium text-gray-900 mb-3">Materiais mais buscados</h4>
-                            <div className="flex flex-wrap gap-2">
-                                {materialSuggestions.slice(0, 6).map((material) => (
-                                    <button
-                                        key={material.name}
-                                        onClick={() => addToCart(material.name)}
-                                        className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-blue-100 hover:text-blue-700"
-                                    >
-                                        + {material.name}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Carrinho de Compras */}
-                    <div className="space-y-4">
-                        <div className="bg-white rounded-lg border border-gray-200 p-6">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-lg font-medium text-gray-900">Sua Lista de Materiais</h3>
-                                <span className="bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full">
-                                    {cart.length} {cart.length === 1 ? 'item' : 'itens'}
-                                </span>
+                                    {showManualEntry ? "Voltar para busca" : "Não encontrou? Adicionar manual"}
+                                </button>
                             </div>
 
-                            {cart.length === 0 ? (
-                                <div className="text-center py-8 text-gray-700">
-                                    <svg className="w-12 h-12 mx-auto mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                    <p>Adicione materiais à sua lista</p>
+                            {!showManualEntry ? (
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="w-full px-4 py-4 pl-12 border border-slate-200 rounded-xl text-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                        placeholder="Digite o nome do material (ex: Cimento, Areia)..."
+                                    />
+                                    <MagnifyingGlassIcon className="h-6 w-6 text-slate-400 absolute left-4 top-4" />
+
+                                    {/* Sugestões Dropdown */}
+                                    {filteredSuggestions.length > 0 && (
+                                        <div className="absolute z-10 w-full mt-2 bg-white border border-slate-100 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                                            {filteredSuggestions.map((material) => (
+                                                <button
+                                                    key={material.name}
+                                                    onClick={() => addToCart(material.name)}
+                                                    className="w-full text-left px-4 py-3 hover:bg-slate-50 flex justify-between items-center border-b border-slate-50 last:border-0"
+                                                >
+                                                    <span className="font-medium text-slate-700">{material.name}</span>
+                                                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">{material.group}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Sugestões Rápidas */}
+                                    <div className="mt-4">
+                                        <p className="text-xs font-semibold text-slate-400 uppercase mb-2">Sugestões frequentes</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {materialSuggestions.slice(0, 5).map((material) => (
+                                                <button
+                                                    key={material.name}
+                                                    onClick={() => addToCart(material.name)}
+                                                    className="px-3 py-1.5 text-sm bg-slate-50 text-slate-600 rounded-lg border border-slate-200 hover:border-blue-300 hover:text-blue-600 transition-colors"
+                                                >
+                                                    + {material.name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
                             ) : (
-                                <div className="space-y-4">
-                                    {/* Materiais agrupados */}
-                                    {Object.entries(groupedCart).map(([group, items]) => (
-                                        <div key={group} className="border border-gray-100 rounded-lg p-4">
-                                            <h4 className="text-sm font-medium text-gray-800 mb-2 bg-gray-50 px-2 py-1 rounded">
-                                                {group}
-                                            </h4>
+                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Nome do Material</label>
+                                            <input
+                                                value={manualItem.name}
+                                                onChange={(e) => setManualItem({ ...manualItem, name: e.target.value })}
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                placeholder="Ex: Porcelanato 60x60"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Categoria</label>
+                                            <select
+                                                value={manualItem.group}
+                                                onChange={(e) => setManualItem({ ...manualItem, group: e.target.value })}
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            >
+                                                {cartCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Quantidade</label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    value={manualItem.quantity}
+                                                    onChange={(e) => setManualItem({ ...manualItem, quantity: Number(e.target.value) })}
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Unidade</label>
+                                                <input
+                                                    value={manualItem.unit}
+                                                    onChange={(e) => setManualItem({ ...manualItem, unit: e.target.value })}
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    placeholder="unid, m², kg"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Observação</label>
+                                            <input
+                                                value={manualItem.observation}
+                                                onChange={(e) => setManualItem({ ...manualItem, observation: e.target.value })}
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                placeholder="Detalhes técnicos..."
+                                            />
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={addManualItem}
+                                        className="w-full py-2 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800"
+                                    >
+                                        Adicionar Item
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Lista do Carrinho */}
+                        <div className="space-y-4">
+                            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                                <ShoppingCartIcon className="h-5 w-5 text-blue-600" />
+                                Itens no Carrinho ({cart.length})
+                            </h3>
+
+                            {cart.length === 0 ? (
+                                <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+                                    <p className="text-slate-500">Seu carrinho está vazio.</p>
+                                    <p className="text-sm text-slate-400">Comece buscando materiais acima.</p>
+                                </div>
+                            ) : (
+                                Object.entries(groupedCart).map(([group, items]) => (
+                                    <div key={group} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                                        <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
+                                            <span className="font-semibold text-slate-700 text-sm uppercase tracking-wide">{group}</span>
+                                            <span className="text-xs text-slate-500">{items.length} itens</span>
+                                        </div>
+                                        <div className="divide-y divide-slate-100">
                                             {items.map((item) => (
-                                                <div key={item.id} className="flex items-center justify-between py-2">
-                                                    <div className="flex-1">
-                                                        <span className="text-sm text-gray-900">{item.name}</span>
-                                                    </div>
-                                                    <div className="flex items-center space-x-2">
-                                                        <input
-                                                            type="number"
-                                                            min="1"
-                                                            value={item.quantity}
-                                                            onChange={(e) => updateQuantity(item.id, parseInt(e.target.value) || 1)}
-                                                            className="w-16 px-2 py-1 text-sm border border-gray-300 rounded"
-                                                        />
-                                                        <span className="text-xs text-gray-700">{item.unit}</span>
-                                                        <button
-                                                            onClick={() => removeFromCart(item.id)}
-                                                            className="text-red-500 hover:text-red-700"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                            </svg>
-                                                        </button>
+                                                <div key={item.id} className="p-4 hover:bg-slate-50 transition-colors">
+                                                    <div className="flex items-start justify-between gap-4">
+                                                        <div className="flex-1">
+                                                            <p className="font-medium text-slate-900">{item.name}</p>
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Adicionar observação..."
+                                                                value={item.observation}
+                                                                onChange={(e) => updateItem(item.id, 'observation', e.target.value)}
+                                                                className="mt-1 w-full text-sm text-slate-600 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:outline-none placeholder-slate-400"
+                                                            />
+                                                        </div>
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="flex items-center border border-slate-200 rounded-lg bg-white">
+                                                                <input
+                                                                    type="number"
+                                                                    min="1"
+                                                                    value={item.quantity}
+                                                                    onChange={(e) => updateItem(item.id, 'quantity', Number(e.target.value))}
+                                                                    className="w-16 px-2 py-1 text-center text-sm focus:outline-none bg-transparent"
+                                                                />
+                                                                <span className="px-2 text-xs text-slate-500 border-l border-slate-200 bg-slate-50 h-full flex items-center rounded-r-lg">
+                                                                    {item.unit}
+                                                                </span>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => removeFromCart(item.id)}
+                                                                className="text-slate-400 hover:text-red-500 p-1"
+                                                            >
+                                                                <span className="sr-only">Remover</span>
+                                                                ×
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
-                                    ))}
-
-                                    {/* Ações */}
-                                    <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-                                        <button
-                                            onClick={() => setCart([])}
-                                            className="text-sm text-gray-800 hover:text-gray-900"
-                                        >
-                                            Limpar lista
-                                        </button>
-                                        <button
-                                            onClick={() => setCurrentView("analysis")}
-                                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-                                        >
-                                            Analisar Lista →
-                                        </button>
                                     </div>
-                                </div>
+                                ))
                             )}
                         </div>
+                    </div>
 
-                        {/* Informação sobre automação */}
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                            <div className="flex items-start space-x-3">
-                                <svg className="w-5 h-5 text-green-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                                </svg>
+                    {/* Sidebar de Resumo e Ação */}
+                    <div className="space-y-6">
+                        <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-lg shadow-blue-200">
+                            <h3 className="text-lg font-bold mb-2">Resumo da Cotação</h3>
+                            <div className="space-y-2 mb-6 text-blue-100 text-sm">
+                                <div className="flex justify-between">
+                                    <span>Itens totais</span>
+                                    <span className="font-semibold">{cart.length}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Grupos</span>
+                                    <span className="font-semibold">{Object.keys(groupedCart).length}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Obra</span>
+                                    <span className="font-semibold truncate max-w-[150px]">
+                                        {selectedWork ? initialWorks.find(w => w.id === Number(selectedWork))?.obra : "Não selecionada"}
+                                    </span>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setCurrentView("analysis")}
+                                disabled={cart.length === 0}
+                                className="w-full py-3 bg-white text-blue-600 rounded-xl font-bold hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                            >
+                                Analisar Lista →
+                            </button>
+                        </div>
+
+                        <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                            <div className="flex items-start gap-3">
+                                <WrenchScrewdriverIcon className="h-6 w-6 text-orange-500 mt-1" />
                                 <div>
-                                    <h4 className="text-sm font-medium text-green-800">Classificação Automática</h4>
-                                    <p className="text-sm text-green-700">
-                                        Nossa IA organiza automaticamente seus materiais por grupos especializados,
-                                        garantindo que cada fornecedor receba apenas os itens de sua especialidade.
+                                    <h4 className="font-semibold text-slate-900 text-sm">Dica do Especialista</h4>
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        Agrupar materiais da mesma fase (ex: elétrica e hidráulica) pode aumentar seu poder de negociação com fornecedores generalistas.
                                     </p>
                                 </div>
                             </div>
@@ -265,24 +363,69 @@ export function ClientExploreSection() {
         );
     }
 
+
+
+    if (currentView === "success") {
+        return (
+            <div className="flex flex-col items-center justify-center py-12 space-y-6 bg-white rounded-lg border border-gray-200">
+                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
+                    <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                </div>
+                <div className="text-center">
+                    <h2 className="text-2xl font-bold text-gray-900">Solicitação Enviada!</h2>
+                    <p className="text-gray-600 mt-2 max-w-md">
+                        Sua solicitação de cotação foi enviada para os fornecedores parceiros.
+                        Você será notificado assim que as propostas chegarem.
+                    </p>
+                </div>
+                <div className="flex space-x-4">
+                    <button
+                        onClick={() => {
+                            setCart([]);
+                            setSearchTerm("");
+                            setCurrentView("search");
+                        }}
+                        className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+                    >
+                        Nova Cotação
+                    </button>
+                    <button
+                        onClick={() => {
+                            // Idealmente redirecionaria para a aba de pedidos
+                            // Como estamos no mesmo componente, apenas resetamos por enquanto
+                            setCart([]);
+                            setSearchTerm("");
+                            setCurrentView("search");
+                        }}
+                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+                    >
+                        Ir para Meus Pedidos
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+
+
     if (currentView === "analysis") {
         return (
             <div className="space-y-6">
                 {/* Navigation */}
-                <div className="flex items-center space-x-2 text-sm text-gray-800">
+                <div className="flex items-center space-x-2 text-sm text-slate-800">
                     <button onClick={() => setCurrentView("search")} className="hover:text-blue-600">Lista de Materiais</button>
                     <span>→</span>
                     <span className="text-blue-600 font-medium">Análise Técnica</span>
                     <span>→</span>
-                    <span className="text-gray-600">Mapa Comparativo</span>
-                    <span>→</span>
-                    <span className="text-gray-600">Formalização</span>
+                    <span className="text-slate-600">Solicitação</span>
                 </div>
 
                 {/* Header */}
-                <div className="text-center bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-8">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Análise Técnica e Sugestões</h2>
-                    <p className="text-gray-900 max-w-2xl mx-auto">
+                <div className="text-center bg-gradient-to-r from-purple-50 to-blue-50 rounded-2xl p-8">
+                    <h2 className="text-2xl font-bold text-slate-900 mb-2">Análise Técnica e Sugestões</h2>
+                    <p className="text-slate-900 max-w-2xl mx-auto">
                         Eliminamos a incerteza apresentando opções técnicas claras e embasadas.
                         Veja onde estão as oportunidades de redução de custos.
                     </p>
@@ -290,35 +433,31 @@ export function ClientExploreSection() {
 
                 {/* Resumo da lista */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-white rounded-lg border border-gray-200 p-6">
+                    <div className="bg-white rounded-xl border border-slate-200 p-6">
                         <div className="flex items-center">
                             <div className="p-2 bg-blue-100 rounded-lg">
-                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                                </svg>
+                                <ShoppingCartIcon className="w-6 h-6 text-blue-600" />
                             </div>
                             <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-700">Total de Itens</p>
-                                <p className="text-2xl font-semibold text-gray-900">{cart.length}</p>
+                                <p className="text-sm font-medium text-slate-700">Total de Itens</p>
+                                <p className="text-2xl font-semibold text-slate-900">{cart.length}</p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-lg border border-gray-200 p-6">
+                    <div className="bg-white rounded-xl border border-slate-200 p-6">
                         <div className="flex items-center">
                             <div className="p-2 bg-green-100 rounded-lg">
-                                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                                </svg>
+                                <WrenchScrewdriverIcon className="w-6 h-6 text-green-600" />
                             </div>
                             <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-700">Grupos Técnicos</p>
-                                <p className="text-2xl font-semibold text-gray-900">{Object.keys(groupedCart).length}</p>
+                                <p className="text-sm font-medium text-slate-700">Grupos Técnicos</p>
+                                <p className="text-2xl font-semibold text-slate-900">{Object.keys(groupedCart).length}</p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-lg border border-gray-200 p-6">
+                    <div className="bg-white rounded-xl border border-slate-200 p-6">
                         <div className="flex items-center">
                             <div className="p-2 bg-purple-100 rounded-lg">
                                 <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -326,7 +465,7 @@ export function ClientExploreSection() {
                                 </svg>
                             </div>
                             <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-700">Economia Estimada</p>
+                                <p className="text-sm font-medium text-slate-700">Economia Estimada</p>
                                 <p className="text-2xl font-semibold text-green-600">15-25%</p>
                             </div>
                         </div>
@@ -336,9 +475,9 @@ export function ClientExploreSection() {
                 {/* Análise por grupos */}
                 <div className="space-y-4">
                     {Object.entries(groupedCart).map(([group, items]) => (
-                        <div key={group} className="bg-white rounded-lg border border-gray-200 p-6">
+                        <div key={group} className="bg-white rounded-xl border border-slate-200 p-6">
                             <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-lg font-medium text-gray-900">{group}</h3>
+                                <h3 className="text-lg font-medium text-slate-900">{group}</h3>
                                 <span className="bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded">
                                     {items.length} {items.length === 1 ? 'item' : 'itens'}
                                 </span>
@@ -347,12 +486,19 @@ export function ClientExploreSection() {
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                 {/* Lista de itens */}
                                 <div>
-                                    <h4 className="text-sm font-medium text-gray-700 mb-3">Materiais Solicitados</h4>
+                                    <h4 className="text-sm font-medium text-slate-700 mb-3">Materiais Solicitados</h4>
                                     <div className="space-y-2">
                                         {items.map((item) => (
-                                            <div key={item.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                                                <span className="text-sm text-gray-900">{item.name}</span>
-                                                <span className="text-sm text-gray-800">{item.quantity} {item.unit}</span>
+                                            <div key={item.id} className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                                                <div className="flex justify-between items-start">
+                                                    <span className="text-sm font-medium text-slate-900">{item.name}</span>
+                                                    <span className="text-xs text-slate-600 bg-white px-2 py-1 rounded border border-slate-200">
+                                                        {item.quantity} {item.unit}
+                                                    </span>
+                                                </div>
+                                                {item.observation && (
+                                                    <p className="text-xs text-slate-500 mt-1 italic">Obs: {item.observation}</p>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -360,9 +506,9 @@ export function ClientExploreSection() {
 
                                 {/* Oportunidades identificadas */}
                                 <div>
-                                    <h4 className="text-sm font-medium text-gray-700 mb-3">Oportunidades Identificadas</h4>
+                                    <h4 className="text-sm font-medium text-slate-700 mb-3">Oportunidades Identificadas</h4>
                                     <div className="space-y-2">
-                                        <div className="p-3 bg-green-50 border border-green-200 rounded">
+                                        <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
                                             <div className="flex items-center space-x-2">
                                                 <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -371,7 +517,7 @@ export function ClientExploreSection() {
                                             </div>
                                             <p className="text-xs text-green-700 mt-1">Economia de 8-12% possível</p>
                                         </div>
-                                        <div className="p-3 bg-blue-50 border border-blue-200 rounded">
+                                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                                             <div className="flex items-center space-x-2">
                                                 <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -385,9 +531,9 @@ export function ClientExploreSection() {
 
                                 {/* Padrões técnicos */}
                                 <div>
-                                    <h4 className="text-sm font-medium text-gray-700 mb-3">Padrões Técnicos</h4>
+                                    <h4 className="text-sm font-medium text-slate-700 mb-3">Padrões Técnicos</h4>
                                     <div className="space-y-2">
-                                        <div className="p-3 bg-purple-50 border border-purple-200 rounded">
+                                        <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
                                             <div className="flex items-center space-x-2">
                                                 <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -396,15 +542,6 @@ export function ClientExploreSection() {
                                             </div>
                                             <p className="text-xs text-purple-700 mt-1">Materiais certificados ABNT</p>
                                         </div>
-                                        <div className="p-3 bg-orange-50 border border-orange-200 rounded">
-                                            <div className="flex items-center space-x-2">
-                                                <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                                </svg>
-                                                <span className="text-sm font-medium text-orange-800">Custo-Benefício</span>
-                                            </div>
-                                            <p className="text-xs text-orange-700 mt-1">Melhor relação preço x qualidade</p>
-                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -412,434 +549,29 @@ export function ClientExploreSection() {
                     ))}
                 </div>
 
-                {/* Importância da antecipação */}
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-                    <div className="flex items-start space-x-3">
-                        <svg className="w-6 h-6 text-yellow-600 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                        </svg>
-                        <div>
-                            <h4 className="text-base font-medium text-yellow-800 mb-2">Importância da Antecipação (Suprimentos)</h4>
-                            <p className="text-sm text-yellow-700 mb-3">
-                                O planejamento de suprimentos precede a compra e é fundamental para o sucesso da obra.
-                                Antecipar as compras garante:
-                            </p>
-                            <ul className="text-sm text-yellow-700 space-y-1 ml-4">
-                                <li>• <strong>Evita atrasos:</strong> Materiais disponíveis na hora certa</li>
-                                <li>• <strong>Reduz desperdícios:</strong> Compra planejada evita sobras</li>
-                                <li>• <strong>Melhores preços:</strong> Negociação sem pressa</li>
-                                <li>• <strong>Qualidade garantida:</strong> Tempo para verificar especificações</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-
                 {/* Ações */}
-                <div className="flex justify-between">
+                <div className="flex justify-between pt-6">
                     <button
                         onClick={() => setCurrentView("search")}
-                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                        className="px-6 py-2 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 font-medium"
                     >
                         ← Voltar à Lista
                     </button>
                     <button
-                        onClick={() => setCurrentView("comparative")}
-                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+                        onClick={handleSendQuotation}
+                        className="px-8 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 font-bold shadow-lg shadow-green-200 flex items-center gap-2"
                     >
-                        Ver Comparativo de Preços →
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    if (currentView === "comparative") {
-        return (
-            <div className="space-y-6">
-                {/* Navigation */}
-                <div className="flex items-center space-x-2 text-sm text-gray-800">
-                    <button onClick={() => setCurrentView("search")} className="hover:text-blue-600">Lista de Materiais</button>
-                    <span>→</span>
-                    <button onClick={() => setCurrentView("analysis")} className="hover:text-blue-600">Análise Técnica</button>
-                    <span>→</span>
-                    <span className="text-blue-600 font-medium">Mapa Comparativo</span>
-                    <span>→</span>
-                    <span className="text-gray-600">Formalização</span>
-                </div>
-
-                {/* Header */}
-                <div className="text-center bg-gradient-to-r from-green-50 to-blue-50 rounded-lg p-8">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Mapa Comparativo de Fornecedores</h2>
-                    <p className="text-gray-900 max-w-2xl mx-auto">
-                        Transparência total sem expor fornecedores. Compare preços e condições para tomar
-                        a melhor decisão técnica e econômica.
-                    </p>
-                </div>
-
-                {/* Informações de anonimato */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <div className="flex items-start space-x-3">
-                        <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                         </svg>
-                        <div>
-                            <h4 className="text-sm font-medium text-blue-800">Anonimato Garantido</h4>
-                            <p className="text-sm text-blue-700">
-                                Os fornecedores são identificados apenas como A, B, C e D para garantir a exclusividade
-                                e imparcialidade do processo. A identidade será revelada apenas após sua escolha.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Tabela comparativa */}
-                <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                    <div className="px-6 py-4 border-b border-gray-200">
-                        <h3 className="text-lg font-medium text-gray-900">Comparativo de Preços e Condições</h3>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Material</th>
-                                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">Qtd</th>
-                                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">
-                                        <div className="text-center">
-                                            <div className="font-semibold text-blue-600">Fornecedor A</div>
-                                            <div className="text-xs text-gray-600">Preço | Condição | Prazo</div>
-                                        </div>
-                                    </th>
-                                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">
-                                        <div className="text-center">
-                                            <div className="font-semibold text-green-600">Fornecedor B</div>
-                                            <div className="text-xs text-gray-600">Preço | Condição | Prazo</div>
-                                        </div>
-                                    </th>
-                                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">
-                                        <div className="text-center">
-                                            <div className="font-semibold text-purple-600">Fornecedor C</div>
-                                            <div className="text-xs text-gray-600">Preço | Condição | Prazo</div>
-                                        </div>
-                                    </th>
-                                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">
-                                        <div className="text-center">
-                                            <div className="font-semibold text-orange-600">Fornecedor D</div>
-                                            <div className="text-xs text-gray-600">Preço | Condição | Prazo</div>
-                                        </div>
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {comparativeData.map((item, index) => (
-                                    <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                        <td className="px-6 py-4">
-                                            <div className="text-sm font-medium text-gray-900">{item.material}</div>
-                                        </td>
-                                        <td className="px-6 py-4 text-center text-sm text-gray-900">
-                                            {item.quantity} {item.unit}
-                                        </td>
-                                        <td className="px-6 py-4 text-center">
-                                            <div className="text-sm font-medium text-gray-900">R$ {item.fornecedorA.price.toFixed(2)}</div>
-                                            <div className="text-xs text-gray-700">{item.fornecedorA.conditions}</div>
-                                            <div className="text-xs text-blue-600">{item.fornecedorA.availability}</div>
-                                        </td>
-                                        <td className="px-6 py-4 text-center">
-                                            <div className="text-sm font-medium text-gray-900">R$ {item.fornecedorB.price.toFixed(2)}</div>
-                                            <div className="text-xs text-gray-700">{item.fornecedorB.conditions}</div>
-                                            <div className="text-xs text-green-600">{item.fornecedorB.availability}</div>
-                                        </td>
-                                        <td className="px-6 py-4 text-center">
-                                            <div className="text-sm font-medium text-gray-900">R$ {item.fornecedorC.price.toFixed(2)}</div>
-                                            <div className="text-xs text-gray-700">{item.fornecedorC.conditions}</div>
-                                            <div className="text-xs text-purple-600">{item.fornecedorC.availability}</div>
-                                        </td>
-                                        <td className="px-6 py-4 text-center">
-                                            <div className="text-sm font-medium text-gray-900">R$ {item.fornecedorD.price.toFixed(2)}</div>
-                                            <div className="text-xs text-gray-700">{item.fornecedorD.conditions}</div>
-                                            <div className="text-xs text-orange-600">{item.fornecedorD.availability}</div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                            <tfoot className="bg-gray-100">
-                                <tr>
-                                    <td className="px-6 py-3 text-sm font-medium text-gray-900" colSpan={2}>Total Geral:</td>
-                                    <td className="px-6 py-3 text-center text-sm font-bold text-blue-600">
-                                        R$ {comparativeData.reduce((sum, item) => sum + (item.fornecedorA.price * item.quantity), 0).toFixed(2)}
-                                    </td>
-                                    <td className="px-6 py-3 text-center text-sm font-bold text-green-600">
-                                        R$ {comparativeData.reduce((sum, item) => sum + (item.fornecedorB.price * item.quantity), 0).toFixed(2)}
-                                    </td>
-                                    <td className="px-6 py-3 text-center text-sm font-bold text-purple-600">
-                                        R$ {comparativeData.reduce((sum, item) => sum + (item.fornecedorC.price * item.quantity), 0).toFixed(2)}
-                                    </td>
-                                    <td className="px-6 py-3 text-center text-sm font-bold text-orange-600">
-                                        R$ {comparativeData.reduce((sum, item) => sum + (item.fornecedorD.price * item.quantity), 0).toFixed(2)}
-                                    </td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-
-                {/* Análise de economia */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                        <h4 className="text-sm font-medium text-green-800 mb-1">Melhor Preço Global</h4>
-                        <p className="text-lg font-bold text-green-600">Fornecedor C</p>
-                        <p className="text-xs text-green-700">Economia de R$ 147,50 vs mais caro</p>
-                    </div>
-
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <h4 className="text-sm font-medium text-blue-800 mb-1">Melhor Prazo</h4>
-                        <p className="text-lg font-bold text-blue-600">Fornecedor A</p>
-                        <p className="text-xs text-blue-700">Entrega imediata disponível</p>
-                    </div>
-
-                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                        <h4 className="text-sm font-medium text-purple-800 mb-1">Melhor Condição</h4>
-                        <p className="text-lg font-bold text-purple-600">Fornecedor B</p>
-                        <p className="text-xs text-purple-700">Pagamento em 30 dias</p>
-                    </div>
-                </div>
-
-                {/* Seleção de fornecedores */}
-                <div className="bg-white rounded-lg border border-gray-200 p-6">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Suas Escolhas</h3>
-                    <div className="space-y-3">
-                        {comparativeData.map((item) => (
-                            <div key={item.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                <div className="text-sm font-medium text-gray-900">{item.material}</div>
-                                <select className="px-3 py-1 border border-gray-300 rounded text-sm">
-                                    <option value="">Escolher fornecedor</option>
-                                    <option value="A">Fornecedor A - R$ {item.fornecedorA.price.toFixed(2)}</option>
-                                    <option value="B">Fornecedor B - R$ {item.fornecedorB.price.toFixed(2)}</option>
-                                    <option value="C">Fornecedor C - R$ {item.fornecedorC.price.toFixed(2)}</option>
-                                    <option value="D">Fornecedor D - R$ {item.fornecedorD.price.toFixed(2)}</option>
-                                </select>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Ações */}
-                <div className="flex justify-between">
-                    <button
-                        onClick={() => setCurrentView("analysis")}
-                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                    >
-                        ← Voltar à Análise
-                    </button>
-                    <button
-                        onClick={() => setCurrentView("formalization")}
-                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
-                    >
-                        Formalizar Compras →
+                        Enviar Solicitação de Cotação
                     </button>
                 </div>
             </div>
         );
     }
 
-    if (currentView === "formalization") {
-        const totalEconomy = 547.30; // Simulado
-        const monthlyService = 1200; // Simulado
 
-        return (
-            <div className="space-y-6">
-                {/* Navigation */}
-                <div className="flex items-center space-x-2 text-sm text-gray-800">
-                    <button onClick={() => setCurrentView("search")} className="hover:text-blue-600">Lista de Materiais</button>
-                    <span>→</span>
-                    <button onClick={() => setCurrentView("analysis")} className="hover:text-blue-600">Análise Técnica</button>
-                    <span>→</span>
-                    <button onClick={() => setCurrentView("comparative")} className="hover:text-blue-600">Mapa Comparativo</button>
-                    <span>→</span>
-                    <span className="text-green-600 font-medium">Formalização</span>
-                </div>
-
-                {/* Header */}
-                <div className="text-center bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-8">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Formalização e Controle</h2>
-                    <p className="text-gray-900 max-w-2xl mx-auto">
-                        Finalize suas compras com documentação completa e acompanhe os resultados obtidos.
-                    </p>
-                </div>
-
-                {/* Resumo da economia */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-white rounded-lg border border-gray-200 p-6">
-                        <div className="flex items-center">
-                            <div className="p-2 bg-green-100 rounded-lg">
-                                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                                </svg>
-                            </div>
-                            <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-700">Economia Total</p>
-                                <p className="text-2xl font-semibold text-green-600">R$ {totalEconomy.toFixed(2)}</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-lg border border-gray-200 p-6">
-                        <div className="flex items-center">
-                            <div className="p-2 bg-blue-100 rounded-lg">
-                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                                </svg>
-                            </div>
-                            <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-700">ROI do Serviço</p>
-                                <p className="text-2xl font-semibold text-blue-600">45.6%</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-lg border border-gray-200 p-6">
-                        <div className="flex items-center">
-                            <div className="p-2 bg-purple-100 rounded-lg">
-                                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                            </div>
-                            <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-700">Tempo Economizado</p>
-                                <p className="text-2xl font-semibold text-purple-600">12h</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Ordens de compra */}
-                <div className="bg-white rounded-lg border border-gray-200 p-6">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Ordens de Compra Geradas</h3>
-                    <div className="space-y-4">
-                        <div className="border border-gray-200 rounded-lg p-4">
-                            <div className="flex items-center justify-between mb-3">
-                                <div>
-                                    <h4 className="font-medium text-gray-900">OC #2024-001 - Fornecedor C</h4>
-                                    <p className="text-sm text-gray-800">Cimento CP-II 50kg</p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="font-medium text-gray-900">R$ 636,00</p>
-                                    <p className="text-sm text-gray-800">20 sacos</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-gray-600">Condições: 15 dias | Prazo: 48h</span>
-                                <button className="text-blue-600 hover:text-blue-800">Baixar OC</button>
-                            </div>
-                        </div>
-
-                        <div className="border border-gray-200 rounded-lg p-4">
-                            <div className="flex items-center justify-between mb-3">
-                                <div>
-                                    <h4 className="font-medium text-gray-900">OC #2024-002 - Fornecedor B</h4>
-                                    <p className="text-sm text-gray-800">Areia média lavada</p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="font-medium text-gray-900">R$ 212,50</p>
-                                    <p className="text-sm text-gray-800">5 m³</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-gray-600">Condições: 30 dias | Prazo: 24h</span>
-                                <button className="text-blue-600 hover:text-blue-800">Baixar OC</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Instruções importantes */}
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-                    <div className="flex items-start space-x-3">
-                        <svg className="w-6 h-6 text-yellow-600 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <div>
-                            <h4 className="text-base font-medium text-yellow-800 mb-2">Instruções para Finalização</h4>
-                            <div className="text-sm text-yellow-700 space-y-2">
-                                <p><strong>1. Contato Direto:</strong> Agora você pode entrar em contato diretamente com os fornecedores usando os dados fornecidos nas OCs.</p>
-                                <p><strong>2. Transação Externa:</strong> A compra e pagamento são realizados diretamente entre você e o fornecedor, fora da plataforma.</p>
-                                <p><strong>3. Documentação:</strong> Use as Ordens de Compra como base para suas negociações e contratos.</p>
-                                <p><strong>4. Prazo de Validade:</strong> As propostas são válidas conforme especificado em cada OC.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Visão de desempenho para clientes mensais */}
-                <div className="bg-white rounded-lg border border-gray-200 p-6">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Desempenho do Investimento</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <h4 className="text-sm font-medium text-gray-700 mb-3">Este Mês</h4>
-                            <div className="space-y-2">
-                                <div className="flex justify-between">
-                                    <span className="text-sm text-gray-800">Investimento no serviço:</span>
-                                    <span className="text-sm font-medium text-red-600">-R$ {monthlyService.toFixed(2)}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-sm text-gray-800">Economia obtida:</span>
-                                    <span className="text-sm font-medium text-green-600">+R$ {totalEconomy.toFixed(2)}</span>
-                                </div>
-                                <div className="border-t border-gray-200 pt-2">
-                                    <div className="flex justify-between">
-                                        <span className="text-sm font-medium text-gray-900">Resultado líquido:</span>
-                                        <span className="text-sm font-bold text-green-600">+R$ {(totalEconomy - monthlyService).toFixed(2)}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div>
-                            <h4 className="text-sm font-medium text-gray-700 mb-3">Eficiência Operacional</h4>
-                            <div className="space-y-2">
-                                <div className="flex justify-between">
-                                    <span className="text-sm text-gray-800">Tempo de pesquisa:</span>
-                                    <span className="text-sm text-green-600">-89%</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-sm text-gray-800">Precisão de compra:</span>
-                                    <span className="text-sm text-green-600">+94%</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-sm text-gray-800">Fornecedores avaliados:</span>
-                                    <span className="text-sm text-blue-600">4x mais</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Ações finais */}
-                <div className="flex justify-between">
-                    <button
-                        onClick={() => setCurrentView("comparative")}
-                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                    >
-                        ← Voltar ao Comparativo
-                    </button>
-                    <div className="space-x-3">
-                        <button
-                            onClick={() => {
-                                setCart([]);
-                                setCurrentView("search");
-                            }}
-                            className="px-4 py-2 border border-green-600 text-green-600 rounded-lg hover:bg-green-50"
-                        >
-                            Nova Consulta
-                        </button>
-                        <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
-                            Baixar Todas as OCs
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
 
     return null;
 }

@@ -9,15 +9,15 @@ export function Footer() {
     <footer id="contato" className="section-anchor relative bg-slate-950 py-16 text-white">
       <div className="mx-auto max-w-7xl px-6">
         <div className="grid gap-10 md:grid-cols-4">
-          <div className="space-y-5">
-            <div className="flex items-center space-x-3">
-              <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 shadow-glow">
-                <FontAwesomeIcon icon={faBuilding} className="text-lg text-white" />
+          <div className="space-y-4">
+            <Link href="#hero" className="flex items-center space-x-2">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
+                <FontAwesomeIcon icon={faBuilding} className="text-sm text-white" />
               </span>
-              <span className="text-xl font-bold">Cotar e Construir</span>
-            </div>
+              <span className="text-xl font-bold">Cotar & Construir</span>
+            </Link>
             <p className="text-sm text-slate-400">
-              Transformando a gestão de suprimentos da construção civil em vantagem estratégica.
+              Transformando a maneira como você constrói. Conectamos obras a fornecedores com tecnologia e eficiência.
             </p>
           </div>
 
@@ -71,7 +71,7 @@ export function Footer() {
         </div>
 
         <div className="mt-12 border-t border-white/5 pt-6 text-center text-xs text-slate-500">
-          © {new Date().getFullYear()} Cotar e Construir. Todos os direitos reservados.
+          © {new Date().getFullYear()} Cotar & Construir. Todos os direitos reservados.
         </div>
       </div>
     </footer>

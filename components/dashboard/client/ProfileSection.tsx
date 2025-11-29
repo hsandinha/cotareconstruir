@@ -68,7 +68,7 @@ export function ClientProfileSection() {
                                 Garantia de confidencialidade
                             </h2>
                             <p className="text-sm text-slate-500">
-                                CNPJ vinculado ao contrato mestre com a Cotar e Construir.
+                                CNPJ vinculado ao contrato mestre com a Cotar & Construir.
                             </p>
                         </div>
                         <div className="rounded-2xl bg-slate-900/90 px-4 py-2 text-right text-xs text-white">
@@ -83,7 +83,7 @@ export function ClientProfileSection() {
                             <input
                                 value={company.companyName}
                                 onChange={(e) => setCompany({ ...company, companyName: e.target.value })}
-                                className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm focus:border-blue-400 focus:outline-none"
+                                className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
                             />
                         </label>
                         <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -91,7 +91,7 @@ export function ClientProfileSection() {
                             <input
                                 value={company.cnpj}
                                 onChange={(e) => setCompany({ ...company, cnpj: e.target.value })}
-                                className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm focus:border-blue-400 focus:outline-none"
+                                className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
                             />
                         </label>
                         <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -99,7 +99,7 @@ export function ClientProfileSection() {
                             <input
                                 value={company.role}
                                 onChange={(e) => setCompany({ ...company, role: e.target.value })}
-                                className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm focus:border-blue-400 focus:outline-none"
+                                className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
                             />
                         </label>
                         <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -110,7 +110,7 @@ export function ClientProfileSection() {
                                     setCompany({ ...company, obras: Number(e.target.value) })
                                 }
                                 type="number"
-                                className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm focus:border-blue-400 focus:outline-none"
+                                className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
                             />
                         </label>
                     </div>

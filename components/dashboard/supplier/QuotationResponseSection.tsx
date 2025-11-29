@@ -131,14 +131,14 @@ export function SupplierQuotationResponseSection() {
                                                 type="number"
                                                 step="0.01"
                                                 placeholder="0,00"
-                                                className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-24 px-2 py-1 text-sm text-gray-900 placeholder:text-gray-500 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                 value={response.preco}
                                                 onChange={(e) => handleResponseChange(item.id, 'preco', e.target.value)}
                                             />
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <select
-                                                className="text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="text-sm text-gray-900 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                 value={response.disponibilidade}
                                                 onChange={(e) => handleResponseChange(item.id, 'disponibilidade', e.target.value)}
                                             >

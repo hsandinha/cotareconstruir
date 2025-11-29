@@ -1,121 +1,426 @@
 "use client";
 
 import { useState } from "react";
+import {
+    MagnifyingGlassIcon,
+    PlusIcon,
+    PencilSquareIcon,
+    TrashIcon,
+    MegaphoneIcon,
+    CloudArrowUpIcon,
+    ArrowUpIcon,
+    ArrowDownIcon
+} from "@heroicons/react/24/outline";
 
 export function SupplierMaterialsSection() {
+    const [searchTerm, setSearchTerm] = useState("");
+    const [selectedItems, setSelectedItems] = useState<number[]>([]);
+    const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+
     const [materials, setMaterials] = useState([
-        { id: 1, codigo: "ELE001", nome: "Cabo Flexível 2,5mm", grupo: "Elétrico", unidade: "metro" },
-        { id: 2, codigo: "HID001", nome: "Tubo PVC 100mm", grupo: "Hidráulico", unidade: "metro" },
-        { id: 3, codigo: "AGR001", nome: "Cimento CP-II", grupo: "Aglomerante", unidade: "saco" },
+        { id: 1, codigo: "ELE001", nome: "Cabo Flexível 2,5mm", grupo: "Instalações", unidade: "metro", preco: 2.50, status: "Ativo" },
+        { id: 2, codigo: "HID001", nome: "Tubo PVC 100mm", grupo: "Instalações", unidade: "metro", preco: 15.90, status: "Ativo" },
+        { id: 3, codigo: "AGR001", nome: "Cimento CP-II", grupo: "Estrutura", unidade: "saco", preco: 32.00, status: "Ativo" },
+        { id: 4, codigo: "REV001", nome: "Porcelanato 60x60", grupo: "Revestimentos", unidade: "m2", preco: 89.90, status: "Ativo" },
     ]);
 
-    return (
+    const [offerModalOpen, setOfferModalOpen] = useState(false);
+    const [selectedMaterialForOffer, setSelectedMaterialForOffer] = useState<any | null>(null);
+    const [offerType, setOfferType] = useState<'percentage' | 'fixed'>('percentage');
+    const [offerValue, setOfferValue] = useState('');
+
+    const handleSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.checked) {
+            setSelectedItems(filteredMaterials.map(m => m.id));
+        } else {
+            setSelectedItems([]);
+        }
+    };
+
+    const handleSelectItem = (id: number) => {
+        if (selectedItems.includes(id)) {
+            setSelectedItems(selectedItems.filter(item => item !== id));
+        } else {
+            setSelectedItems([...selectedItems, id]);
+        }
+    };
+
+    const filteredMaterials = materials
+        .filter(m =>
+            m.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            m.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            m.grupo.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+        .sort((a, b) => {
+            if (!sortConfig) return 0;
+
+            const { key, direction } = sortConfig;
+            let aValue: any = (a as any)[key];
+            let bValue: any = (b as any)[key];
+
+            // Handle numeric values for price
+            if (key === 'preco') {
+                aValue = Number(aValue);
+                bValue = Number(bValue);
+            } else {
+                aValue = String(aValue).toLowerCase();
+                bValue = String(bValue).toLowerCase();
+            }
+
+            if (aValue < bValue) return direction === 'asc' ? -1 : 1;
+            if (aValue > bValue) return direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+    const handleMakeOffer = (material: any) => {
+        setSelectedMaterialForOffer(material);
+        setOfferModalOpen(true);
+        setOfferValue('');
+    };
+
+    const handleSendOffer = () => {
+        if (!offerValue) return;
+
+        const message = offerType === 'percentage'
+            ? `${offerValue}% de desconto`
+            : `R$ ${offerValue}`;
+
+        alert(`Oferta relâmpago para "${selectedMaterialForOffer?.nome}" enviada com sucesso! \nCondição: ${message}`);
+        setOfferModalOpen(false);
+    }; return (
         <div className="space-y-6">
-            {/* Header */}
-            <div className="flex justify-between items-start">
+            {/* Header & Actions */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h3 className="text-lg font-medium text-gray-900">Cadastro de Materiais e Grupos</h3>
-                    <p className="mt-1 text-sm text-gray-600">
-                        Cadastre os materiais que sua empresa fornece e associe aos grupos específicos
+                    <h3 className="text-xl font-bold text-gray-900">Cadastro de Materiais</h3>
+                    <p className="text-sm text-gray-600">
+                        Gerencie seu catálogo de produtos para receber cotações relevantes.
                     </p>
                 </div>
-                <button className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700">
-                    + Novo Material
-                </button>
+                <div className="flex gap-3">
+                    <div className="relative">
+                        <input
+                            type="text"
+                            placeholder="Buscar material..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full md:w-64"
+                        />
+                        <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" />
+                    </div>
+                    <button
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                        onClick={() => alert("Funcionalidade de importação em massa será implementada em breve.")}
+                    >
+                        <CloudArrowUpIcon className="h-5 w-5" />
+                        Importar em Massa
+                    </button>
+                    <button className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                        <PlusIcon className="h-5 w-5" />
+                        Novo Material
+                    </button>
+                </div>
             </div>
 
-            {/* Informação sobre grupos */}
-            <div className="bg-amber-50 border border-amber-200 rounded-md p-4">
-                <div className="flex">
-                    <div className="flex-shrink-0">
-                        <svg className="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                    <p className="text-sm text-gray-500 font-medium">Total de Itens</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-1">{materials.length}</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                    <p className="text-sm text-gray-500 font-medium">Grupos Ativos</p>
+                    <p className="text-2xl font-bold text-blue-600 mt-1">
+                        {new Set(materials.map(m => m.grupo)).size}
+                    </p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                    <p className="text-sm text-gray-500 font-medium">Última Atualização</p>
+                    <p className="text-2xl font-bold text-green-600 mt-1">Hoje</p>
+                </div>
+            </div>
+
+            {/* Main Content Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Form Section */}
+                <div className="lg:col-span-1">
+                    <div className="bg-white border border-gray-200 rounded-xl p-6 sticky top-6">
+                        <h4 className="text-lg font-semibold text-gray-900 mb-4">Adicionar Item</h4>
+                        <form className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Grupo / Categoria *</label>
+                                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="">Selecione...</option>
+                                    <option value="Preliminares">Preliminares</option>
+                                    <option value="Terraplenagem">Terraplenagem</option>
+                                    <option value="Fundações">Fundações</option>
+                                    <option value="Estrutura">Estrutura</option>
+                                    <option value="Instalações">Instalações</option>
+                                    <option value="Alvenaria e Vedações">Alvenaria e Vedações</option>
+                                    <option value="Cobertura">Cobertura</option>
+                                    <option value="Esquadrias">Esquadrias</option>
+                                    <option value="Revestimentos">Revestimentos</option>
+                                    <option value="Pintura">Pintura</option>
+                                    <option value="Acabamentos Finais">Acabamentos Finais</option>
+                                    <option value="Urbanização">Urbanização</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Material *</label>
+                                <input
+                                    type="text"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="Ex: Cimento CP-II"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Unidade *</label>
+                                    <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="un">Unidade</option>
+                                        <option value="m">Metro</option>
+                                        <option value="m2">m²</option>
+                                        <option value="m3">m³</option>
+                                        <option value="kg">Kg</option>
+                                        <option value="sc">Saco</option>
+                                        <option value="lt">Litro</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Preço Base (R$)</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="0,00"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Código Interno (SKU)</label>
+                                <input
+                                    type="text"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="Opcional"
+                                />
+                            </div>
+
+                            <div className="pt-2">
+                                <button type="button" className="w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors">
+                                    Cadastrar Material
+                                </button>
+                            </div>
+                        </form>
                     </div>
-                    <div className="ml-3">
-                        <p className="text-sm text-amber-800">
-                            <strong>Códigos Padronizados:</strong> O sistema utiliza códigos específicos para cada grupo de material (Elétrico, Hidráulico, Aglomerante, Agregado, etc.) para filtrar automaticamente as necessidades dos clientes.
+                </div>
+
+                {/* List Section */}
+                <div className="lg:col-span-2">
+                    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-4">
+                                            <input
+                                                type="checkbox"
+                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                onChange={handleSelectAll}
+                                                checked={filteredMaterials.length > 0 && selectedItems.length === filteredMaterials.length}
+                                            />
+                                        </th>
+                                        <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                            onClick={() => handleSort('nome')}
+                                        >
+                                            <div className="flex items-center gap-1">
+                                                Item
+                                                {sortConfig?.key === 'nome' && (
+                                                    sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-3 w-3" /> : <ArrowDownIcon className="h-3 w-3" />
+                                                )}
+                                            </div>
+                                        </th>
+                                        <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                            onClick={() => handleSort('grupo')}
+                                        >
+                                            <div className="flex items-center gap-1">
+                                                Grupo
+                                                {sortConfig?.key === 'grupo' && (
+                                                    sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-3 w-3" /> : <ArrowDownIcon className="h-3 w-3" />
+                                                )}
+                                            </div>
+                                        </th>
+                                        <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                            onClick={() => handleSort('preco')}
+                                        >
+                                            <div className="flex items-center gap-1">
+                                                Preço Base
+                                                {sortConfig?.key === 'preco' && (
+                                                    sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-3 w-3" /> : <ArrowDownIcon className="h-3 w-3" />
+                                                )}
+                                            </div>
+                                        </th>
+                                        <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                            onClick={() => handleSort('status')}
+                                        >
+                                            <div className="flex items-center gap-1">
+                                                Status
+                                                {sortConfig?.key === 'status' && (
+                                                    sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-3 w-3" /> : <ArrowDownIcon className="h-3 w-3" />
+                                                )}
+                                            </div>
+                                        </th>
+                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {filteredMaterials.map((material) => (
+                                        <tr key={material.id} className={`hover:bg-gray-50 transition-colors ${selectedItems.includes(material.id) ? 'bg-blue-50' : ''}`}>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <input
+                                                    type="checkbox"
+                                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                    checked={selectedItems.includes(material.id)}
+                                                    onChange={() => handleSelectItem(material.id)}
+                                                />
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm font-medium text-gray-900">{material.nome}</span>
+                                                    <span className="text-xs text-gray-500">SKU: {material.codigo} • {material.unidade}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                    {material.grupo}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                                R$ {material.preco.toFixed(2)}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                    {material.status}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <div className="flex justify-end gap-2">
+                                                    <button
+                                                        onClick={() => handleMakeOffer(material)}
+                                                        className="text-amber-600 hover:text-amber-900 p-1"
+                                                        title="Disparar Oferta"
+                                                    >
+                                                        <MegaphoneIcon className="h-4 w-4" />
+                                                    </button>
+                                                    <button className="text-blue-600 hover:text-blue-900 p-1">
+                                                        <PencilSquareIcon className="h-4 w-4" />
+                                                    </button>
+                                                    <button className="text-red-600 hover:text-red-900 p-1">
+                                                        <TrashIcon className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {filteredMaterials.length === 0 && (
+                            <div className="p-8 text-center text-gray-500">
+                                Nenhum material encontrado.
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Offer Modal */}
+            {offerModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+                        <h3 className="text-lg font-bold text-gray-900">Criar Oferta Relâmpago</h3>
+                        <p className="mt-1 text-sm text-gray-600">
+                            Defina a condição especial para <strong>{selectedMaterialForOffer?.nome}</strong>.
                         </p>
-                    </div>
-                </div>
-            </div>
 
-            {/* Formulário de novo material */}
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <h4 className="text-base font-medium text-gray-900 mb-4">Adicionar Novo Material</h4>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Grupo do Material *</label>
-                        <select className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="">Selecione o grupo</option>
-                            <option value="eletrico">Elétrico</option>
-                            <option value="hidraulico">Hidráulico</option>
-                            <option value="aglomerante">Aglomerante</option>
-                            <option value="agregado">Agregado</option>
-                            <option value="acabamento">Acabamento</option>
-                            <option value="estrutural">Estrutural</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Material *</label>
-                        <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Ex: Cabo Flexível 2,5mm" />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Unidade *</label>
-                        <select className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="">Selecione</option>
-                            <option value="metro">Metro</option>
-                            <option value="saco">Saco</option>
-                            <option value="unidade">Unidade</option>
-                            <option value="litro">Litro</option>
-                            <option value="kg">Quilograma</option>
-                            <option value="m2">Metro²</option>
-                            <option value="m3">Metro³</option>
-                        </select>
-                    </div>
-                    <div className="flex items-end">
-                        <button className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700">
-                            Adicionar
-                        </button>
-                    </div>
-                </div>
-            </div>
+                        <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                            <p className="text-sm text-blue-800">
+                                Preço Base Atual: <span className="font-bold">R$ {selectedMaterialForOffer?.preco.toFixed(2)}</span>
+                            </p>
+                        </div>
 
-            {/* Lista de materiais */}
-            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200">
-                    <h4 className="text-base font-medium text-gray-900">Materiais Cadastrados</h4>
+                        <div className="mt-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Oferta</label>
+                                <div className="flex gap-4">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="offerType"
+                                            checked={offerType === 'percentage'}
+                                            onChange={() => setOfferType('percentage')}
+                                            className="text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <span className="text-sm text-gray-900">Porcentagem (%)</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="offerType"
+                                            checked={offerType === 'fixed'}
+                                            onChange={() => setOfferType('fixed')}
+                                            className="text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <span className="text-sm text-gray-900">Valor Fixo (R$)</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    {offerType === 'percentage' ? 'Desconto (%)' : 'Novo Preço (R$)'}
+                                </label>
+                                <input
+                                    type="number"
+                                    value={offerValue}
+                                    onChange={(e) => setOfferValue(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder={offerType === 'percentage' ? "Ex: 10" : "Ex: 19.90"}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="mt-8 flex justify-end gap-3">
+                            <button
+                                onClick={() => setOfferModalOpen(false)}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleSendOffer}
+                                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                            >
+                                Disparar Oferta
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Código</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Material</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grupo</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unidade</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {materials.map((material) => (
-                                <tr key={material.id} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{material.codigo}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{material.nome}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.grupo}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.unidade}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <div className="flex space-x-2">
-                                            <button className="text-blue-600 hover:text-blue-900">Editar</button>
-                                            <button className="text-red-600 hover:text-red-900">Excluir</button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            )}
         </div>
     );
 }

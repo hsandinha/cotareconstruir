@@ -19,7 +19,7 @@ export function Header() {
           <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 shadow-glow">
             <FontAwesomeIcon icon={faBuilding} className="text-lg text-white" />
           </span>
-          <span className="text-2xl font-bold text-white">Cotar e Construir</span>
+          <span className="text-2xl font-bold text-white">Cotar & Construir</span>
         </Link>
 
         <nav className="hidden items-center space-x-8 text-sm font-medium text-slate-200 md:flex">

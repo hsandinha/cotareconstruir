@@ -3,29 +3,24 @@
 import { useState } from "react";
 import { ClientProfileSection } from "../../../components/dashboard/client/ProfileSection";
 import { ClientWorksSection } from "../../../components/dashboard/client/WorksSection";
-import { ClientSolicitationSection } from "../../../components/dashboard/client/SolicitationSection";
-import { ClientComparativeSection } from "../../../components/dashboard/client/ComparativeSection";
-import { ClientApprovalSection } from "../../../components/dashboard/client/ApprovalSection";
 import { ClientOrderSection } from "../../../components/dashboard/client/OrderSection";
 import { ClientExploreSection } from "../../../components/dashboard/client/ExploreSection";
+import { ClientOpportunitiesSection } from "../../../components/dashboard/client/OpportunitiesSection";
+import { NotificationBell } from "../../../components/NotificationBell";
 
 export type TabId =
     | "perfil"
     | "obras"
-    | "solicitacao"
-    | "comparativo"
-    | "aprovacao"
-    | "oc"
-    | "explorar";
+    | "cotacao"
+    | "pedidos"
+    | "oportunidades";
 
 const tabs: { id: TabId; label: string }[] = [
     { id: "perfil", label: "Cadastro & Perfil" },
     { id: "obras", label: "Obras & Endereços" },
-    { id: "solicitacao", label: "Solicitação de Cotação" },
-    { id: "comparativo", label: "Mapa Comparativo" },
-    { id: "aprovacao", label: "Decisão e Aprovação" },
-    { id: "oc", label: "Ordem de Compra" },
-    { id: "explorar", label: "Pesquisa & Uso" },
+    { id: "cotacao", label: "Nova Cotação" },
+    { id: "pedidos", label: "Meus Pedidos" },
+    { id: "oportunidades", label: "Oportunidades" },
 ];
 
 export default function ClienteDashboard() {
@@ -37,16 +32,12 @@ export default function ClienteDashboard() {
                 return <ClientProfileSection />;
             case "obras":
                 return <ClientWorksSection />;
-            case "solicitacao":
-                return <ClientSolicitationSection />;
-            case "comparativo":
-                return <ClientComparativeSection />;
-            case "aprovacao":
-                return <ClientApprovalSection />;
-            case "oc":
-                return <ClientOrderSection />;
-            case "explorar":
+            case "cotacao":
                 return <ClientExploreSection />;
+            case "pedidos":
+                return <ClientOrderSection />;
+            case "oportunidades":
+                return <ClientOpportunitiesSection />;
             default:
                 return null;
         }
@@ -59,10 +50,11 @@ export default function ClienteDashboard() {
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex items-center justify-between h-16">
                         <div className="flex items-center">
-                            <span className="text-lg font-semibold text-gray-900">Cota</span>
-                            <span className="text-lg font-light text-gray-600 ml-1">Reconstruir</span>
+                            <span className="text-lg font-semibold text-gray-900">Cotar</span>
+                            <span className="text-lg font-light text-gray-600 ml-1">& Construir</span>
                         </div>
                         <div className="flex items-center space-x-4">
+                            <NotificationBell />
                             <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
                                 <span className="text-white text-sm font-medium">H</span>
                             </div>
@@ -81,8 +73,8 @@ export default function ClienteDashboard() {
                                 key={item.id}
                                 onClick={() => setTab(item.id)}
                                 className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${tab === item.id
-                                        ? 'border-blue-500 text-blue-600'
-                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                     }`}
                             >
                                 {item.label}

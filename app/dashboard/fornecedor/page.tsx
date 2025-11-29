@@ -3,26 +3,48 @@
 import { useState } from "react";
 import { SupplierProfileSection } from "../../../components/dashboard/supplier/ProfileSection";
 import { SupplierMaterialsSection } from "../../../components/dashboard/supplier/MaterialsSection";
-import { SupplierQuotationInboxSection } from "../../../components/dashboard/supplier/QuotationInboxSection";
-import { SupplierQuotationResponseSection } from "../../../components/dashboard/supplier/QuotationResponseSection";
-import { SupplierTransactionsSection } from "../../../components/dashboard/supplier/TransactionsSection";
-import { SupplierCommunicationSection } from "../../../components/dashboard/supplier/CommunicationSection";
+import { SupplierSalesSection } from "../../../components/dashboard/supplier/SalesSection";
+import { SupplierOffersSection } from "../../../components/dashboard/supplier/OffersSection";
+import { NotificationBell, type Notification } from "../../../components/NotificationBell";
 
 export type SupplierTabId =
     | "perfil"
     | "materiais"
-    | "consultas"
-    | "cotacao"
-    | "transacoes"
-    | "comunicacao";
+    | "vendas"
+    | "ofertas";
 
 const tabs: { id: SupplierTabId; label: string }[] = [
     { id: "perfil", label: "Cadastro & Perfil" },
-    { id: "materiais", label: "Materiais & Grupos" },
-    { id: "consultas", label: "Consultas Recebidas" },
-    { id: "cotacao", label: "Resposta à Cotação" },
-    { id: "transacoes", label: "Transações & Negócios" },
-    { id: "comunicacao", label: "Comunicação & Suporte" },
+    { id: "materiais", label: "Cadastro de Materiais" },
+    { id: "vendas", label: "Minhas Vendas" },
+    { id: "ofertas", label: "Minhas Ofertas" },
+];
+
+const supplierNotifications: Notification[] = [
+    {
+        id: "1",
+        title: "Nova Cotação Disponível",
+        message: "Cliente 'Cond. Ed. A. Nogueira' solicitou cotação para 'Fundações'.",
+        time: "10 min atrás",
+        read: false,
+        type: "success"
+    },
+    {
+        id: "2",
+        title: "Proposta Aceita",
+        message: "Sua proposta para o pedido #REQ-2025-001 foi aceita!",
+        time: "3 horas atrás",
+        read: false,
+        type: "success"
+    },
+    {
+        id: "3",
+        title: "Documentação Pendente",
+        message: "Atualize sua certidão negativa para continuar participando.",
+        time: "2 dias atrás",
+        read: true,
+        type: "warning"
+    }
 ];
 
 export default function FornecedorDashboard() {
@@ -34,14 +56,10 @@ export default function FornecedorDashboard() {
                 return <SupplierProfileSection />;
             case "materiais":
                 return <SupplierMaterialsSection />;
-            case "consultas":
-                return <SupplierQuotationInboxSection />;
-            case "cotacao":
-                return <SupplierQuotationResponseSection />;
-            case "transacoes":
-                return <SupplierTransactionsSection />;
-            case "comunicacao":
-                return <SupplierCommunicationSection />;
+            case "vendas":
+                return <SupplierSalesSection />;
+            case "ofertas":
+                return <SupplierOffersSection />;
             default:
                 return null;
         }
@@ -54,10 +72,11 @@ export default function FornecedorDashboard() {
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex items-center justify-between h-16">
                         <div className="flex items-center">
-                            <span className="text-lg font-semibold text-gray-900">Cota</span>
-                            <span className="text-lg font-light text-gray-600 ml-1">Reconstruir</span>
+                            <span className="text-lg font-semibold text-gray-900">Cotar</span>
+                            <span className="text-lg font-light text-gray-600 ml-1">& Construir</span>
                         </div>
                         <div className="flex items-center space-x-4">
+                            <NotificationBell initialNotifications={supplierNotifications} />
                             <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center">
                                 <span className="text-white text-sm font-medium">F</span>
                             </div>
@@ -76,8 +95,8 @@ export default function FornecedorDashboard() {
                                 key={item.id}
                                 onClick={() => setTab(item.id)}
                                 className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${tab === item.id
-                                        ? 'border-green-500 text-green-600'
-                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    ? 'border-green-500 text-green-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                     }`}
                             >
                                 {item.label}

@@ -96,7 +96,7 @@ export const clientProcess = [
 ] as const;
 
 export const supplierProcess = [
-  "Recebe demanda via Cotar e Construir.",
+  "Recebe demanda via Cotar & Construir.",
   "Preenche proposta diretamente na plataforma.",
   "Calcula frete por região com dados precisos.",
 ] as const;
@@ -215,6 +215,6 @@ export const ctaContent = {
 
 export const floatingWhatsApp = {
   phone: "5511999999999",
-  message: "Olá! Gostaria de falar com a Cotar e Construir.",
+  message: "Olá! Gostaria de falar com a Cotar & Construir.",
   label: "Fale pelo WhatsApp",
 } as const;
