@@ -57,6 +57,11 @@ interface SaleOrder {
         availability: string; // e.g., "Imediata", "5 dias"
         validity: string;
         paymentTerms?: string;
+        negotiation?: {
+            bestPrice: number;
+            currentPrice: number;
+            bestFreight: number;
+        };
     };
 }
 
@@ -65,9 +70,54 @@ export function SupplierSalesSection() {
     const [selectedOrder, setSelectedOrder] = useState<SaleOrder | null>(null);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
+    const [negotiationModal, setNegotiationModal] = useState<{
+        isOpen: boolean;
+        order: SaleOrder | null;
+        bestPrice: number;
+        currentPrice: number;
+        bestFreight: number;
+        discountPercent: number;
+    } | null>(null);
 
     // Mock Data
     const [orders, setOrders] = useState<SaleOrder[]>([
+        {
+            id: "REQ-2025-004",
+            clientCode: "Cliente W-004",
+            workName: "Obra Residencial - Casa Alto Padrão",
+            location: {
+                neighborhood: "Jardins",
+                city: "São Paulo",
+                state: "SP",
+                fullAddress: "Rua Augusta, 1234"
+            },
+            deliverySchedule: {
+                monday: { enabled: true, startTime: "07:00", endTime: "16:00" },
+                tuesday: { enabled: true, startTime: "07:00", endTime: "16:00" },
+                wednesday: { enabled: true, startTime: "07:00", endTime: "16:00" },
+                thursday: { enabled: true, startTime: "07:00", endTime: "16:00" },
+                friday: { enabled: true, startTime: "07:00", endTime: "16:00" },
+                saturday: { enabled: false, startTime: "08:00", endTime: "12:00" },
+                sunday: { enabled: false, startTime: "08:00", endTime: "12:00" },
+            },
+            status: "negotiating",
+            createdAt: "2025-11-29 10:30",
+            items: [
+                { id: 1, name: "Madeirite 12mm res. fenólico", quantity: 50, unit: "unid" },
+                { id: 2, name: "Pontalete de pinus 7x7 c/ 3m", quantity: 50, unit: "unid" },
+                { id: 3, name: "Sarrafão de pinus 10cm c/ 3m", quantity: 10, unit: "unid" }
+            ],
+            proposal: {
+                freight: 0,
+                availability: "Em estoque",
+                validity: "2025-12-10",
+                negotiation: {
+                    bestPrice: 1544.00,
+                    currentPrice: 1634.00,
+                    bestFreight: 0
+                }
+            }
+        },
         {
             id: "REQ-2025-001",
             clientCode: "Cliente X-001",
@@ -271,29 +321,63 @@ export function SupplierSalesSection() {
                     {filteredOrders.map((order) => (
                         <div
                             key={order.id}
-                            onClick={() => handleOpenOrder(order)}
+                            onClick={() => {
+                                const negotiationData = order.proposal?.negotiation;
+                                if (negotiationData) {
+                                    const suggestedDiscount = Math.max(
+                                        0,
+                                        Number(
+                                            (
+                                                ((negotiationData.currentPrice - negotiationData.bestPrice) /
+                                                    negotiationData.currentPrice) *
+                                                100
+                                            ).toFixed(2)
+                                        )
+                                    );
+
+                                    setNegotiationModal({
+                                        isOpen: true,
+                                        order,
+                                        bestPrice: negotiationData.bestPrice,
+                                        currentPrice: negotiationData.currentPrice,
+                                        bestFreight: negotiationData.bestFreight,
+                                        discountPercent: suggestedDiscount
+                                    });
+                                    return;
+                                }
+
+                                handleOpenOrder(order);
+                            }}
                             className={`
                                 cursor-pointer rounded-xl border p-4 transition-all hover:shadow-md
-                                ${selectedOrder?.id === order.id
+                                ${order.proposal?.negotiation ? "border-amber-500 bg-gradient-to-r from-amber-50 to-orange-50 ring-2 ring-amber-300" : ""}
+                                ${selectedOrder?.id === order.id && !order.proposal?.negotiation
                                     ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500"
-                                    : "border-gray-200 bg-white"
+                                    : !order.proposal?.negotiation ? "border-gray-200 bg-white" : ""
                                 }
                             `}
                         >
                             <div className="flex justify-between items-start mb-2">
                                 <span className="text-xs font-semibold text-gray-500">{order.id}</span>
-                                <span className={`
-                                    inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                    ${order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : ''}
-                                    ${order.status === 'approved' ? 'bg-green-100 text-green-800' : ''}
-                                    ${order.status === 'negotiating' ? 'bg-blue-100 text-blue-800' : ''}
-                                    ${order.status === 'responded' ? 'bg-purple-100 text-purple-800' : ''}
-                                `}>
-                                    {order.status === 'pending' && 'Nova Cotação'}
-                                    {order.status === 'approved' && 'Aprovado'}
-                                    {order.status === 'negotiating' && 'Negociando'}
-                                    {order.status === 'responded' && 'Enviada'}
-                                </span>
+                                <div className="flex gap-1">
+                                    {order.proposal?.negotiation && (
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500 text-white animate-pulse">
+                                            🔔 Negociar
+                                        </span>
+                                    )}
+                                    <span className={`
+                                        inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                        ${order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : ''}
+                                        ${order.status === 'approved' ? 'bg-green-100 text-green-800' : ''}
+                                        ${order.status === 'negotiating' ? 'bg-blue-100 text-blue-800' : ''}
+                                        ${order.status === 'responded' ? 'bg-purple-100 text-purple-800' : ''}
+                                    `}>
+                                        {order.status === 'pending' && 'Nova Cotação'}
+                                        {order.status === 'approved' && 'Aprovado'}
+                                        {order.status === 'negotiating' && 'Negociando'}
+                                        {order.status === 'responded' && 'Enviada'}
+                                    </span>
+                                </div>
                             </div>
                             <h4 className="text-sm font-bold text-gray-900 mb-1">
                                 {order.status === 'approved' ? order.clientName : order.clientCode}
@@ -533,6 +617,165 @@ export function SupplierSalesSection() {
                     initialMessage={`Olá! Recebemos sua proposta para o pedido #${selectedOrder.id}. Podemos negociar alguns detalhes?`}
                 />
             )}
+
+            {/* Modal de Negociação */}
+            {negotiationModal?.isOpen && (() => {
+                const { order, bestPrice, currentPrice, bestFreight, discountPercent } = negotiationModal;
+                const defaultDiscount = Math.max(
+                    0,
+                    Number((((currentPrice - bestPrice) / currentPrice) * 100).toFixed(2))
+                );
+                const effectiveDiscount = Number.isFinite(discountPercent) ? discountPercent : defaultDiscount;
+                const merchandiseWithDiscount = currentPrice * (1 - effectiveDiscount / 100);
+                const currentFreight = order?.proposal?.freight || 0;
+                const totalWithDiscount = merchandiseWithDiscount + currentFreight;
+                const savingsValue = currentPrice - merchandiseWithDiscount;
+                const freightDelta = currentFreight - bestFreight;
+                const differenceValue = currentPrice - bestPrice;
+
+                const handleDiscountChange = (value: string) => {
+                    const parsed = Number(value);
+                    setNegotiationModal({
+                        ...negotiationModal,
+                        discountPercent: Number.isFinite(parsed) ? parsed : 0
+                    });
+                };
+
+                return (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-xl w-full shadow-2xl">
+                            <div className="flex items-start justify-between mb-6">
+                                <div>
+                                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-500">Negociação aberta</p>
+                                    <h3 className="text-2xl font-bold text-gray-900">Proposta de Negociação</h3>
+                                </div>
+                                <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-3 py-1 rounded-full">#{order?.id}</span>
+                            </div>
+
+                            <div className="space-y-5 mb-8">
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                        <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Melhor preço</p>
+                                        <p className="text-2xl font-bold text-slate-900 mt-1">R$ {bestPrice.toFixed(2)}</p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                        <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Seu preço</p>
+                                        <p className="text-2xl font-bold text-slate-900 mt-1">R$ {currentPrice.toFixed(2)}</p>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-2xl border border-gray-200 bg-white p-4 flex flex-wrap gap-4 items-center justify-between">
+                                    <div>
+                                        <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Diferença atual</p>
+                                        <p className="text-2xl font-bold text-gray-900 mt-1">
+                                            {`${differenceValue >= 0 ? '+' : '-'}R$ ${Math.abs(differenceValue).toFixed(2)}`}
+                                        </p>
+                                        <p className="text-xs text-gray-500 mt-1">Meta: aproximar-se do melhor preço</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-xs text-gray-500">Desconto sugerido</p>
+                                        <p className="text-xl font-bold text-gray-900">{defaultDiscount.toFixed(2)}%</p>
+                                    </div>
+                                </div>
+
+                                <div className="border border-gray-200 rounded-2xl p-4 bg-gray-50">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <p className="text-sm font-semibold text-gray-700">Ajustar desconto</p>
+                                        <span className="text-xs text-gray-500">Personalize o percentual</span>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="relative flex-1">
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                step="0.5"
+                                                value={Number(effectiveDiscount.toFixed(2))}
+                                                onChange={(e) => handleDiscountChange(e.target.value)}
+                                                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-2xl text-lg font-bold text-center text-gray-900 focus:ring-2 focus:ring-blue-200 focus:border-blue-300 bg-white"
+                                            />
+                                            <span className="absolute inset-y-0 right-4 flex items-center text-sm font-semibold text-gray-600">%</span>
+                                        </div>
+                                        <div className="hidden sm:block text-right">
+                                            <p className="text-[11px] uppercase text-gray-500 font-semibold">Mercadoria</p>
+                                            <p className="text-lg font-bold text-gray-900">R$ {merchandiseWithDiscount.toFixed(2)}</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="rounded-2xl border border-slate-200 p-4 bg-white shadow-sm">
+                                        <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Seu frete</p>
+                                        <p className="text-2xl font-bold text-slate-900 mt-1">R$ {currentFreight.toFixed(2)}</p>
+                                        {freightDelta > 0 && (
+                                            <p className="text-xs text-amber-600 mt-1">+R$ {freightDelta.toFixed(2)} em relação ao melhor frete</p>
+                                        )}
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200 p-4 bg-slate-50 shadow-inner">
+                                        <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Melhor frete</p>
+                                        <p className="text-2xl font-bold text-slate-900 mt-1">R$ {bestFreight.toFixed(2)}</p>
+                                        {freightDelta <= 0 && (
+                                            <p className="text-xs text-emerald-600 mt-1">Você já possui o melhor frete</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 shadow-sm">
+                                    <p className="text-[11px] font-semibold text-blue-600 uppercase tracking-wide">Total final estimado</p>
+                                    <p className="text-4xl font-black text-blue-700 mt-2">R$ {totalWithDiscount.toFixed(2)}</p>
+                                    {savingsValue > 0 && (
+                                        <p className="text-xs text-blue-700 font-semibold mt-1">
+                                            Economia na mercadoria: R$ {savingsValue.toFixed(2)}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-3">
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <button
+                                        onClick={() => {
+                                            alert(`✅ Proposta aceita!\n\nValor com desconto: R$ ${merchandiseWithDiscount.toFixed(2)}\nDesconto: ${effectiveDiscount.toFixed(2)}%\nFrete: R$ ${currentFreight.toFixed(2)}\nTotal: R$ ${totalWithDiscount.toFixed(2)}\n\nO cliente será notificado.`);
+                                            setOrders(orders.map(o =>
+                                                o.id === order?.id
+                                                    ? { ...o, status: 'approved' as SaleStatus, proposal: { ...o.proposal!, negotiation: undefined } }
+                                                    : o
+                                            ));
+                                            setNegotiationModal(null);
+                                        }}
+                                        className="flex-1 px-4 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white text-base font-semibold rounded-2xl shadow-md hover:from-emerald-600 hover:to-green-700 transition-colors"
+                                    >
+                                        ✓ Aprovar
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            const justification = prompt('Por favor, informe o motivo da recusa:');
+                                            if (justification) {
+                                                alert(`❌ Proposta recusada.\n\nMotivo: ${justification}\n\nO cliente será notificado e poderá negociar com outro fornecedor.`);
+                                                setOrders(orders.map(o =>
+                                                    o.id === order?.id
+                                                        ? { ...o, status: 'cancelled' as SaleStatus, proposal: { ...o.proposal!, negotiation: undefined } }
+                                                        : o
+                                                ));
+                                                setNegotiationModal(null);
+                                            }
+                                        }}
+                                        className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white text-base font-semibold rounded-2xl shadow-md transition-colors"
+                                    >
+                                        ✗ Recusar
+                                    </button>
+                                </div>
+                                <button
+                                    onClick={() => setNegotiationModal(null)}
+                                    className="w-full px-4 py-2 text-gray-500 hover:text-gray-700 text-sm font-medium"
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 }

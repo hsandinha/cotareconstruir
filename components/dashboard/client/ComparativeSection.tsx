@@ -15,6 +15,13 @@ export function ClientComparativeSection() {
     const [selectedSuppliers, setSelectedSuppliers] = useState<{ [itemId: number]: SupplierKey }>({});
     const [view, setView] = useState<"map" | "oc">("map");
     const [chatRecipient, setChatRecipient] = useState<string | null>(null);
+    const [rejectedSuppliers, setRejectedSuppliers] = useState<SupplierKey[]>([]);
+    const [negotiationModal, setNegotiationModal] = useState<{
+        isOpen: boolean;
+        supplier: any;
+        step: 'initial' | 'discount' | 'freight' | 'closed';
+        discountPercent: number;
+    } | null>(null);
 
     function bestSupplier(rowId: number): SupplierKey | null {
         const row = comparativeRows.find((item) => item.id === rowId);
@@ -60,7 +67,13 @@ export function ClientComparativeSection() {
     }
 
     function handleSelectBestWithFreight() {
-        // Calcular total com frete para cada fornecedor
+        // Calcular melhor total considerando apenas os itens no "carrinho"
+        // Regra do carrinho: se houver seleções atuais, usa esses itens; senão, considera todos os itens
+        const cartItemIds = Object.keys(selectedSuppliers).length > 0
+            ? Object.keys(selectedSuppliers).map((id) => Number(id))
+            : comparativeRows.map((row) => row.id);
+
+        // Calcular total com frete SOMENTE para fornecedores que cotaram TODOS os itens do carrinho
         const freightCosts: { [key in SupplierKey]: number } = {
             fornecedorA: 80,
             fornecedorB: 0,
@@ -72,7 +85,23 @@ export function ClientComparativeSection() {
         let bestTotalWithFreight: number = Infinity;
 
         supplierKeys.forEach((key) => {
-            const merchandiseTotal = columnTotal(key);
+            // Verificar cobertura total dos itens do carrinho
+            const coversAllItems = cartItemIds.every((rowId) => {
+                const row = comparativeRows.find((r) => r.id === rowId);
+                if (!row) return false;
+                return !!row.fornecedores[key].total;
+            });
+            if (!coversAllItems) {
+                return; // ignora fornecedores que não cotaram todos os itens
+            }
+
+            // Somar apenas os itens do carrinho para este fornecedor
+            const merchandiseTotal = cartItemIds
+                .map((rowId) => {
+                    const row = comparativeRows.find((r) => r.id === rowId)!;
+                    return row.fornecedores[key].total || 0;
+                })
+                .reduce((sum, v) => sum + v, 0);
             const totalWithFreight = merchandiseTotal + freightCosts[key];
             if (totalWithFreight < bestTotalWithFreight) {
                 bestTotalWithFreight = totalWithFreight;
@@ -80,16 +109,17 @@ export function ClientComparativeSection() {
             }
         });
 
-        // Selecionar todos os itens do melhor fornecedor
-        if (bestSupplierKey) {
-            const newSelections: { [itemId: number]: SupplierKey } = {};
-            comparativeRows.forEach((row) => {
-                if (row.fornecedores[bestSupplierKey!].total) {
-                    newSelections[row.id] = bestSupplierKey!;
-                }
-            });
-            setSelectedSuppliers(newSelections);
+        if (!bestSupplierKey) {
+            alert("Para 'Melhor Total com Frete', é necessário um fornecedor que tenha cotado todos os itens do carrinho.");
+            return;
         }
+
+        // Selecionar os itens do carrinho para o melhor fornecedor (cobertura total já garantida)
+        const newSelections: { [itemId: number]: SupplierKey } = {};
+        cartItemIds.forEach((rowId) => {
+            newSelections[rowId] = bestSupplierKey!;
+        });
+        setSelectedSuppliers(newSelections);
     }
 
     function handleGenerateOC() {
@@ -217,6 +247,194 @@ export function ClientComparativeSection() {
                     </button>
                 </div>
             </div>
+
+            {/* Delta Comparison Card */}
+            {(() => {
+                // Calcular soma dos melhores preços por item (SEM frete)
+                const freightCosts: { [key in SupplierKey]: number } = {
+                    fornecedorA: 80,
+                    fornecedorB: 0,
+                    fornecedorC: 100,
+                    fornecedorD: 0,
+                };
+
+                let bestPerItemTotal = 0;
+
+                comparativeRows.forEach((row) => {
+                    const best = bestSupplier(row.id);
+                    if (best && row.fornecedores[best].total) {
+                        bestPerItemTotal += row.fornecedores[best].total;
+                    }
+                });
+
+                // Calcular melhor preço com frete (fornecedor único com todos os itens)
+                let bestWithFreightMerchandise = Infinity;
+                let bestWithFreightSupplier: SupplierKey | null = null;
+                let bestWithFreightCost = 0;
+
+                supplierKeys.forEach((key) => {
+                    const coversAllItems = comparativeRows.every((row) => !!row.fornecedores[key].total);
+                    if (!coversAllItems) return;
+
+                    const merchandiseTotal = columnTotal(key);
+                    const totalWithFreight = merchandiseTotal + freightCosts[key];
+                    if (totalWithFreight < bestWithFreightMerchandise + bestWithFreightCost) {
+                        bestWithFreightMerchandise = merchandiseTotal;
+                        bestWithFreightSupplier = key;
+                        bestWithFreightCost = freightCosts[key];
+                    }
+                });
+
+                if (!bestWithFreightSupplier) return null;
+
+                const bestWithFreightTotal = bestWithFreightMerchandise + bestWithFreightCost;
+                const delta = bestPerItemTotal - bestWithFreightMerchandise;
+                const percentSavings = bestPerItemTotal > 0 ? (delta / bestPerItemTotal) * 100 : 0;
+                const isBetterDeal = bestWithFreightMerchandise < bestPerItemTotal;
+
+                return (
+                    <div className="mt-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-6 shadow-sm">
+                        <h3 className="text-sm font-bold text-gray-900 uppercase mb-4">Análise de Economia</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div className="bg-white rounded-xl p-4 border border-gray-200">
+                                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Melhores Preços por Item</p>
+                                <p className="text-2xl font-bold text-gray-900">R$ {bestPerItemTotal.toFixed(2)}</p>
+                                <p className="text-xs text-gray-500 mt-1">Múltiplos fornecedores (sem frete)</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-4 border border-gray-200">
+                                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Fornecedor Único</p>
+                                <p className="text-2xl font-bold text-blue-600">R$ {bestWithFreightMerchandise.toFixed(2)}</p>
+                                <p className="text-xs text-gray-500 mt-1">{supplierColumns.find(s => s.key === bestWithFreightSupplier)?.label} (sem frete)</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-4 border border-gray-200">
+                                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Frete</p>
+                                <p className="text-2xl font-bold text-gray-900">R$ {bestWithFreightCost.toFixed(2)}</p>
+                                <p className="text-xs text-gray-500 mt-1">Total com frete: R$ {bestWithFreightTotal.toFixed(2)}</p>
+                            </div>
+                            <div className={`bg-white rounded-xl p-4 border-2 ${isBetterDeal ? 'border-green-400' : 'border-red-400'}`}>
+                                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Economia na Mercadoria</p>
+                                <p className={`text-2xl font-bold ${isBetterDeal ? 'text-green-600' : 'text-red-600'}`}>
+                                    {isBetterDeal ? '-' : '+'} R$ {Math.abs(delta).toFixed(2)}
+                                </p>
+                                <p className={`text-xs font-semibold mt-1 ${isBetterDeal ? 'text-green-600' : 'text-red-600'}`}>
+                                    {isBetterDeal ? '↓' : '↑'} {Math.abs(percentSavings).toFixed(1)}%
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Negotiation Buttons - Prioridade por fornecedor único mais barato */}
+                        <div className="mt-4">
+                            <p className="text-xs text-gray-600 mb-3">
+                                💡 Negocie com fornecedores na ordem de prioridade. O próximo botão aparece apenas se o anterior recusar:
+                            </p>
+                            <div className="flex flex-wrap gap-3">
+                                {(() => {
+                                    // Criar lista de fornecedores com todos os itens cotados
+                                    const allCoveringSuppliers = supplierKeys
+                                        .filter((key) => {
+                                            const coversAllItems = comparativeRows.every((row) => !!row.fornecedores[key].total);
+                                            return coversAllItems;
+                                        })
+                                        .map((key) => {
+                                            const supplierMerchandise = columnTotal(key);
+                                            const supplierFreight = freightCosts[key];
+                                            const supplierTotal = supplierMerchandise + supplierFreight;
+                                            const deltaMerchandise = supplierMerchandise - bestPerItemTotal;
+                                            const deltaTotal = supplierTotal - bestWithFreightTotal;
+
+                                            return {
+                                                key,
+                                                label: supplierColumns.find(s => s.key === key)?.label || key,
+                                                merchandise: supplierMerchandise,
+                                                freight: supplierFreight,
+                                                total: supplierTotal,
+                                                deltaMerchandise,
+                                                deltaTotal,
+                                            };
+                                        })
+                                        // Ordenar por total com frete (menor primeiro)
+                                        .sort((a, b) => a.total - b.total);
+
+                                    // Calcular o valor de referência ideal (melhor preço por item + melhor frete)
+                                    const idealTotal = bestPerItemTotal + Math.min(...Object.values(freightCosts).filter((_, i) => {
+                                        const key = supplierKeys[i];
+                                        return comparativeRows.every((row) => !!row.fornecedores[key].total);
+                                    }));
+
+                                    // Ordenar fornecedores por delta em relação ao ideal (menor delta = mais próximo do ideal)
+                                    const suppliersToNegotiate = allCoveringSuppliers
+                                        .map(s => ({
+                                            ...s,
+                                            deltaFromIdeal: s.total - idealTotal
+                                        }))
+                                        .sort((a, b) => a.deltaFromIdeal - b.deltaFromIdeal);
+
+                                    // Encontrar o índice do primeiro não rejeitado
+                                    const firstActiveIndex = suppliersToNegotiate.findIndex(
+                                        (s) => !rejectedSuppliers.includes(s.key)
+                                    );
+
+                                    return suppliersToNegotiate.map((supplier, index) => {
+                                        const isActive = index === firstActiveIndex;
+                                        const isRejected = rejectedSuppliers.includes(supplier.key);
+
+                                        // Só mostrar se for ativo ou já foi rejeitado (para histórico)
+                                        if (!isActive && !isRejected) return null;
+
+                                        const message = `Olá ${supplier.label}! Você tem uma proposta para nosso pedido.\n\n` +
+                                            `📊 Comparação:\n` +
+                                            `• Melhores preços por item: R$ ${bestPerItemTotal.toFixed(2)}\n` +
+                                            `• Sua proposta: R$ ${supplier.merchandise.toFixed(2)} (${supplier.deltaMerchandise >= 0 ? '+' : ''}R$ ${supplier.deltaMerchandise.toFixed(2)})\n` +
+                                            `• Melhor fornecedor único: R$ ${bestWithFreightMerchandise.toFixed(2)} (${supplierColumns.find(s => s.key === bestWithFreightSupplier)?.label})\n\n` +
+                                            `💰 Com frete:\n` +
+                                            `• Seu total: R$ ${supplier.total.toFixed(2)} (Frete: R$ ${supplier.freight.toFixed(2)})\n` +
+                                            `• Melhor total: R$ ${bestWithFreightTotal.toFixed(2)} (Frete: R$ ${bestWithFreightCost.toFixed(2)})\n` +
+                                            `• Diferença: R$ ${supplier.deltaTotal.toFixed(2)}\n\n` +
+                                            `Consegue igualar ou melhorar o valor de R$ ${bestPerItemTotal.toFixed(2)}?`;
+
+                                        if (isRejected) {
+                                            return (
+                                                <div
+                                                    key={supplier.key}
+                                                    className="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-500 text-sm font-medium rounded-lg"
+                                                >
+                                                    <span className="line-through">{supplier.label}</span>
+                                                    <span className="text-xs">Recusou</span>
+                                                </div>
+                                            );
+                                        }
+
+                                        return (
+                                            <div key={supplier.key} className="flex gap-2">
+                                                <button
+                                                    onClick={() => {
+                                                        alert(`📤 Proposta de negociação enviada para ${supplier.label}!\n\nO fornecedor receberá:\n• Melhor preço: R$ ${bestPerItemTotal.toFixed(2)}\n• Preço atual: R$ ${supplier.merchandise.toFixed(2)}\n• Diferença: +R$ ${supplier.deltaFromIdeal.toFixed(2)}\n\nAguarde a resposta do fornecedor.`);
+                                                        // Em um sistema real, aqui enviaria a proposta via API
+                                                    }}
+                                                    className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors ring-2 ring-amber-300"
+                                                >
+                                                    <ChatBubbleLeftRightIcon className="h-4 w-4" />
+                                                    ⭐ {supplier.label} (+R$ {supplier.deltaFromIdeal.toFixed(2)}) - Negociar
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setRejectedSuppliers([...rejectedSuppliers, supplier.key]);
+                                                        alert(`❌ ${supplier.label} marcado como recusado.\n\nO próximo fornecedor da lista aparecerá agora.`);
+                                                    }}
+                                                    className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-medium rounded-lg transition-colors"
+                                                    title="Marcar como recusado e passar para o próximo"
+                                                >
+                                                    Recusou
+                                                </button>
+                                            </div>
+                                        );
+                                    });
+                                })()}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-100">
                 <table className="min-w-full text-sm">

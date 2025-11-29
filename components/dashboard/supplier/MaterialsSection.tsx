@@ -16,12 +16,13 @@ export function SupplierMaterialsSection() {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedItems, setSelectedItems] = useState<number[]>([]);
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+    const [showAddForm, setShowAddForm] = useState(false);
 
     const [materials, setMaterials] = useState([
-        { id: 1, codigo: "ELE001", nome: "Cabo Flexível 2,5mm", grupo: "Instalações", unidade: "metro", preco: 2.50, status: "Ativo" },
-        { id: 2, codigo: "HID001", nome: "Tubo PVC 100mm", grupo: "Instalações", unidade: "metro", preco: 15.90, status: "Ativo" },
-        { id: 3, codigo: "AGR001", nome: "Cimento CP-II", grupo: "Estrutura", unidade: "saco", preco: 32.00, status: "Ativo" },
-        { id: 4, codigo: "REV001", nome: "Porcelanato 60x60", grupo: "Revestimentos", unidade: "m2", preco: 89.90, status: "Ativo" },
+        { id: 1, codigo: "ELE001", nome: "Cabo Flexível 2,5mm", grupo: "Instalações", unidade: "metro", preco: 2.50, status: "Ativo", estoque: 500, dataAtualizacao: new Date().toISOString() },
+        { id: 2, codigo: "HID001", nome: "Tubo PVC 100mm", grupo: "Instalações", unidade: "metro", preco: 15.90, status: "Ativo", estoque: 120, dataAtualizacao: new Date().toISOString() },
+        { id: 3, codigo: "AGR001", nome: "Cimento CP-II", grupo: "Estrutura", unidade: "saco", preco: 32.00, status: "Ativo", estoque: 80, dataAtualizacao: new Date().toISOString() },
+        { id: 4, codigo: "REV001", nome: "Porcelanato 60x60", grupo: "Revestimentos", unidade: "m2", preco: 89.90, status: "Ativo", estoque: 350, dataAtualizacao: new Date().toISOString() },
     ]);
 
     const [offerModalOpen, setOfferModalOpen] = useState(false);
@@ -97,6 +98,12 @@ export function SupplierMaterialsSection() {
         setOfferModalOpen(false);
     };
 
+    const handleUpdateStock = (id: number, value: number) => {
+        setMaterials((prev) =>
+            prev.map((m) => (m.id === id ? { ...m, estoque: Math.max(0, Number(value) || 0), dataAtualizacao: new Date().toISOString() } : m))
+        );
+    };
+
     const handleBulkDelete = () => {
         if (confirm(`Tem certeza que deseja excluir ${selectedItems.length} itens selecionados?`)) {
             setMaterials(materials.filter(m => !selectedItems.includes(m.id)));
@@ -132,9 +139,14 @@ export function SupplierMaterialsSection() {
                         <CloudArrowUpIcon className="h-5 w-5" />
                         Importar em Massa
                     </button>
-                    <button className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                    <button
+                        onClick={() => setShowAddForm((v) => !v)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                        aria-expanded={showAddForm}
+                        aria-controls="add-item-form"
+                    >
                         <PlusIcon className="h-5 w-5" />
-                        Novo Material
+                        {showAddForm ? 'Fechar' : 'Adicionar Item'}
                     </button>
                 </div>
             </div>
@@ -157,85 +169,105 @@ export function SupplierMaterialsSection() {
                 </div>
             </div>
 
-            {/* Main Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Form Section */}
-                <div className="lg:col-span-1">
-                    <div className="bg-white border border-gray-200 rounded-xl p-6 sticky top-6">
-                        <h4 className="text-lg font-semibold text-gray-900 mb-4">Adicionar Item</h4>
-                        <form className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Grupo / Categoria *</label>
-                                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="">Selecione...</option>
-                                    <option value="Preliminares">Preliminares</option>
-                                    <option value="Terraplenagem">Terraplenagem</option>
-                                    <option value="Fundações">Fundações</option>
-                                    <option value="Estrutura">Estrutura</option>
-                                    <option value="Instalações">Instalações</option>
-                                    <option value="Alvenaria e Vedações">Alvenaria e Vedações</option>
-                                    <option value="Cobertura">Cobertura</option>
-                                    <option value="Esquadrias">Esquadrias</option>
-                                    <option value="Revestimentos">Revestimentos</option>
-                                    <option value="Pintura">Pintura</option>
-                                    <option value="Acabamentos Finais">Acabamentos Finais</option>
-                                    <option value="Urbanização">Urbanização</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Material *</label>
-                                <input
-                                    type="text"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    placeholder="Ex: Cimento CP-II"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
+            {/* Main Content - stacked sections */}
+            <div className="grid grid-cols-1 gap-6">
+                {/* Form Section (collapsible) */}
+                {showAddForm && (
+                    <div id="add-item-form">
+                        <div className="bg-white border border-gray-200 rounded-xl p-6">
+                            <h4 className="text-lg font-semibold text-gray-900 mb-4">Adicionar Item</h4>
+                            <form className="space-y-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Unidade *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Grupo / Categoria *</label>
                                     <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                        <option value="un">Unidade</option>
-                                        <option value="m">Metro</option>
-                                        <option value="m2">m²</option>
-                                        <option value="m3">m³</option>
-                                        <option value="kg">Kg</option>
-                                        <option value="sc">Saco</option>
-                                        <option value="lt">Litro</option>
+                                        <option value="">Selecione...</option>
+                                        <option value="Preliminares">Preliminares</option>
+                                        <option value="Terraplenagem">Terraplenagem</option>
+                                        <option value="Fundações">Fundações</option>
+                                        <option value="Estrutura">Estrutura</option>
+                                        <option value="Instalações">Instalações</option>
+                                        <option value="Alvenaria e Vedações">Alvenaria e Vedações</option>
+                                        <option value="Cobertura">Cobertura</option>
+                                        <option value="Esquadrias">Esquadrias</option>
+                                        <option value="Revestimentos">Revestimentos</option>
+                                        <option value="Pintura">Pintura</option>
+                                        <option value="Acabamentos Finais">Acabamentos Finais</option>
+                                        <option value="Urbanização">Urbanização</option>
                                     </select>
                                 </div>
+
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Preço Base (R$)</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Material *</label>
                                     <input
-                                        type="number"
-                                        step="0.01"
+                                        type="text"
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                        placeholder="0,00"
+                                        placeholder="Ex: Cimento CP-II"
                                     />
                                 </div>
-                            </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Código Interno (SKU)</label>
-                                <input
-                                    type="text"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    placeholder="Opcional"
-                                />
-                            </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Unidade *</label>
+                                        <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                            <option value="un">Unidade</option>
+                                            <option value="m">Metro</option>
+                                            <option value="m2">m²</option>
+                                            <option value="m3">m³</option>
+                                            <option value="kg">Kg</option>
+                                            <option value="sc">Saco</option>
+                                            <option value="lt">Litro</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Preço (R$)</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            placeholder="0,00"
+                                        />
+                                    </div>
+                                </div>
 
-                            <div className="pt-2">
-                                <button type="button" className="w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors">
-                                    Cadastrar Material
-                                </button>
-                            </div>
-                        </form>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Estoque Atual</label>
+                                        <input
+                                            type="number"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            placeholder="Ex: 100"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Data de Atualização</label>
+                                        <input
+                                            type="date"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Código Interno (SKU)</label>
+                                    <input
+                                        type="text"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Opcional"
+                                    />
+                                </div>
+
+                                <div className="pt-2">
+                                    <button type="button" className="w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors">
+                                        Cadastrar Material
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* List Section */}
-                <div className="lg:col-span-2">
+                <div>
                     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                         <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-gray-200">
@@ -295,6 +327,16 @@ export function SupplierMaterialsSection() {
                                             </div>
                                         </th>
                                         <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                                        >
+                                            Estoque
+                                        </th>
+                                        <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                                        >
+                                            Atualizado
+                                        </th>
+                                        <th
                                             className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                                             onClick={() => handleSort('status')}
                                         >
@@ -333,6 +375,29 @@ export function SupplierMaterialsSection() {
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                                                 R$ {material.preco.toFixed(2)}
                                             </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={material.estoque ?? 0}
+                                                    onChange={(e) => handleUpdateStock(material.id, Number(e.target.value))}
+                                                    className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                {(() => {
+                                                    const updatedAt = material.dataAtualizacao ? new Date(material.dataAtualizacao) : null;
+                                                    if (!updatedAt) return <span className="text-xs text-gray-500">—</span>;
+                                                    const diffMs = Date.now() - updatedAt.getTime();
+                                                    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                                                    const stale = diffDays >= 30;
+                                                    return (
+                                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${stale ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                                                            {diffDays === 0 ? 'Hoje' : `${diffDays}d`}
+                                                        </span>
+                                                    );
+                                                })()}
+                                            </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                                     {material.status}
@@ -365,6 +430,67 @@ export function SupplierMaterialsSection() {
                                 Nenhum material encontrado.
                             </div>
                         )}
+                    </div>
+                </div>
+
+                {/* Out of Stock Section */}
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                    <div className="p-4 flex items-center justify-between border-b border-gray-100">
+                        <h4 className="text-sm font-semibold text-gray-900">Sem Estoque</h4>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            {materials.filter((m) => (m.estoque ?? 0) === 0).length} itens
+                        </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grupo</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unidade</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Preço</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Atualizado</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {materials.filter((m) => (m.estoque ?? 0) === 0).map((material) => (
+                                    <tr key={`oos-${material.id}`} className="hover:bg-gray-50 transition-colors">
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-medium text-gray-900">{material.nome}</span>
+                                                <span className="text-xs text-gray-500">SKU: {material.codigo}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                                {material.grupo}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-sm text-gray-600">{material.unidade}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-600">R$ {material.preco.toFixed(2)}</td>
+                                        <td className="px-6 py-4">
+                                            {(() => {
+                                                const updatedAt = material.dataAtualizacao ? new Date(material.dataAtualizacao) : null;
+                                                if (!updatedAt) return <span className="text-xs text-gray-500">—</span>;
+                                                const diffMs = Date.now() - updatedAt.getTime();
+                                                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                                                const stale = diffDays >= 30;
+                                                return (
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${stale ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
+                                                        {diffDays === 0 ? 'Hoje' : `${diffDays}d`}
+                                                    </span>
+                                                );
+                                            })()}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {materials.filter((m) => (m.estoque ?? 0) === 0).length === 0 && (
+                                    <tr>
+                                        <td colSpan={5} className="px-6 py-8 text-center text-sm text-gray-500">Nenhum item sem estoque.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
