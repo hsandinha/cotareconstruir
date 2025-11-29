@@ -471,83 +471,83 @@ export function ClientWorksSection() {
                         {!collapsedWorks[work.id] && (
                             work.stages && work.stages.length > 0 ? (
                                 <div className="p-6">
-                                <h4 className="text-sm font-semibold text-gray-900 mb-4">
-                                    Cronograma de Etapas ({work.stages.length})
-                                </h4>
+                                    <h4 className="text-sm font-semibold text-gray-900 mb-4">
+                                        Cronograma de Etapas ({work.stages.length})
+                                    </h4>
 
-                                {Object.entries(getStagesByCategory(work.stages)).map(([category, stages]) => (
-                                    <div key={category} className="mb-6 last:mb-0">
-                                        <h5 className="text-xs font-semibold uppercase tracking-wide text-gray-600 mb-3 bg-gray-50 px-3 py-2 rounded">
-                                            {category}
-                                        </h5>
-                                        <div className="space-y-3">
-                                            {stages.map((stage) => (
-                                                <div
-                                                    key={stage.id}
-                                                    className={`rounded-lg border p-4 ${stage.isCompleted
-                                                        ? 'border-green-200 bg-green-50'
-                                                        : 'border-gray-200 bg-gray-50'
-                                                        }`}
-                                                >
-                                                    <div className="flex items-start justify-between">
-                                                        <div className="flex items-start space-x-3 flex-1">
-                                                            <button
-                                                                onClick={() => toggleStageCompletion(work.id, stage.id)}
-                                                                className={`mt-1 flex-shrink-0 ${stage.isCompleted
-                                                                    ? 'text-green-600'
-                                                                    : 'text-gray-400 hover:text-green-600'
-                                                                    }`}
-                                                            >
-                                                                <CheckCircleIcon className="h-6 w-6" />
-                                                            </button>
-                                                            <div className="flex-1">
-                                                                <h6 className={`text-sm font-medium ${stage.isCompleted
-                                                                    ? 'text-green-900 line-through'
-                                                                    : 'text-gray-900'
-                                                                    }`}>
-                                                                    {stage.name}
-                                                                </h6>
-                                                                <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                                                                    <div className="flex items-center space-x-2">
-                                                                        <CalendarIcon className="h-4 w-4 text-blue-600" />
-                                                                        <div>
-                                                                            <span className="text-gray-600">Previsão: </span>
-                                                                            <span className="font-medium text-gray-900">
-                                                                                {formatDate(stage.predictedDate)}
-                                                                            </span>
+                                    {Object.entries(getStagesByCategory(work.stages)).map(([category, stages]) => (
+                                        <div key={category} className="mb-6 last:mb-0">
+                                            <h5 className="text-xs font-semibold uppercase tracking-wide text-gray-600 mb-3 bg-gray-50 px-3 py-2 rounded">
+                                                {category}
+                                            </h5>
+                                            <div className="space-y-3">
+                                                {stages.map((stage) => (
+                                                    <div
+                                                        key={stage.id}
+                                                        className={`rounded-lg border p-4 ${stage.isCompleted
+                                                            ? 'border-green-200 bg-green-50'
+                                                            : 'border-gray-200 bg-gray-50'
+                                                            }`}
+                                                    >
+                                                        <div className="flex items-start justify-between">
+                                                            <div className="flex items-start space-x-3 flex-1">
+                                                                <button
+                                                                    onClick={() => toggleStageCompletion(work.id, stage.id)}
+                                                                    className={`mt-1 flex-shrink-0 ${stage.isCompleted
+                                                                        ? 'text-green-600'
+                                                                        : 'text-gray-400 hover:text-green-600'
+                                                                        }`}
+                                                                >
+                                                                    <CheckCircleIcon className="h-6 w-6" />
+                                                                </button>
+                                                                <div className="flex-1">
+                                                                    <h6 className={`text-sm font-medium ${stage.isCompleted
+                                                                        ? 'text-green-900 line-through'
+                                                                        : 'text-gray-900'
+                                                                        }`}>
+                                                                        {stage.name}
+                                                                    </h6>
+                                                                    <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                                                                        <div className="flex items-center space-x-2">
+                                                                            <CalendarIcon className="h-4 w-4 text-blue-600" />
+                                                                            <div>
+                                                                                <span className="text-gray-600">Previsão: </span>
+                                                                                <span className="font-medium text-gray-900">
+                                                                                    {formatDate(stage.predictedDate)}
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex items-center space-x-2">
+                                                                            <ClockIcon className="h-4 w-4 text-orange-600" />
+                                                                            <div>
+                                                                                <span className="text-gray-600">Cotações a partir de: </span>
+                                                                                <span className="font-medium text-orange-700">
+                                                                                    {formatDate(calculateQuotationDate(stage.predictedDate, stage.quotationAdvanceDays))}
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex items-center space-x-2">
+                                                                            <div className="text-gray-600">
+                                                                                Antecedência:
+                                                                                <span className="ml-1 font-medium text-gray-900">
+                                                                                    {stage.quotationAdvanceDays} dias
+                                                                                </span>
+                                                                            </div>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="flex items-center space-x-2">
-                                                                        <ClockIcon className="h-4 w-4 text-orange-600" />
-                                                                        <div>
-                                                                            <span className="text-gray-600">Cotações a partir de: </span>
-                                                                            <span className="font-medium text-orange-700">
-                                                                                {formatDate(calculateQuotationDate(stage.predictedDate, stage.quotationAdvanceDays))}
-                                                                            </span>
+                                                                    {stage.isCompleted && stage.completedDate && (
+                                                                        <div className="mt-2 text-xs text-green-700">
+                                                                            ✓ Concluída em {formatDate(stage.completedDate)}
                                                                         </div>
-                                                                    </div>
-                                                                    <div className="flex items-center space-x-2">
-                                                                        <div className="text-gray-600">
-                                                                            Antecedência:
-                                                                            <span className="ml-1 font-medium text-gray-900">
-                                                                                {stage.quotationAdvanceDays} dias
-                                                                            </span>
-                                                                        </div>
-                                                                    </div>
+                                                                    )}
                                                                 </div>
-                                                                {stage.isCompleted && stage.completedDate && (
-                                                                    <div className="mt-2 text-xs text-green-700">
-                                                                        ✓ Concluída em {formatDate(stage.completedDate)}
-                                                                    </div>
-                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>
-                                                </div>
-                                            ))}
+                                                ))}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    ))}
                                 </div>
                             ) : (
                                 <div className="p-6 text-center text-gray-500">
