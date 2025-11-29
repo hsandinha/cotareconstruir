@@ -95,7 +95,16 @@ export function SupplierMaterialsSection() {
 
         alert(`Oferta relâmpago para "${selectedMaterialForOffer?.nome}" enviada com sucesso! \nCondição: ${message}`);
         setOfferModalOpen(false);
-    }; return (
+    };
+
+    const handleBulkDelete = () => {
+        if (confirm(`Tem certeza que deseja excluir ${selectedItems.length} itens selecionados?`)) {
+            setMaterials(materials.filter(m => !selectedItems.includes(m.id)));
+            setSelectedItems([]);
+        }
+    };
+
+    return (
         <div className="space-y-6">
             {/* Header & Actions */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -233,12 +242,24 @@ export function SupplierMaterialsSection() {
                                 <thead className="bg-gray-50">
                                     <tr>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-4">
-                                            <input
-                                                type="checkbox"
-                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                                onChange={handleSelectAll}
-                                                checked={filteredMaterials.length > 0 && selectedItems.length === filteredMaterials.length}
-                                            />
+                                            <div className="flex items-center gap-3">
+                                                <input
+                                                    type="checkbox"
+                                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                    onChange={handleSelectAll}
+                                                    checked={filteredMaterials.length > 0 && selectedItems.length === filteredMaterials.length}
+                                                />
+                                                {selectedItems.length > 0 && (
+                                                    <button
+                                                        onClick={handleBulkDelete}
+                                                        className="inline-flex items-center gap-1 px-2 py-1 bg-red-500 text-white text-xs font-medium rounded border border-white shadow-sm hover:bg-red-600 transition-all"
+                                                        title="Excluir Selecionados"
+                                                    >
+                                                        <TrashIcon className="h-3 w-3" />
+                                                        <span>{selectedItems.length}</span>
+                                                    </button>
+                                                )}
+                                            </div>
                                         </th>
                                         <th
                                             className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -267,7 +288,7 @@ export function SupplierMaterialsSection() {
                                             onClick={() => handleSort('preco')}
                                         >
                                             <div className="flex items-center gap-1">
-                                                Preço Base
+                                                Preço
                                                 {sortConfig?.key === 'preco' && (
                                                     sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-3 w-3" /> : <ArrowDownIcon className="h-3 w-3" />
                                                 )}
