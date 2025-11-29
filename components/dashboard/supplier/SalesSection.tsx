@@ -15,14 +15,31 @@ import {
 
 type SaleStatus = "pending" | "responded" | "negotiating" | "approved" | "completed" | "cancelled";
 
+type DaySchedule = {
+    enabled: boolean;
+    startTime: string;
+    endTime: string;
+};
+
 interface SaleOrder {
     id: string;
     clientCode: string;
     clientName?: string; // Revealed only when approved
+    workName?: string;
     location: {
         neighborhood: string;
         city: string;
         state: string;
+        fullAddress?: string;
+    };
+    deliverySchedule?: {
+        monday?: DaySchedule;
+        tuesday?: DaySchedule;
+        wednesday?: DaySchedule;
+        thursday?: DaySchedule;
+        friday?: DaySchedule;
+        saturday?: DaySchedule;
+        sunday?: DaySchedule;
     };
     items: {
         id: number;
@@ -39,6 +56,7 @@ interface SaleOrder {
         freight: number;
         availability: string; // e.g., "Imediata", "5 dias"
         validity: string;
+        paymentTerms?: string;
     };
 }
 
@@ -53,7 +71,22 @@ export function SupplierSalesSection() {
         {
             id: "REQ-2025-001",
             clientCode: "Cliente X-001",
-            location: { neighborhood: "Vila Madalena", city: "São Paulo", state: "SP" },
+            workName: "Cond. Ed. A. Nogueira",
+            location: {
+                neighborhood: "Vila Madalena",
+                city: "São Paulo",
+                state: "SP",
+                fullAddress: "Rua Harmonia, 123"
+            },
+            deliverySchedule: {
+                monday: { enabled: true, startTime: "08:00", endTime: "17:00" },
+                tuesday: { enabled: true, startTime: "08:00", endTime: "17:00" },
+                wednesday: { enabled: true, startTime: "08:00", endTime: "17:00" },
+                thursday: { enabled: true, startTime: "08:00", endTime: "17:00" },
+                friday: { enabled: true, startTime: "08:00", endTime: "17:00" },
+                saturday: { enabled: false, startTime: "08:00", endTime: "12:00" },
+                sunday: { enabled: false, startTime: "08:00", endTime: "12:00" },
+            },
             status: "pending",
             createdAt: "2025-11-29 14:30",
             deadline: "2025-12-01 18:00",
@@ -66,7 +99,22 @@ export function SupplierSalesSection() {
             id: "REQ-2025-002",
             clientCode: "Cliente Y-002",
             clientName: "Construtora ABC",
-            location: { neighborhood: "Pinheiros", city: "São Paulo", state: "SP" },
+            workName: "Edifício Residencial Santos Dumont",
+            location: {
+                neighborhood: "Pinheiros",
+                city: "São Paulo",
+                state: "SP",
+                fullAddress: "Av. Pedroso de Morais, 456"
+            },
+            deliverySchedule: {
+                monday: { enabled: true, startTime: "07:00", endTime: "16:00" },
+                tuesday: { enabled: true, startTime: "07:00", endTime: "16:00" },
+                wednesday: { enabled: true, startTime: "07:00", endTime: "16:00" },
+                thursday: { enabled: true, startTime: "07:00", endTime: "16:00" },
+                friday: { enabled: true, startTime: "07:00", endTime: "16:00" },
+                saturday: { enabled: true, startTime: "08:00", endTime: "12:00" },
+                sunday: { enabled: false, startTime: "08:00", endTime: "12:00" },
+            },
             status: "approved",
             createdAt: "2025-11-28 09:00",
             totalValue: 15420.50,
@@ -82,7 +130,22 @@ export function SupplierSalesSection() {
         {
             id: "REQ-2025-003",
             clientCode: "Cliente Z-003",
-            location: { neighborhood: "Itaim Bibi", city: "São Paulo", state: "SP" },
+            workName: "Reforma Comercial - Loja Shopping",
+            location: {
+                neighborhood: "Itaim Bibi",
+                city: "São Paulo",
+                state: "SP",
+                fullAddress: "Rua João Cachoeira, 789"
+            },
+            deliverySchedule: {
+                monday: { enabled: false, startTime: "08:00", endTime: "17:00" },
+                tuesday: { enabled: true, startTime: "09:00", endTime: "18:00" },
+                wednesday: { enabled: true, startTime: "09:00", endTime: "18:00" },
+                thursday: { enabled: true, startTime: "09:00", endTime: "18:00" },
+                friday: { enabled: false, startTime: "09:00", endTime: "18:00" },
+                saturday: { enabled: false, startTime: "08:00", endTime: "12:00" },
+                sunday: { enabled: false, startTime: "08:00", endTime: "12:00" },
+            },
             status: "negotiating",
             createdAt: "2025-11-27 16:45",
             items: [
@@ -101,6 +164,7 @@ export function SupplierSalesSection() {
         freight: "",
         availability: "Imediata",
         validity: "",
+        paymentTerms: "",
         items: {} as Record<number, number> // itemId -> price
     });
 
@@ -124,6 +188,7 @@ export function SupplierSalesSection() {
             freight: order.proposal?.freight.toString() || "",
             availability: order.proposal?.availability || "Imediata",
             validity: order.proposal?.validity || "",
+            paymentTerms: order.proposal?.paymentTerms || "",
             items: {}
         });
     };
@@ -139,7 +204,8 @@ export function SupplierSalesSection() {
                     ...o, status: "responded" as SaleStatus, proposal: {
                         freight: Number(proposalForm.freight),
                         availability: proposalForm.availability,
-                        validity: proposalForm.validity
+                        validity: proposalForm.validity,
+                        paymentTerms: proposalForm.paymentTerms
                     }
                 }
                 : o
@@ -280,11 +346,20 @@ export function SupplierSalesSection() {
 
                                 <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div className="bg-white p-3 rounded-lg border border-gray-200">
+                                        <p className="text-xs text-gray-500 uppercase font-semibold">Obra</p>
+                                        <p className="text-sm font-medium text-gray-900 mt-1">
+                                            {selectedOrder.workName || 'N/A'}
+                                        </p>
+                                    </div>
+                                    <div className="bg-white p-3 rounded-lg border border-gray-200">
                                         <p className="text-xs text-gray-500 uppercase font-semibold">Local de Entrega</p>
                                         <p className="text-sm font-medium text-gray-900 mt-1">
                                             {selectedOrder.location.neighborhood}
                                         </p>
                                         <p className="text-xs text-gray-600">{selectedOrder.location.city} - {selectedOrder.location.state}</p>
+                                        {selectedOrder.location.fullAddress && (
+                                            <p className="text-xs text-gray-600 mt-1">{selectedOrder.location.fullAddress}</p>
+                                        )}
                                     </div>
                                     <div className="bg-white p-3 rounded-lg border border-gray-200">
                                         <p className="text-xs text-gray-500 uppercase font-semibold">Prazo Cotação</p>
@@ -292,13 +367,39 @@ export function SupplierSalesSection() {
                                             {selectedOrder.deadline ? new Date(selectedOrder.deadline).toLocaleDateString() : 'N/A'}
                                         </p>
                                     </div>
-                                    <div className="bg-white p-3 rounded-lg border border-gray-200">
-                                        <p className="text-xs text-gray-500 uppercase font-semibold">Status</p>
-                                        <p className="text-sm font-medium text-gray-900 mt-1 capitalize">
-                                            {selectedOrder.status === 'pending' ? 'Aguardando Proposta' : selectedOrder.status}
-                                        </p>
-                                    </div>
                                 </div>
+
+                                {/* Delivery Schedule */}
+                                {selectedOrder.deliverySchedule && (
+                                    <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                        <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                                            <ClockIcon className="h-5 w-5 text-blue-600" />
+                                            Dias e Horários de Entrega na Obra
+                                        </h4>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                            {Object.entries({
+                                                monday: "Seg",
+                                                tuesday: "Ter",
+                                                wednesday: "Qua",
+                                                thursday: "Qui",
+                                                friday: "Sex",
+                                                saturday: "Sáb",
+                                                sunday: "Dom"
+                                            }).map(([dayKey, dayLabel]) => {
+                                                const schedule = selectedOrder.deliverySchedule?.[dayKey as keyof typeof selectedOrder.deliverySchedule];
+                                                if (!schedule?.enabled) return null;
+                                                return (
+                                                    <div key={dayKey} className="bg-white rounded-md p-2 border border-blue-200">
+                                                        <p className="text-xs font-semibold text-gray-900">{dayLabel}</p>
+                                                        <p className="text-xs text-gray-600 mt-0.5">
+                                                            {schedule.startTime} - {schedule.endTime}
+                                                        </p>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Items List */}
@@ -329,7 +430,7 @@ export function SupplierSalesSection() {
 
                                 {selectedOrder.status === 'pending' ? (
                                     <form onSubmit={handleSendProposal} className="space-y-4">
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div>
                                                 <label className="block text-xs font-medium text-gray-700 mb-1">Frete (R$)</label>
                                                 <input
@@ -337,23 +438,20 @@ export function SupplierSalesSection() {
                                                     required
                                                     value={proposalForm.freight}
                                                     onChange={(e) => setProposalForm({ ...proposalForm, freight: e.target.value })}
-                                                    className="w-full rounded-lg border-gray-300 text-sm"
+                                                    className="w-full rounded-lg border-gray-300 text-sm text-gray-900"
                                                     placeholder="0.00"
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-medium text-gray-700 mb-1">Disponibilidade</label>
-                                                <select
+                                                <label className="block text-xs font-medium text-gray-700 mb-1">Prazo de Entrega</label>
+                                                <input
+                                                    type="text"
+                                                    required
                                                     value={proposalForm.availability}
                                                     onChange={(e) => setProposalForm({ ...proposalForm, availability: e.target.value })}
-                                                    className="w-full rounded-lg border-gray-300 text-sm"
-                                                >
-                                                    <option value="Imediata">Imediata</option>
-                                                    <option value="2 dias">Até 2 dias</option>
-                                                    <option value="5 dias">Até 5 dias</option>
-                                                    <option value="10 dias">Até 10 dias</option>
-                                                    <option value="15+ dias">15 dias ou mais</option>
-                                                </select>
+                                                    className="w-full rounded-lg border-gray-300 text-sm text-gray-900"
+                                                    placeholder="Ex: Imediata, 24h, 3-5 dias"
+                                                />
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-medium text-gray-700 mb-1">Validade da Proposta</label>
@@ -362,8 +460,27 @@ export function SupplierSalesSection() {
                                                     required
                                                     value={proposalForm.validity}
                                                     onChange={(e) => setProposalForm({ ...proposalForm, validity: e.target.value })}
-                                                    className="w-full rounded-lg border-gray-300 text-sm"
+                                                    className="w-full rounded-lg border-gray-300 text-sm text-gray-900"
                                                 />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-medium text-gray-700 mb-1">Condições de Pagamento</label>
+                                                <select
+                                                    value={proposalForm.paymentTerms || ""}
+                                                    onChange={(e) => setProposalForm({ ...proposalForm, paymentTerms: e.target.value })}
+                                                    className="w-full rounded-lg border-gray-300 text-sm text-gray-900"
+                                                    required
+                                                >
+                                                    <option value="">Selecione...</option>
+                                                    <option value="PIX">PIX</option>
+                                                    <option value="Cartão">Cartão de Crédito</option>
+                                                    <option value="PIX / Cartão">PIX / Cartão</option>
+                                                    <option value="A Faturar 30d">A Faturar 30 dias</option>
+                                                    <option value="A Faturar 45d">A Faturar 45 dias</option>
+                                                    <option value="A Faturar 60d">A Faturar 60 dias</option>
+                                                    <option value="PIX / A Faturar 30d">PIX / A Faturar 30d</option>
+                                                    <option value="Cartão / A Faturar 30d">Cartão / A Faturar 30d</option>
+                                                </select>
                                             </div>
                                         </div>
 
@@ -377,7 +494,7 @@ export function SupplierSalesSection() {
                                         </div>
                                     </form>
                                 ) : (
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                                         <div className="p-3 bg-white rounded border border-gray-200">
                                             <span className="text-gray-500 block text-xs">Frete</span>
                                             <span className="font-medium">R$ {selectedOrder.proposal?.freight.toFixed(2)}</span>
@@ -389,6 +506,10 @@ export function SupplierSalesSection() {
                                         <div className="p-3 bg-white rounded border border-gray-200">
                                             <span className="text-gray-500 block text-xs">Validade</span>
                                             <span className="font-medium">{selectedOrder.proposal?.validity}</span>
+                                        </div>
+                                        <div className="p-3 bg-white rounded border border-gray-200">
+                                            <span className="text-gray-500 block text-xs">Condições de Pagamento</span>
+                                            <span className="font-medium">{selectedOrder.proposal?.paymentTerms || 'N/A'}</span>
                                         </div>
                                     </div>
                                 )}

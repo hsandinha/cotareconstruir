@@ -4,6 +4,16 @@ import { useState, type FormEvent } from "react";
 import { PlusIcon, CalendarIcon, CheckCircleIcon, ClockIcon } from "@heroicons/react/24/outline";
 import { initialWorks, Work, WorkStage, constructionStages } from "../../../lib/clientDashboardMocks";
 
+type DaySchedule = {
+    enabled: boolean;
+    startTime: string;
+    endTime: string;
+};
+
+type WeekSchedule = {
+    [key: string]: DaySchedule;
+};
+
 export function ClientWorksSection() {
     const [works, setWorks] = useState<Work[]>(initialWorks);
     const [selectedWork, setSelectedWork] = useState<number | null>(null);
@@ -24,11 +34,44 @@ export function ClientWorksSection() {
         previsaoTermino: "",
         horarioEntrega: "",
     });
+    const [deliverySchedule, setDeliverySchedule] = useState<WeekSchedule>({
+        monday: { enabled: true, startTime: "08:00", endTime: "17:00" },
+        tuesday: { enabled: true, startTime: "08:00", endTime: "17:00" },
+        wednesday: { enabled: true, startTime: "08:00", endTime: "17:00" },
+        thursday: { enabled: true, startTime: "08:00", endTime: "17:00" },
+        friday: { enabled: true, startTime: "08:00", endTime: "17:00" },
+        saturday: { enabled: false, startTime: "08:00", endTime: "12:00" },
+        sunday: { enabled: false, startTime: "08:00", endTime: "12:00" },
+    });
     const [stageForm, setStageForm] = useState({
         stageId: "",
         predictedDate: "",
         quotationAdvanceDays: 15,
     });
+
+    const dayNames: { [key: string]: string } = {
+        monday: "Segunda",
+        tuesday: "Terça",
+        wednesday: "Quarta",
+        thursday: "Quinta",
+        friday: "Sexta",
+        saturday: "Sábado",
+        sunday: "Domingo",
+    };
+
+    const toggleDeliveryDay = (day: string) => {
+        setDeliverySchedule((prev) => ({
+            ...prev,
+            [day]: { ...prev[day], enabled: !prev[day].enabled },
+        }));
+    };
+
+    const updateDeliveryTime = (day: string, field: "startTime" | "endTime", value: string) => {
+        setDeliverySchedule((prev) => ({
+            ...prev,
+            [day]: { ...prev[day], [field]: value },
+        }));
+    };
 
     function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
@@ -316,15 +359,48 @@ export function ClientWorksSection() {
                                 className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                             />
                         </label>
-                        <label className="block">
-                            <span className="text-xs font-semibold text-gray-700">Dias e Horários de Entrega</span>
-                            <input
-                                value={form.horarioEntrega}
-                                onChange={(e) => setForm({ ...form, horarioEntrega: e.target.value })}
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                placeholder="Ex: Seg-Sex, 8h às 17h"
-                            />
-                        </label>
+                    </div>
+
+                    {/* Dias e Horários de Entrega */}
+                    <div>
+                        <h4 className="text-xs font-semibold text-gray-700 mb-3">Dias e Horários de Entrega</h4>
+                        <div className="space-y-2">
+                            {Object.entries(dayNames).map(([dayKey, dayLabel]) => (
+                                <div
+                                    key={dayKey}
+                                    className="flex items-center gap-3 p-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                                >
+                                    <div className="flex items-center gap-2 flex-1">
+                                        <input
+                                            type="checkbox"
+                                            checked={deliverySchedule[dayKey].enabled}
+                                            onChange={() => toggleDeliveryDay(dayKey)}
+                                            className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                        />
+                                        <span className={`text-sm font-medium min-w-[70px] ${deliverySchedule[dayKey].enabled ? "text-gray-900" : "text-gray-400"}`}>
+                                            {dayLabel}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="time"
+                                            value={deliverySchedule[dayKey].startTime}
+                                            onChange={(e) => updateDeliveryTime(dayKey, "startTime", e.target.value)}
+                                            disabled={!deliverySchedule[dayKey].enabled}
+                                            className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400 text-gray-900"
+                                        />
+                                        <span className="text-gray-400">às</span>
+                                        <input
+                                            type="time"
+                                            value={deliverySchedule[dayKey].endTime}
+                                            onChange={(e) => updateDeliveryTime(dayKey, "endTime", e.target.value)}
+                                            disabled={!deliverySchedule[dayKey].enabled}
+                                            className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400 text-gray-900"
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </form>

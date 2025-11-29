@@ -48,6 +48,50 @@ export function ClientComparativeSection() {
         }));
     }
 
+    function handleSelectBestPerItem() {
+        const newSelections: { [itemId: number]: SupplierKey } = {};
+        comparativeRows.forEach((row) => {
+            const best = bestSupplier(row.id);
+            if (best) {
+                newSelections[row.id] = best;
+            }
+        });
+        setSelectedSuppliers(newSelections);
+    }
+
+    function handleSelectBestWithFreight() {
+        // Calcular total com frete para cada fornecedor
+        const freightCosts: { [key in SupplierKey]: number } = {
+            fornecedorA: 80,
+            fornecedorB: 0,
+            fornecedorC: 100,
+            fornecedorD: 0,
+        };
+
+        let bestSupplierKey: SupplierKey | null = null;
+        let bestTotalWithFreight: number = Infinity;
+
+        supplierKeys.forEach((key) => {
+            const merchandiseTotal = columnTotal(key);
+            const totalWithFreight = merchandiseTotal + freightCosts[key];
+            if (totalWithFreight < bestTotalWithFreight) {
+                bestTotalWithFreight = totalWithFreight;
+                bestSupplierKey = key;
+            }
+        });
+
+        // Selecionar todos os itens do melhor fornecedor
+        if (bestSupplierKey) {
+            const newSelections: { [itemId: number]: SupplierKey } = {};
+            comparativeRows.forEach((row) => {
+                if (row.fornecedores[bestSupplierKey!].total) {
+                    newSelections[row.id] = bestSupplierKey!;
+                }
+            });
+            setSelectedSuppliers(newSelections);
+        }
+    }
+
     function handleGenerateOC() {
         if (Object.keys(selectedSuppliers).length === 0) {
             alert("Selecione pelo menos um fornecedor para os itens.");
@@ -158,6 +202,20 @@ export function ClientComparativeSection() {
                         Compare preços, fretes e selecione o fornecedor para cada item ou grupo.
                     </p>
                 </div>
+                <div className="flex flex-wrap gap-3">
+                    <button
+                        onClick={handleSelectBestWithFreight}
+                        className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-blue-700 transition-colors"
+                    >
+                        Melhor Preço com Frete
+                    </button>
+                    <button
+                        onClick={handleSelectBestPerItem}
+                        className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-emerald-700 transition-colors"
+                    >
+                        Melhor Preço por Item
+                    </button>
+                </div>
             </div>
 
             <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-100">
@@ -166,6 +224,7 @@ export function ClientComparativeSection() {
                         <tr>
                             <th className="border-b border-slate-100 px-4 py-3 text-black text-left">Item</th>
                             <th className="border-b border-slate-100 px-4 py-3 text-black text-center">Qtde</th>
+                            <th className="border-b border-slate-100 px-4 py-3 text-black text-center">Unidade</th>
                             {supplierColumns.map((supplier) => (
                                 <th key={supplier.key} className="border-b border-slate-100 px-4 py-3 text-black text-center">
                                     <div className="flex flex-col items-center gap-1">
@@ -189,10 +248,12 @@ export function ClientComparativeSection() {
                                 <tr key={row.id} className="odd:bg-white even:bg-slate-50/60">
                                     <td className="border-b border-slate-100 px-4 py-3">
                                         <p className="font-semibold text-slate-900">{row.descricao}</p>
-                                        <p className="text-xs text-slate-500">{row.unidade}</p>
                                     </td>
-                                    <td className="border-b border-slate-100 px-4 py-3 text-center">
+                                    <td className="border-b border-slate-100 px-4 py-3 text-center text-slate-900 font-medium">
                                         {row.quantidade}
+                                    </td>
+                                    <td className="border-b border-slate-100 px-4 py-3 text-center text-slate-700">
+                                        {row.unidade}
                                     </td>
                                     {supplierColumns.map((supplier) => {
                                         const data = row.fornecedores[supplier.key];
@@ -233,6 +294,7 @@ export function ClientComparativeSection() {
                         <tr className="bg-slate-50 text-sm">
                             <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Frete (Estimado)</td>
                             <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
                             {supplierColumns.map((supplier, index) => (
                                 <td
                                     key={`frete-${supplier.key}`}
@@ -242,9 +304,61 @@ export function ClientComparativeSection() {
                                 </td>
                             ))}
                         </tr>
+                        <tr className="bg-white text-sm">
+                            <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Prazo de Entrega</td>
+                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                            {supplierColumns.map((supplier, index) => (
+                                <td
+                                    key={`prazo-${supplier.key}`}
+                                    className="border-t border-slate-100 px-4 py-3 text-center text-slate-700 font-medium"
+                                >
+                                    {index === 0 ? "24h" : index === 1 ? "48h" : "3-5 dias"}
+                                </td>
+                            ))}
+                        </tr>
+                        <tr className="bg-slate-50 text-sm">
+                            <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Condições de Pagamento</td>
+                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                            {supplierColumns.map((supplier, index) => (
+                                <td
+                                    key={`payment-${supplier.key}`}
+                                    className="border-t border-slate-100 px-4 py-3 text-center text-slate-700 text-xs"
+                                >
+                                    <div className="flex flex-col gap-1">
+                                        {index === 0 && (
+                                            <>
+                                                <span className="text-green-600 font-semibold">PIX / Cartão</span>
+                                                <span className="text-slate-500">A Faturar 30d</span>
+                                            </>
+                                        )}
+                                        {index === 1 && (
+                                            <>
+                                                <span className="text-green-600 font-semibold">PIX</span>
+                                                <span className="text-slate-500">A Faturar 45d</span>
+                                            </>
+                                        )}
+                                        {index === 2 && (
+                                            <>
+                                                <span className="text-green-600 font-semibold">PIX / Cartão</span>
+                                                <span className="text-slate-500">A Faturar 60d</span>
+                                            </>
+                                        )}
+                                        {index === 3 && (
+                                            <>
+                                                <span className="text-green-600 font-semibold">PIX</span>
+                                                <span className="text-slate-500">A Faturar 45d</span>
+                                            </>
+                                        )}
+                                    </div>
+                                </td>
+                            ))}
+                        </tr>
                         <tr className="bg-slate-900/90 text-white">
                             <td className="px-4 py-3 text-sm font-semibold">Total Mercadoria</td>
                             <td className="px-4 py-3 text-center">-</td>
+                            <td className="px-4 py-3 text-center">R$</td>
                             {supplierColumns.map((supplier) => (
                                 <td key={`total-${supplier.key}`} className="px-4 py-3 text-center text-sm font-semibold">
                                     R$ {columnTotal(supplier.key).toFixed(2)}

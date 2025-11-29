@@ -117,7 +117,7 @@ export function ClientExploreSection() {
                         <select
                             value={selectedWork}
                             onChange={(e) => setSelectedWork(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
                             <option value="">Selecione...</option>
                             {initialWorks.map((work) => (
@@ -293,7 +293,7 @@ export function ClientExploreSection() {
                                                                     min="1"
                                                                     value={item.quantity}
                                                                     onChange={(e) => updateItem(item.id, 'quantity', Number(e.target.value))}
-                                                                    className="w-16 px-2 py-1 text-center text-sm focus:outline-none bg-transparent"
+                                                                    className="w-16 px-2 py-1 text-center text-sm text-slate-900 focus:outline-none bg-transparent"
                                                                 />
                                                                 <span className="px-2 text-xs text-slate-500 border-l border-slate-200 bg-slate-50 h-full flex items-center rounded-r-lg">
                                                                     {item.unit}
@@ -352,7 +352,7 @@ export function ClientExploreSection() {
                                 <div>
                                     <h4 className="font-semibold text-slate-900 text-sm">Dica do Especialista</h4>
                                     <p className="text-xs text-slate-500 mt-1">
-                                        Agrupar materiais da mesma fase (ex: elétrica e hidráulica) pode aumentar seu poder de negociação com fornecedores generalistas.
+                                        Agrupar materiais da mesma fase (ex: elétrica e hidráulica) pode aumentar seu poder de negociação com fornecedores Especializados.
                                     </p>
                                 </div>
                             </div>
