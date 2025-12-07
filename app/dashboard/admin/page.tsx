@@ -130,6 +130,7 @@ export default function AdminDashboard() {
                 const userDocRef = doc(db, "users", user.uid);
                 const userDoc = await getDoc(userDocRef);
                 const data = userDoc.exists() ? userDoc.data() : {};
+                const role = data.role || "cliente";
 
                 const name = data.companyName || data.name || user.displayName || user.email || "Admin";
                 console.log("Admin Check - User:", user.uid, "Role:", role, "Data:", data); // Debug log
