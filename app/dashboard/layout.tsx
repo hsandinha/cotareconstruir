@@ -72,6 +72,15 @@ export default function DashboardLayout({
         }
     };
 
+    const handleLogout = async () => {
+        try {
+            await signOut(auth);
+            router.push("/login");
+        } catch (error) {
+            console.error("Error logging out:", error);
+        }
+    };
+
     return (
         <>
             {children}
@@ -119,6 +128,15 @@ export default function DashboardLayout({
                                 {loading ? "Atualizando..." : "Alterar Senha e Continuar"}
                             </button>
                         </form>
+
+                        <div className="mt-4 text-center">
+                            <button
+                                onClick={handleLogout}
+                                className="text-xs text-slate-500 hover:text-slate-700 hover:underline"
+                            >
+                                Sair e tentar mais tarde
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

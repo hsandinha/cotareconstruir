@@ -4,7 +4,7 @@ import { useEffect, useState, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { auth, db } from "../../../lib/firebase";
 import { collection, getCountFromServer, query, where, getDocs, orderBy, limit, doc, updateDoc, deleteDoc, getDoc, startAfter, DocumentSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
-import { onAuthStateChanged, getAuth, createUserWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
+import { onAuthStateChanged, getAuth, createUserWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential, signOut } from "firebase/auth";
 import { initializeApp, deleteApp } from "firebase/app";
 import { NotificationBell } from "../../../components/NotificationBell";
 import { logAction } from "../../../lib/services";
@@ -476,6 +476,16 @@ export default function AdminDashboard() {
         }
     };
 
+    const handleLogout = async () => {
+        try {
+            await signOut(auth);
+            router.push("/login");
+        } catch (error) {
+            console.error("Error logging out:", error);
+            showToast("error", "Erro ao sair.");
+        }
+    };
+
     if (authLoading) return <div className="p-8 text-center">Carregando dashboard...</div>;
     if (!isAdmin) return <div className="p-8 text-center">Redirecionando...</div>;
 
@@ -522,6 +532,12 @@ export default function AdminDashboard() {
                                     <p className="text-sm font-semibold text-slate-900">{userName}</p>
                                 </div>
                             </div>
+                            <button
+                                onClick={handleLogout}
+                                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-red-600"
+                            >
+                                Sair
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1240,6 +1256,15 @@ export default function AdminDashboard() {
                                         <p className="text-sm font-semibold text-slate-900">Último Login</p>
                                         <p className="text-xs text-slate-500">{auth.currentUser?.metadata.lastSignInTime}</p>
                                     </div>
+                                </div>
+                                <div className="pt-4">
+                                    <button
+                                        type="button"
+                                        onClick={handleLogout}
+                                        className="w-full rounded-lg border border-red-100 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100"
+                                    >
+                                        Sair da Conta
+                                    </button>
                                 </div>
                             </div>
                         </CardShell>
