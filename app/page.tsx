@@ -10,7 +10,7 @@ import { FloatingWhatsapp } from "../components/FloatingWhatsapp";
 
 export default function HomePage() {
   return (
-    <div className="relative overflow-hidden">
+    <div className="relative overflow-hidden landing-bg text-slate-50">
       <div className="absolute inset-x-0 top-0 h-[600px] bg-gradient-to-b from-blue-500/20 via-transparent to-transparent pointer-events-none" />
       <Header />
       <main className="mt-24 space-y-32 md:space-y-36">

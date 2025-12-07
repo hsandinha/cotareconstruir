@@ -25,9 +25,9 @@ export function Footer() {
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-200">Solução</h3>
             <ul className="mt-4 space-y-2 text-sm text-slate-400">
               {footerLinks.solution.map((item) => (
-                <li key={item}>
-                  <Link href="#" className="transition hover:text-white">
-                    {item}
+                <li key={item.label}>
+                  <Link href={item.href} className="transition hover:text-white">
+                    {item.label}
                   </Link>
                 </li>
               ))}
@@ -38,9 +38,9 @@ export function Footer() {
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-200">Empresa</h3>
             <ul className="mt-4 space-y-2 text-sm text-slate-400">
               {footerLinks.company.map((item) => (
-                <li key={item}>
-                  <Link href="#" className="transition hover:text-white">
-                    {item}
+                <li key={item.label}>
+                  <Link href={item.href} className="transition hover:text-white">
+                    {item.label}
                   </Link>
                 </li>
               ))}

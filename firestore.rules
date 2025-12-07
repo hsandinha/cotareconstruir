@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper to check if user is signed in
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper to check if the user is accessing their own document
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Helper to check if the user is an admin
+    function isAdmin() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Users: Users can read/write their own profile. Admins can read/write all.
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) || isAdmin();
+      
+      // Subcollections for Supplier
+      match /products/{document=**} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+      match /manufacturers/{document=**} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+      match /offers/{document=**} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // Audit Logs: Authenticated users can create logs. Only admins can read/manage.
+    match /audit_logs/{document=**} {
+      allow create: if isAuthenticated();
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Reports: Authenticated users can create reports. Only admins can read/manage.
+    match /reports/{document=**} {
+      allow create: if isAuthenticated();
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Proposals: Allow authenticated users to read/write (refine this for production)
+    match /proposals/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Quotations: Allow authenticated users to read/write
+    match /quotations/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Chats: Allow authenticated users to read/write
+    match /chats/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // Materials: Allow authenticated users to read/write
+    match /materials/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

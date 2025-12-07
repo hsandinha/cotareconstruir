@@ -141,8 +141,17 @@ export const benefitPillars = [
 ] as const;
 
 export const footerLinks = {
-  solution: ["Como Funciona", "Metodologia", "Benefícios", "Casos de Sucesso"],
-  company: ["Sobre Nós", "Nossa Equipe", "Carreiras", "Imprensa"],
+  solution: [
+    { label: "Como Funciona", href: "/#solucao" },
+    { label: "Metodologia", href: "/#metodologia" },
+    { label: "Benefícios", href: "/#beneficios" },
+    { label: "Ajuda / FAQ", href: "/ajuda" },
+  ],
+  company: [
+    { label: "Sobre Nós", href: "/#hero" },
+    { label: "Termos de Uso", href: "/termos" },
+    { label: "Política de Privacidade", href: "/privacidade" },
+  ],
 } as const;
 
 export const heroHighlights = {

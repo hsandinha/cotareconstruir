@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
     MagnifyingGlassIcon,
     PlusIcon,
@@ -11,24 +11,80 @@ import {
     ArrowUpIcon,
     ArrowDownIcon
 } from "@heroicons/react/24/outline";
+import { auth, db } from "../../../lib/firebase";
+import { collection, addDoc, deleteDoc, doc, onSnapshot, updateDoc, query, orderBy } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+
+interface Material {
+    id: string;
+    codigo: string;
+    nome: string;
+    grupo: string;
+    fabricante: string;
+    unidade: string;
+    preco: number;
+    status: string;
+    estoque: number;
+    dataAtualizacao: string;
+}
 
 export function SupplierMaterialsSection() {
     const [searchTerm, setSearchTerm] = useState("");
-    const [selectedItems, setSelectedItems] = useState<number[]>([]);
+    const [selectedItems, setSelectedItems] = useState<string[]>([]);
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
     const [showAddForm, setShowAddForm] = useState(false);
+    const [materials, setMaterials] = useState<Material[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [userUid, setUserUid] = useState<string | null>(null);
 
-    const [materials, setMaterials] = useState([
-        { id: 1, codigo: "ELE001", nome: "Cabo Flexível 2,5mm", grupo: "Instalações", unidade: "metro", preco: 2.50, status: "Ativo", estoque: 500, dataAtualizacao: new Date().toISOString() },
-        { id: 2, codigo: "HID001", nome: "Tubo PVC 100mm", grupo: "Instalações", unidade: "metro", preco: 15.90, status: "Ativo", estoque: 120, dataAtualizacao: new Date().toISOString() },
-        { id: 3, codigo: "AGR001", nome: "Cimento CP-II", grupo: "Estrutura", unidade: "saco", preco: 32.00, status: "Ativo", estoque: 80, dataAtualizacao: new Date().toISOString() },
-        { id: 4, codigo: "REV001", nome: "Porcelanato 60x60", grupo: "Revestimentos", unidade: "m2", preco: 89.90, status: "Ativo", estoque: 350, dataAtualizacao: new Date().toISOString() },
-    ]);
+    // Form State
+    const [formData, setFormData] = useState({
+        grupo: "",
+        nome: "",
+        fabricante: "",
+        unidade: "un",
+        preco: "",
+        estoque: "",
+        codigo: ""
+    });
+
+    const manufacturers = [
+        { id: 1, name: "Votorantim" },
+        { id: 2, name: "Tigre" },
+        { id: 3, name: "Gerdau" },
+        { id: 4, name: "Portobello" },
+        { id: 5, name: "Amanco" },
+        { id: 6, name: "Suvinil" },
+        { id: 7, name: "Outros" }
+    ];
 
     const [offerModalOpen, setOfferModalOpen] = useState(false);
-    const [selectedMaterialForOffer, setSelectedMaterialForOffer] = useState<any | null>(null);
+    const [selectedMaterialForOffer, setSelectedMaterialForOffer] = useState<Material | null>(null);
     const [offerType, setOfferType] = useState<'percentage' | 'fixed'>('percentage');
     const [offerValue, setOfferValue] = useState('');
+
+    useEffect(() => {
+        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+            if (user) {
+                setUserUid(user.uid);
+                const q = query(collection(db, "users", user.uid, "products"));
+                const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+                    const items: Material[] = [];
+                    snapshot.forEach((doc) => {
+                        items.push({ id: doc.id, ...doc.data() } as Material);
+                    });
+                    setMaterials(items);
+                    setLoading(false);
+                });
+                return () => unsubscribeSnapshot();
+            } else {
+                setMaterials([]);
+                setLoading(false);
+            }
+        });
+
+        return () => unsubscribeAuth();
+    }, []);
 
     const handleSort = (key: string) => {
         let direction: 'asc' | 'desc' = 'asc';
@@ -46,11 +102,96 @@ export function SupplierMaterialsSection() {
         }
     };
 
-    const handleSelectItem = (id: number) => {
+    const handleSelectItem = (id: string) => {
         if (selectedItems.includes(id)) {
             setSelectedItems(selectedItems.filter(item => item !== id));
         } else {
             setSelectedItems([...selectedItems, id]);
+        }
+    };
+
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleAddMaterial = async () => {
+        if (!userUid) return;
+        if (!formData.nome || !formData.grupo || !formData.fabricante || !formData.unidade) {
+            alert("Preencha os campos obrigatórios.");
+            return;
+        }
+
+        try {
+            await addDoc(collection(db, "users", userUid, "products"), {
+                ...formData,
+                preco: Number(formData.preco) || 0,
+                estoque: Number(formData.estoque) || 0,
+                status: "Ativo",
+                dataAtualizacao: new Date().toISOString()
+            });
+            setFormData({
+                grupo: "",
+                nome: "",
+                fabricante: "",
+                unidade: "un",
+                preco: "",
+                estoque: "",
+                codigo: ""
+            });
+
+            // Update user's last activity timestamp
+            await updateDoc(doc(db, "users", userUid), {
+                lastProductUpdate: new Date().toISOString()
+            });
+
+            setShowAddForm(false);
+            alert("Material adicionado com sucesso!");
+        } catch (error) {
+            console.error("Error adding material:", error);
+            alert("Erro ao adicionar material.");
+        }
+    };
+
+    const handleDeleteMaterial = async (id: string) => {
+        if (!userUid) return;
+        if (confirm("Tem certeza que deseja excluir este material?")) {
+            try {
+                await deleteDoc(doc(db, "users", userUid, "products", id));
+            } catch (error) {
+                console.error("Error deleting material:", error);
+                alert("Erro ao excluir material.");
+            }
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (!userUid) return;
+        if (confirm(`Tem certeza que deseja excluir ${selectedItems.length} itens selecionados?`)) {
+            try {
+                await Promise.all(selectedItems.map(id => deleteDoc(doc(db, "users", userUid, "products", id))));
+                setSelectedItems([]);
+            } catch (error) {
+                console.error("Error deleting materials:", error);
+                alert("Erro ao excluir materiais.");
+            }
+        }
+    };
+
+    const handleUpdateStock = async (id: string, value: number) => {
+        if (!userUid) return;
+        try {
+            await updateDoc(doc(db, "users", userUid, "products", id), {
+                estoque: Math.max(0, value),
+                dataAtualizacao: new Date().toISOString()
+            });
+
+            // Update user's last activity timestamp
+            await updateDoc(doc(db, "users", userUid), {
+                lastProductUpdate: new Date().toISOString()
+            });
+        } catch (error) {
+            console.error("Error updating stock:", error);
         }
     };
 
@@ -81,7 +222,7 @@ export function SupplierMaterialsSection() {
             return 0;
         });
 
-    const handleMakeOffer = (material: any) => {
+    const handleMakeOffer = (material: Material) => {
         setSelectedMaterialForOffer(material);
         setOfferModalOpen(true);
         setOfferValue('');
@@ -98,18 +239,9 @@ export function SupplierMaterialsSection() {
         setOfferModalOpen(false);
     };
 
-    const handleUpdateStock = (id: number, value: number) => {
-        setMaterials((prev) =>
-            prev.map((m) => (m.id === id ? { ...m, estoque: Math.max(0, Number(value) || 0), dataAtualizacao: new Date().toISOString() } : m))
-        );
-    };
-
-    const handleBulkDelete = () => {
-        if (confirm(`Tem certeza que deseja excluir ${selectedItems.length} itens selecionados?`)) {
-            setMaterials(materials.filter(m => !selectedItems.includes(m.id)));
-            setSelectedItems([]);
-        }
-    };
+    if (loading) {
+        return <div className="p-8 text-center text-gray-500">Carregando materiais...</div>;
+    }
 
     return (
         <div className="space-y-6">
@@ -176,10 +308,15 @@ export function SupplierMaterialsSection() {
                     <div id="add-item-form">
                         <div className="bg-white border border-gray-200 rounded-xl p-6">
                             <h4 className="text-lg font-semibold text-gray-900 mb-4">Adicionar Item</h4>
-                            <form className="space-y-4">
+                            <div className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Grupo / Categoria *</label>
-                                    <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <select
+                                        name="grupo"
+                                        value={formData.grupo}
+                                        onChange={handleInputChange}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
                                         <option value="">Selecione...</option>
                                         <option value="Preliminares">Preliminares</option>
                                         <option value="Terraplenagem">Terraplenagem</option>
@@ -200,15 +337,38 @@ export function SupplierMaterialsSection() {
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Material *</label>
                                     <input
                                         type="text"
+                                        name="nome"
+                                        value={formData.nome}
+                                        onChange={handleInputChange}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         placeholder="Ex: Cimento CP-II"
                                     />
                                 </div>
 
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Fabricante *</label>
+                                    <select
+                                        name="fabricante"
+                                        value={formData.fabricante}
+                                        onChange={handleInputChange}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value="">Selecione...</option>
+                                        {manufacturers.map((m) => (
+                                            <option key={m.id} value={m.name}>{m.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Unidade *</label>
-                                        <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        <select
+                                            name="unidade"
+                                            value={formData.unidade}
+                                            onChange={handleInputChange}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        >
                                             <option value="un">Unidade</option>
                                             <option value="m">Metro</option>
                                             <option value="m2">m²</option>
@@ -222,6 +382,9 @@ export function SupplierMaterialsSection() {
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Preço (R$)</label>
                                         <input
                                             type="number"
+                                            name="preco"
+                                            value={formData.preco}
+                                            onChange={handleInputChange}
                                             step="0.01"
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                             placeholder="0,00"
@@ -234,34 +397,35 @@ export function SupplierMaterialsSection() {
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Estoque Atual</label>
                                         <input
                                             type="number"
+                                            name="estoque"
+                                            value={formData.estoque}
+                                            onChange={handleInputChange}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                             placeholder="Ex: 100"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Data de Atualização</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Código Interno (SKU)</label>
                                         <input
-                                            type="date"
+                                            type="text"
+                                            name="codigo"
+                                            value={formData.codigo}
+                                            onChange={handleInputChange}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            placeholder="Opcional"
                                         />
                                     </div>
                                 </div>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Código Interno (SKU)</label>
-                                    <input
-                                        type="text"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                        placeholder="Opcional"
-                                    />
-                                </div>
-
                                 <div className="pt-2">
-                                    <button type="button" className="w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors">
+                                    <button
+                                        onClick={handleAddMaterial}
+                                        className="w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors"
+                                    >
                                         Cadastrar Material
                                     </button>
                                 </div>
-                            </form>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -311,6 +475,17 @@ export function SupplierMaterialsSection() {
                                             <div className="flex items-center gap-1">
                                                 Grupo
                                                 {sortConfig?.key === 'grupo' && (
+                                                    sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-3 w-3" /> : <ArrowDownIcon className="h-3 w-3" />
+                                                )}
+                                            </div>
+                                        </th>
+                                        <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                            onClick={() => handleSort('fabricante')}
+                                        >
+                                            <div className="flex items-center gap-1">
+                                                Fabricante
+                                                {sortConfig?.key === 'fabricante' && (
                                                     sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-3 w-3" /> : <ArrowDownIcon className="h-3 w-3" />
                                                 )}
                                             </div>
@@ -372,6 +547,9 @@ export function SupplierMaterialsSection() {
                                                     {material.grupo}
                                                 </span>
                                             </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {material.fabricante || '-'}
+                                            </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                                                 R$ {material.preco.toFixed(2)}
                                             </td>
@@ -415,7 +593,10 @@ export function SupplierMaterialsSection() {
                                                     <button className="text-blue-600 hover:text-blue-900 p-1">
                                                         <PencilSquareIcon className="h-4 w-4" />
                                                     </button>
-                                                    <button className="text-red-600 hover:text-red-900 p-1">
+                                                    <button
+                                                        onClick={() => handleDeleteMaterial(material.id)}
+                                                        className="text-red-600 hover:text-red-900 p-1"
+                                                    >
                                                         <TrashIcon className="h-4 w-4" />
                                                     </button>
                                                 </div>

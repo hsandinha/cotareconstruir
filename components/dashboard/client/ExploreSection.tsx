@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { PlusIcon, MagnifyingGlassIcon, ShoppingCartIcon, WrenchScrewdriverIcon } from "@heroicons/react/24/outline";
-import { initialWorks, cartCategories } from "../../../lib/clientDashboardMocks";
+import { cartCategories } from "../../../lib/clientDashboardMocks";
+import { auth, db } from "../../../lib/firebase";
+import { collection, addDoc, query, where, onSnapshot } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 
 export function ClientExploreSection() {
     const [currentView, setCurrentView] = useState<"search" | "analysis" | "success">("search");
@@ -10,6 +13,29 @@ export function ClientExploreSection() {
     const [cart, setCart] = useState<Array<{ id: string, name: string, quantity: number, unit: string, group: string, observation?: string }>>([]);
     const [selectedWork, setSelectedWork] = useState("");
     const [showManualEntry, setShowManualEntry] = useState(false);
+    const [works, setWorks] = useState<any[]>([]);
+    const [userUid, setUserUid] = useState<string | null>(null);
+
+    useEffect(() => {
+        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+            if (user) {
+                setUserUid(user.uid);
+                const q = query(collection(db, "works"), where("userId", "==", user.uid));
+                const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+                    const worksData = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    setWorks(worksData);
+                });
+                return () => unsubscribeSnapshot();
+            } else {
+                setWorks([]);
+            }
+        });
+
+        return () => unsubscribeAuth();
+    }, []);
 
     // Estado para entrada manual
     const [manualItem, setManualItem] = useState({
@@ -86,7 +112,7 @@ export function ClientExploreSection() {
         return groups;
     }, [cart]);
 
-    const handleSendQuotation = () => {
+    const handleSendQuotation = async () => {
         if (!selectedWork) {
             alert("Por favor, selecione uma obra para vincular à cotação.");
             return;
@@ -95,7 +121,28 @@ export function ClientExploreSection() {
             alert("Adicione itens ao carrinho antes de enviar.");
             return;
         }
-        setCurrentView("success");
+        if (!userUid) {
+            alert("Usuário não autenticado.");
+            return;
+        }
+
+        try {
+            await addDoc(collection(db, "quotations"), {
+                userId: userUid,
+                workId: selectedWork,
+                items: cart,
+                status: "pending", // pending, approved, rejected, etc.
+                createdAt: new Date().toISOString(),
+                totalItems: cart.length,
+                estimatedSavings: "15-25%", // Placeholder logic
+            });
+            setCurrentView("success");
+            setCart([]); // Clear cart after success
+            setSelectedWork("");
+        } catch (error) {
+            console.error("Erro ao enviar cotação:", error);
+            alert("Erro ao enviar cotação. Tente novamente.");
+        }
     };
 
     // Renderização baseada na view atual
@@ -120,7 +167,7 @@ export function ClientExploreSection() {
                             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
                             <option value="">Selecione...</option>
-                            {initialWorks.map((work) => (
+                            {works.map((work) => (
                                 <option key={work.id} value={work.id}>
                                     {work.obra}
                                 </option>
@@ -333,7 +380,7 @@ export function ClientExploreSection() {
                                 <div className="flex justify-between">
                                     <span>Obra</span>
                                     <span className="font-semibold truncate max-w-[150px]">
-                                        {selectedWork ? initialWorks.find(w => w.id === Number(selectedWork))?.obra : "Não selecionada"}
+                                        {selectedWork ? works.find(w => w.id === selectedWork)?.obra : "Não selecionada"}
                                     </span>
                                 </div>
                             </div>

@@ -9,7 +9,7 @@ export type WorkStage = {
 };
 
 export type Work = {
-    id: number;
+    id: string | number;
     obra: string;
     centroCustos?: string;
     cep?: string;

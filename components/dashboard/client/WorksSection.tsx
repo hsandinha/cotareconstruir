@@ -1,8 +1,12 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { PlusIcon, CalendarIcon, CheckCircleIcon, ClockIcon } from "@heroicons/react/24/outline";
-import { initialWorks, Work, WorkStage, constructionStages } from "../../../lib/clientDashboardMocks";
+import { useState, useEffect, type FormEvent } from "react";
+import { PlusIcon, CalendarIcon, CheckCircleIcon, ClockIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { Work, WorkStage, constructionStages } from "../../../lib/clientDashboardMocks";
+import { auth, db } from "../../../lib/firebase";
+import { collection, addDoc, query, where, onSnapshot, doc, updateDoc, deleteDoc, arrayUnion, arrayRemove } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { formatCepBr } from "../../../lib/utils";
 
 type DaySchedule = {
     enabled: boolean;
@@ -15,11 +19,13 @@ type WeekSchedule = {
 };
 
 export function ClientWorksSection() {
-    const [works, setWorks] = useState<Work[]>(initialWorks);
-    const [selectedWork, setSelectedWork] = useState<number | null>(null);
+    const [works, setWorks] = useState<Work[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [userUid, setUserUid] = useState<string | null>(null);
+    const [selectedWork, setSelectedWork] = useState<string | number | null>(null);
     const [showStageModal, setShowStageModal] = useState(false);
     const [isWorkFormVisible, setIsWorkFormVisible] = useState(false);
-    const [collapsedWorks, setCollapsedWorks] = useState<Record<number, boolean>>({});
+    const [collapsedWorks, setCollapsedWorks] = useState<Record<string | number, boolean>>({});
     const [form, setForm] = useState({
         obra: "",
         centroCustos: "",
@@ -27,6 +33,8 @@ export function ClientWorksSection() {
         bairro: "",
         cidade: "",
         endereco: "",
+        numero: "",
+        complemento: "",
         restricoesEntrega: "",
         etapa: "",
         tipoObra: "",
@@ -50,6 +58,29 @@ export function ClientWorksSection() {
         predictedDate: "",
         quotationAdvanceDays: 15,
     });
+
+    useEffect(() => {
+        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+            if (user) {
+                setUserUid(user.uid);
+                const q = query(collection(db, "works"), where("userId", "==", user.uid));
+                const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+                    const worksData = snapshot.docs.map(doc => ({
+                        id: doc.id, // Use Firestore ID
+                        ...doc.data()
+                    })) as unknown as Work[];
+                    setWorks(worksData);
+                    setLoading(false);
+                });
+                return () => unsubscribeSnapshot();
+            } else {
+                setWorks([]);
+                setLoading(false);
+            }
+        });
+
+        return () => unsubscribeAuth();
+    }, []);
 
     const dayNames: { [key: string]: string } = {
         monday: "Segunda",
@@ -75,30 +106,65 @@ export function ClientWorksSection() {
         }));
     };
 
-    function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    const handleCepLookup = async (cepValue: string) => {
+        const clean = (cepValue || "").replace(/\D/g, "");
+        if (clean.length !== 8) return;
+
+        try {
+            const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${clean}`);
+            if (!response.ok) throw new Error("CEP não encontrado");
+            const data = await response.json();
+            setForm((prev) => ({
+                ...prev,
+                cep: formatCepBr(clean),
+                bairro: data.neighborhood || prev.bairro,
+                cidade: data.city && data.state ? `${data.city} - ${data.state}` : prev.cidade,
+                endereco: data.street || prev.endereco,
+            }));
+        } catch (error) {
+            alert("Não foi possível buscar o CEP. Verifique o número ou tente novamente.");
+        }
+    };
+
+    async function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
-        if (!form.obra || !form.bairro) return;
-        setWorks((prev) => [...prev, { id: Date.now(), ...form, stages: [] } as Work]);
-        setForm({
-            obra: "",
-            centroCustos: "",
-            cep: "",
-            bairro: "",
-            cidade: "",
-            endereco: "",
-            restricoesEntrega: "",
-            etapa: "",
-            tipoObra: "",
-            area: "",
-            padrao: "",
-            dataInicio: "",
-            previsaoTermino: "",
-            horarioEntrega: "",
-        });
-        setIsWorkFormVisible(false);
+        if (!form.obra || !form.bairro || !userUid) return;
+
+        try {
+            await addDoc(collection(db, "works"), {
+                ...form,
+                userId: userUid,
+                stages: [],
+                deliverySchedule,
+                createdAt: new Date().toISOString(),
+            });
+
+            setForm({
+                obra: "",
+                centroCustos: "",
+                cep: "",
+                bairro: "",
+                cidade: "",
+                endereco: "",
+                numero: "",
+                complemento: "",
+                restricoesEntrega: "",
+                etapa: "",
+                tipoObra: "",
+                area: "",
+                padrao: "",
+                dataInicio: "",
+                previsaoTermino: "",
+                horarioEntrega: "",
+            });
+            setIsWorkFormVisible(false);
+        } catch (error) {
+            console.error("Erro ao cadastrar obra:", error);
+            alert("Erro ao cadastrar obra.");
+        }
     }
 
-    function handleAddStage(e: FormEvent<HTMLFormElement>) {
+    async function handleAddStage(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
         if (!selectedWork || !stageForm.stageId || !stageForm.predictedDate) return;
 
@@ -114,37 +180,52 @@ export function ClientWorksSection() {
             quotationAdvanceDays: stageForm.quotationAdvanceDays,
         };
 
-        setWorks((prev) =>
-            prev.map((work) =>
-                work.id === selectedWork
-                    ? { ...work, stages: [...(work.stages || []), newStage] }
-                    : work
-            )
-        );
+        try {
+            const workRef = doc(db, "works", String(selectedWork));
+            await updateDoc(workRef, {
+                stages: arrayUnion(newStage)
+            });
 
-        setStageForm({ stageId: "", predictedDate: "", quotationAdvanceDays: 15 });
-        setShowStageModal(false);
+            setStageForm({ stageId: "", predictedDate: "", quotationAdvanceDays: 15 });
+            setShowStageModal(false);
+        } catch (error) {
+            console.error("Erro ao adicionar etapa:", error);
+            alert("Erro ao adicionar etapa.");
+        }
     }
 
-    function toggleStageCompletion(workId: number, stageId: string) {
-        setWorks((prev) =>
-            prev.map((work) =>
-                work.id === workId
-                    ? {
-                        ...work,
-                        stages: work.stages?.map((stage) =>
-                            stage.id === stageId
-                                ? {
-                                    ...stage,
-                                    isCompleted: !stage.isCompleted,
-                                    completedDate: !stage.isCompleted ? new Date().toISOString().split('T')[0] : undefined,
-                                }
-                                : stage
-                        ),
-                    }
-                    : work
-            )
+    async function toggleStageCompletion(workId: string | number, stageId: string) {
+        const work = works.find(w => w.id === workId);
+        if (!work) return;
+
+        const updatedStages = work.stages?.map((stage) =>
+            stage.id === stageId
+                ? {
+                    ...stage,
+                    isCompleted: !stage.isCompleted,
+                    completedDate: !stage.isCompleted ? new Date().toISOString().split('T')[0] : undefined,
+                }
+                : stage
         );
+
+        try {
+            const workRef = doc(db, "works", String(workId));
+            await updateDoc(workRef, {
+                stages: updatedStages
+            });
+        } catch (error) {
+            console.error("Erro ao atualizar etapa:", error);
+        }
+    }
+
+    async function handleDeleteWork(workId: string | number) {
+        if (!confirm("Tem certeza que deseja excluir esta obra?")) return;
+        try {
+            await deleteDoc(doc(db, "works", String(workId)));
+        } catch (error) {
+            console.error("Erro ao excluir obra:", error);
+            alert("Erro ao excluir obra.");
+        }
     }
 
     function calculateQuotationDate(predictedDate: string, advanceDays: number): string {
@@ -175,12 +256,14 @@ export function ClientWorksSection() {
         )
         : [];
 
-    const toggleWorkVisibility = (workId: number) => {
+    const toggleWorkVisibility = (workId: string | number) => {
         setCollapsedWorks((prev) => ({
             ...prev,
             [workId]: !prev[workId],
         }));
     };
+
+    if (loading) return <div className="p-6 text-center">Carregando obras...</div>;
 
     return (
         <div className="space-y-6">
@@ -236,7 +319,8 @@ export function ClientWorksSection() {
                                     <span className="text-xs font-semibold text-gray-700">CEP</span>
                                     <input
                                         value={form.cep}
-                                        onChange={(e) => setForm({ ...form, cep: e.target.value })}
+                                        onChange={(e) => setForm({ ...form, cep: formatCepBr(e.target.value) })}
+                                        onBlur={() => handleCepLookup(form.cep)}
                                         className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                         placeholder="00000-000"
                                     />
@@ -266,6 +350,26 @@ export function ClientWorksSection() {
                                         className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     />
                                 </label>
+                                <div className="grid grid-cols-1 gap-4 md:col-span-3 md:grid-cols-2">
+                                    <label className="block">
+                                        <span className="text-xs font-semibold text-gray-700">Número</span>
+                                        <input
+                                            value={form.numero}
+                                            onChange={(e) => setForm({ ...form, numero: e.target.value })}
+                                            className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                            placeholder="Ex: 123"
+                                        />
+                                    </label>
+                                    <label className="block">
+                                        <span className="text-xs font-semibold text-gray-700">Complemento</span>
+                                        <input
+                                            value={form.complemento}
+                                            onChange={(e) => setForm({ ...form, complemento: e.target.value })}
+                                            className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                            placeholder="Apto, bloco, sala..."
+                                        />
+                                    </label>
+                                </div>
                                 <label className="block">
                                     <span className="text-xs font-semibold text-gray-700">Restrições de Entrega?</span>
                                     <input
@@ -462,6 +566,13 @@ export function ClientWorksSection() {
                                     >
                                         <PlusIcon className="h-4 w-4" />
                                         Adicionar Etapa
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeleteWork(work.id)}
+                                        className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50"
+                                        title="Excluir Obra"
+                                    >
+                                        <TrashIcon className="h-4 w-4" />
                                     </button>
                                 </div>
                             </div>

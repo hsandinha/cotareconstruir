@@ -1,36 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import { auth, db } from "../../../lib/firebase";
+import { collection, doc, writeBatch, serverTimestamp } from "firebase/firestore";
 
-export function SupplierQuotationResponseSection() {
-    const [quotationItems] = useState([
-        {
-            id: 1,
-            codigo: "ELE001",
-            descricao: "Cabo Flexível 2,5mm - Rolo 100m",
-            unidade: "rolo",
-            quantidade: 5,
-            observacoes: "Cor azul, isolamento 750V"
-        },
-        {
-            id: 2,
-            codigo: "ELE002",
-            descricao: "Disjuntor bipolar 20A",
-            unidade: "unidade",
-            quantidade: 12,
-            observacoes: "Marca reconhecida, certificado INMETRO"
-        },
-        {
-            id: 3,
-            codigo: "ELE003",
-            descricao: "Tomada 2P+T 10A - Padrao brasileiro",
-            unidade: "unidade",
-            quantidade: 25,
-            observacoes: "Cor branca, com placa"
-        }
-    ]);
+interface SupplierQuotationResponseSectionProps {
+    quotation: any;
+    onBack: () => void;
+}
 
+export function SupplierQuotationResponseSection({ quotation, onBack }: SupplierQuotationResponseSectionProps) {
     const [responses, setResponses] = useState<{ [key: number]: { preco: string, disponibilidade: string } }>({});
+    const [paymentMethod, setPaymentMethod] = useState("");
+    const [validity, setValidity] = useState("");
+    const [observations, setObservations] = useState("");
+    const [loading, setLoading] = useState(false);
 
     const handleResponseChange = (itemId: number, field: 'preco' | 'disponibilidade', value: string) => {
         setResponses(prev => ({
@@ -42,14 +26,100 @@ export function SupplierQuotationResponseSection() {
         }));
     };
 
+    const handleSendProposal = async () => {
+        if (!auth.currentUser) return;
+        setLoading(true);
+
+        try {
+            const batch = writeBatch(db);
+
+            // Generate a new ID for the proposal
+            const proposalRef = doc(collection(db, "quotations", quotation.id, "proposals"));
+            const proposalId = proposalRef.id;
+
+            // Reference to the root proposals collection with the same ID
+            const rootProposalRef = doc(db, "proposals", proposalId);
+
+            const totalValue = quotation.items.reduce((total: number, item: any) => {
+                const response = responses[item.id];
+                if (response?.preco) {
+                    return total + (parseFloat(response.preco) * item.quantidade);
+                }
+                return total;
+            }, 0);
+
+            const proposalData = {
+                id: proposalId,
+                supplierId: auth.currentUser.uid,
+                supplierName: auth.currentUser.displayName || "Fornecedor",
+                quotationId: quotation.id,
+                clientCode: quotation.clientCode || "Cliente",
+                location: quotation.location || {},
+                items: quotation.items.map((item: any) => ({
+                    itemId: item.id,
+                    description: item.descricao,
+                    quantity: item.quantidade,
+                    unit: item.unidade,
+                    price: responses[item.id]?.preco ? parseFloat(responses[item.id].preco) : 0,
+                    availability: responses[item.id]?.disponibilidade || "indisponivel"
+                })),
+                paymentMethod,
+                validity,
+                observations,
+                totalValue,
+                createdAt: serverTimestamp(),
+                status: "sent"
+            };
+
+            // Save to subcollection of the quotation
+            batch.set(proposalRef, proposalData);
+
+            // Save to root proposals collection (for supplier dashboard)
+            batch.set(rootProposalRef, proposalData);
+
+            // Create notification for the client
+            if (quotation.userId) {
+                const notificationRef = doc(collection(db, "notifications"));
+                batch.set(notificationRef, {
+                    userId: quotation.userId,
+                    title: "Nova Proposta Recebida",
+                    message: `Um fornecedor enviou uma proposta para sua cotação.`,
+                    type: "success",
+                    read: false,
+                    createdAt: serverTimestamp(),
+                    relatedId: quotation.id,
+                    relatedType: "quotation"
+                });
+            }
+
+            await batch.commit();
+
+            alert("Proposta enviada com sucesso!");
+            onBack();
+        } catch (error) {
+            console.error("Erro ao enviar proposta:", error);
+            alert("Erro ao enviar proposta. Tente novamente.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div>
-                <h3 className="text-lg font-medium text-gray-900">Resposta à Cotação</h3>
-                <p className="mt-1 text-sm text-gray-600">
-                    Insira sua proposta comercial para os materiais solicitados
-                </p>
+            <div className="flex items-center justify-between">
+                <div>
+                    <h3 className="text-lg font-medium text-gray-900">Resposta à Cotação</h3>
+                    <p className="mt-1 text-sm text-gray-600">
+                        Insira sua proposta comercial para os materiais solicitados
+                    </p>
+                </div>
+                <button
+                    onClick={onBack}
+                    className="text-sm text-gray-500 hover:text-gray-700"
+                >
+                    Voltar
+                </button>
             </div>
 
             {/* Informações da consulta */}
@@ -57,19 +127,19 @@ export function SupplierQuotationResponseSection() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div>
                         <span className="font-medium text-gray-700">Cliente:</span>
-                        <div className="text-gray-900">Cliente X-001</div>
+                        <div className="text-gray-900">{quotation.clientCode}</div>
                     </div>
                     <div>
                         <span className="font-medium text-gray-700">Localização:</span>
-                        <div className="text-gray-900">Bairro: Vila Madalena</div>
+                        <div className="text-gray-900">{quotation.location}</div>
                     </div>
                     <div>
                         <span className="font-medium text-gray-700">Prazo de Resposta:</span>
-                        <div className="text-red-600 font-medium">19/11/2024 - 18:00</div>
+                        <div className="text-red-600 font-medium">{quotation.deadline}</div>
                     </div>
                     <div>
                         <span className="font-medium text-gray-700">Total de Itens:</span>
-                        <div className="text-gray-900">3 materiais</div>
+                        <div className="text-gray-900">{quotation.itemsCount} materiais</div>
                     </div>
                 </div>
             </div>
@@ -101,7 +171,6 @@ export function SupplierQuotationResponseSection() {
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Código</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unid.</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qtd.</th>
@@ -111,17 +180,16 @@ export function SupplierQuotationResponseSection() {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {quotationItems.map((item) => {
+                            {quotation.items && quotation.items.map((item: any) => {
                                 const response = responses[item.id] || { preco: '', disponibilidade: '' };
                                 const subtotal = response.preco ? (parseFloat(response.preco) * item.quantidade).toFixed(2) : '0.00';
 
                                 return (
                                     <tr key={item.id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.codigo}</td>
                                         <td className="px-6 py-4 text-sm text-gray-900">
                                             <div>{item.descricao}</div>
-                                            {item.observacoes && (
-                                                <div className="text-xs text-gray-500 mt-1">{item.observacoes}</div>
+                                            {item.observacao && (
+                                                <div className="text-xs text-gray-500 mt-1">{item.observacao}</div>
                                             )}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.unidade}</td>
@@ -160,15 +228,15 @@ export function SupplierQuotationResponseSection() {
                         </tbody>
                         <tfoot className="bg-gray-50">
                             <tr>
-                                <td colSpan={6} className="px-6 py-3 text-right text-sm font-medium text-gray-900">Total Geral:</td>
+                                <td colSpan={5} className="px-6 py-3 text-right text-sm font-medium text-gray-900">Total Geral:</td>
                                 <td className="px-6 py-3 text-sm font-bold text-gray-900">
-                                    R$ {quotationItems.reduce((total, item) => {
+                                    R$ {quotation.items ? quotation.items.reduce((total: number, item: any) => {
                                         const response = responses[item.id];
                                         if (response?.preco) {
                                             return total + (parseFloat(response.preco) * item.quantidade);
                                         }
                                         return total;
-                                    }, 0).toFixed(2)}
+                                    }, 0).toFixed(2) : '0.00'}
                                 </td>
                             </tr>
                         </tfoot>
@@ -182,7 +250,11 @@ export function SupplierQuotationResponseSection() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Forma de Pagamento</label>
-                        <select className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <select
+                            value={paymentMethod}
+                            onChange={(e) => setPaymentMethod(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
                             <option value="">Selecione</option>
                             <option value="vista">À vista</option>
                             <option value="15-dias">15 dias</option>
@@ -193,7 +265,11 @@ export function SupplierQuotationResponseSection() {
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Validade da Proposta</label>
-                        <select className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <select
+                            value={validity}
+                            onChange={(e) => setValidity(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
                             <option value="">Selecione</option>
                             <option value="7-dias">7 dias</option>
                             <option value="15-dias">15 dias</option>
@@ -205,6 +281,8 @@ export function SupplierQuotationResponseSection() {
                         <label className="block text-sm font-medium text-gray-700 mb-2">Observações Adicionais</label>
                         <textarea
                             rows={3}
+                            value={observations}
+                            onChange={(e) => setObservations(e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                             placeholder="Insira informações adicionais sobre sua proposta..."
                         />
@@ -214,11 +292,18 @@ export function SupplierQuotationResponseSection() {
 
             {/* Ações */}
             <div className="flex justify-end space-x-3">
-                <button className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                    Salvar Rascunho
+                <button
+                    onClick={onBack}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                    Cancelar
                 </button>
-                <button className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700">
-                    Enviar Proposta
+                <button
+                    onClick={handleSendProposal}
+                    disabled={loading}
+                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 disabled:opacity-50"
+                >
+                    {loading ? "Enviando..." : "Enviar Proposta"}
                 </button>
             </div>
         </div>

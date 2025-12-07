@@ -3,54 +3,50 @@
 import { useEffect, useRef, useState } from "react";
 import { SupplierProfileSection } from "../../../components/dashboard/supplier/ProfileSection";
 import { SupplierMaterialsSection } from "../../../components/dashboard/supplier/MaterialsSection";
+import { SupplierManufacturersSection } from "../../../components/dashboard/supplier/ManufacturersSection";
 import { SupplierSalesSection } from "../../../components/dashboard/supplier/SalesSection";
 import { SupplierOffersSection } from "../../../components/dashboard/supplier/OffersSection";
-import { NotificationBell, type Notification } from "../../../components/NotificationBell";
+import { SupplierQuotationInboxSection } from "../../../components/dashboard/supplier/QuotationInboxSection";
+import { SupplierVerificationSection } from "../../../components/dashboard/supplier/VerificationSection";
+import { NotificationBell } from "../../../components/NotificationBell";
+import { auth, db } from "../../../lib/firebase";
+import { collection, query, where, getCountFromServer, doc, getDoc } from "firebase/firestore";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { useRouter } from "next/navigation";
 
 export type SupplierTabId =
     | "perfil"
     | "materiais"
+    | "fabricantes"
     | "vendas"
-    | "ofertas";
+    | "ofertas"
+    | "cotacoes"
+    | "verificacao";
 
 const tabs: { id: SupplierTabId; label: string }[] = [
     { id: "perfil", label: "Cadastro & Perfil" },
+    { id: "verificacao", label: "Verificação" },
     { id: "materiais", label: "Cadastro de Materiais" },
+    { id: "fabricantes", label: "Fabricantes" },
     { id: "vendas", label: "Minhas Vendas" },
     { id: "ofertas", label: "Minhas Ofertas" },
+    { id: "cotacoes", label: "Cotações Recebidas" },
 ];
 
-const supplierNotifications: Notification[] = [
-    {
-        id: "1",
-        title: "Nova Cotação Disponível",
-        message: "Cliente 'Cond. Ed. A. Nogueira' solicitou cotação para 'Fundações'.",
-        time: "10 min atrás",
-        read: false,
-        type: "success"
-    },
-    {
-        id: "2",
-        title: "Proposta Aceita",
-        message: "Sua proposta para o pedido #REQ-2025-001 foi aceita!",
-        time: "3 horas atrás",
-        read: false,
-        type: "success"
-    },
-    {
-        id: "3",
-        title: "Documentação Pendente",
-        message: "Atualize sua certidão negativa para continuar participando.",
-        time: "2 dias atrás",
-        read: true,
-        type: "warning"
-    }
-];
 
 export default function FornecedorDashboard() {
+    const router = useRouter();
     const [tab, setTab] = useState<SupplierTabId>("perfil");
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const userMenuRef = useRef<HTMLDivElement | null>(null);
+    const [userName, setUserName] = useState("Fornecedor");
+    const [userInitial, setUserInitial] = useState("F");
+    const [stats, setStats] = useState({
+        activeConsultations: 0,
+        sentProposals: 0,
+        registeredMaterials: 0,
+        approvals: 0,
+    });
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -65,13 +61,77 @@ export default function FornecedorDashboard() {
         };
     }, []);
 
-    const handleMenuSelection = (action: "perfil" | "cadastros" | "vendas" | "ofertas" | "sair") => {
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                try {
+                    // Fetch User Profile
+                    const userDocRef = doc(db, "users", user.uid);
+                    const userDoc = await getDoc(userDocRef);
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+                        const name = userData.name || userData.nome || "Fornecedor";
+                        setUserName(name);
+                        setUserInitial(name.charAt(0).toUpperCase());
+                    }
+
+                    // Active Consultations (All pending quotations in the system)
+                    // In a real scenario, this might be filtered by region or category
+                    const consultationsQuery = query(
+                        collection(db, "quotations"),
+                        where("status", "==", "pending")
+                    );
+                    const consultationsSnapshot = await getCountFromServer(consultationsQuery);
+
+                    // Sent Proposals
+                    const proposalsQuery = query(
+                        collection(db, "proposals"),
+                        where("supplierId", "==", user.uid)
+                    );
+                    // Note: proposals collection might not exist yet, so this might fail or return 0. 
+                    // We'll wrap in try/catch or assume it returns 0 if collection doesn't exist (Firestore behavior is usually fine with empty collections)
+                    const proposalsSnapshot = await getCountFromServer(proposalsQuery);
+
+                    // Registered Materials
+                    const materialsQuery = query(
+                        collection(db, "materials"),
+                        where("supplierId", "==", user.uid)
+                    );
+                    const materialsSnapshot = await getCountFromServer(materialsQuery);
+
+                    // Approvals (Accepted proposals)
+                    const approvalsQuery = query(
+                        collection(db, "proposals"),
+                        where("supplierId", "==", user.uid),
+                        where("status", "==", "accepted")
+                    );
+                    const approvalsSnapshot = await getCountFromServer(approvalsQuery);
+
+                    setStats({
+                        activeConsultations: consultationsSnapshot.data().count,
+                        sentProposals: proposalsSnapshot.data().count,
+                        registeredMaterials: materialsSnapshot.data().count,
+                        approvals: approvalsSnapshot.data().count,
+                    });
+                } catch (error) {
+                    console.error("Error fetching stats:", error);
+                }
+            }
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    const handleMenuSelection = (action: "perfil" | "cadastros" | "fabricantes" | "vendas" | "ofertas" | "sair") => {
         switch (action) {
             case "perfil":
                 setTab("perfil");
                 break;
             case "cadastros":
                 setTab("materiais");
+                break;
+            case "fabricantes":
+                setTab("fabricantes");
                 break;
             case "vendas":
                 setTab("vendas");
@@ -80,7 +140,9 @@ export default function FornecedorDashboard() {
                 setTab("ofertas");
                 break;
             case "sair":
-                alert("Você saiu da conta.");
+                signOut(auth).then(() => {
+                    router.push("/login");
+                });
                 break;
         }
         setIsUserMenuOpen(false);
@@ -90,77 +152,89 @@ export default function FornecedorDashboard() {
         switch (tab) {
             case "perfil":
                 return <SupplierProfileSection />;
+            case "verificacao":
+                return <SupplierVerificationSection />;
             case "materiais":
                 return <SupplierMaterialsSection />;
+            case "fabricantes":
+                return <SupplierManufacturersSection />;
             case "vendas":
                 return <SupplierSalesSection />;
             case "ofertas":
                 return <SupplierOffersSection />;
+            case "cotacoes":
+                return <SupplierQuotationInboxSection />;
             default:
-                return null;
+                return <SupplierProfileSection />;
         }
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-slate-50 text-slate-900">
             {/* Main Header */}
-            <div className="bg-white shadow-sm border-b border-gray-200">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="bg-white/90 backdrop-blur border-b border-slate-200/80 shadow-sm">
+                <div className="section-shell">
                     <div className="flex items-center justify-between h-16">
                         <div className="flex items-center">
                             <span className="text-lg font-semibold text-gray-900">Cotar</span>
                             <span className="text-lg font-light text-gray-600 ml-1">& Construir</span>
                         </div>
                         <div className="flex items-center space-x-4">
-                            <NotificationBell initialNotifications={supplierNotifications} />
+                            <NotificationBell />
                             <div className="relative" ref={userMenuRef}>
                                 <button
                                     type="button"
                                     onClick={() => setIsUserMenuOpen((prev) => !prev)}
-                                    className="flex items-center gap-2 rounded-full border border-transparent px-2 py-1 hover:border-gray-200 focus:outline-none focus:ring-2 focus:ring-green-500"
+                                    className="flex items-center gap-2 rounded-full border border-transparent px-2 py-1 hover:border-slate-200 focus:outline-none focus:ring-2 focus:ring-green-500"
                                 >
                                     <div className="w-9 h-9 bg-green-600 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                                        F
+                                        {userInitial}
                                     </div>
                                     <div className="hidden sm:block text-left">
-                                        <p className="text-xs text-gray-500">Bem vindo</p>
-                                        <p className="text-sm font-semibold text-gray-900 flex items-center">
-                                            Fornecedor
-                                            <svg className="ml-1 h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <p className="text-xs text-slate-500">Bem vindo</p>
+                                        <p className="text-sm font-semibold text-slate-900 flex items-center">
+                                            {userName}
+                                            <svg className="ml-1 h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                                             </svg>
                                         </p>
                                     </div>
                                 </button>
                                 {isUserMenuOpen && (
-                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 py-2 z-20">
+                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-100 py-2 z-20">
                                         <button
                                             onClick={() => handleMenuSelection("perfil")}
-                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                                         >
                                             Perfil
                                         </button>
                                         <button
                                             onClick={() => handleMenuSelection("cadastros")}
-                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                                         >
                                             Cadastros
                                         </button>
                                         <button
+                                            onClick={() => handleMenuSelection("fabricantes")}
+                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                        >
+                                            Fabricantes
+                                        </button>
+                                        <button
                                             onClick={() => handleMenuSelection("vendas")}
-                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                                         >
                                             Minhas Vendas
                                         </button>
                                         <button
                                             onClick={() => handleMenuSelection("ofertas")}
-                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                                         >
                                             Minhas Ofertas
                                         </button>
                                         <button
                                             onClick={() => handleMenuSelection("sair")}
-                                            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-50"
+                                            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-slate-50"
                                         >
                                             Sair
                                         </button>
@@ -173,16 +247,16 @@ export default function FornecedorDashboard() {
             </div>
 
             {/* Tabs Header */}
-            <div className="bg-white border-b border-gray-200">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <nav className="flex space-x-8 overflow-x-auto">
+            <div className="bg-white border-b border-slate-200/80">
+                <div className="section-shell">
+                    <nav className="flex space-x-6 overflow-x-auto">
                         {tabs.map((item) => (
                             <button
                                 key={item.id}
                                 onClick={() => setTab(item.id)}
-                                className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${tab === item.id
-                                    ? 'border-green-500 text-green-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                className={`tab-button ${tab === item.id
+                                    ? 'border-green-600 text-green-700'
+                                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-200'
                                     }`}
                             >
                                 {item.label}
@@ -193,23 +267,11 @@ export default function FornecedorDashboard() {
             </div>
 
             {/* Main Content */}
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                {/* Header Section */}
-                <div className="mb-8">
-                    <p className="text-xs font-semibold uppercase text-green-600 mb-2">
-                        Ambiente estratégico do fornecedor
-                    </p>
-                    <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                        Receba consultas, envie propostas e finalize negócios com segurança
-                    </h1>
-                    <p className="text-sm text-gray-600">
-                        Ambiente ético e competitivo de vendas com anonimato garantido até a aprovação da proposta.
-                    </p>
-                </div>
+            <div className="section-shell py-10">
 
                 {/* Stats Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                    <div className="card-elevated p-6">
                         <div className="flex items-center">
                             <div className="p-2 bg-green-100 rounded-lg">
                                 <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -218,12 +280,12 @@ export default function FornecedorDashboard() {
                             </div>
                             <div className="ml-4">
                                 <p className="text-sm font-medium text-gray-500">Consultas Ativas</p>
-                                <p className="text-2xl font-semibold text-gray-900">3</p>
+                                <p className="text-2xl font-semibold text-gray-900">{stats.activeConsultations}</p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                    <div className="card-elevated p-6">
                         <div className="flex items-center">
                             <div className="p-2 bg-blue-100 rounded-lg">
                                 <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -232,12 +294,12 @@ export default function FornecedorDashboard() {
                             </div>
                             <div className="ml-4">
                                 <p className="text-sm font-medium text-gray-500">Propostas Enviadas</p>
-                                <p className="text-2xl font-semibold text-gray-900">8</p>
+                                <p className="text-2xl font-semibold text-gray-900">{stats.sentProposals}</p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                    <div className="card-elevated p-6">
                         <div className="flex items-center">
                             <div className="p-2 bg-purple-100 rounded-lg">
                                 <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -246,12 +308,12 @@ export default function FornecedorDashboard() {
                             </div>
                             <div className="ml-4">
                                 <p className="text-sm font-medium text-gray-500">Materiais Cadastrados</p>
-                                <p className="text-2xl font-semibold text-gray-900">45</p>
+                                <p className="text-2xl font-semibold text-gray-900">{stats.registeredMaterials}</p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                    <div className="card-elevated p-6">
                         <div className="flex items-center">
                             <div className="p-2 bg-orange-100 rounded-lg">
                                 <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -260,14 +322,14 @@ export default function FornecedorDashboard() {
                             </div>
                             <div className="ml-4">
                                 <p className="text-sm font-medium text-gray-500">Aprovações</p>
-                                <p className="text-2xl font-semibold text-gray-900">2</p>
+                                <p className="text-2xl font-semibold text-gray-900">{stats.approvals}</p>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 {/* Main Content Area */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+                <div className="card-elevated">
                     <div className="p-6">
                         {renderTabContent()}
                     </div>

@@ -2,6 +2,11 @@
 
 import { useState, useRef, useEffect } from "react";
 import { BellIcon } from "@heroicons/react/24/outline";
+import { auth, db } from "../lib/firebase";
+import { collection, query, where, onSnapshot, orderBy, doc, updateDoc } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { formatDistanceToNow } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 export interface Notification {
     id: string;
@@ -10,6 +15,8 @@ export interface Notification {
     time: string;
     read: boolean;
     type: "info" | "success" | "warning";
+    timestamp: any;
+    createdAt?: any;
 }
 
 interface NotificationBellProps {
@@ -18,33 +25,42 @@ interface NotificationBellProps {
 
 export function NotificationBell({ initialNotifications }: NotificationBellProps) {
     const [isOpen, setIsOpen] = useState(false);
-    const [notifications, setNotifications] = useState<Notification[]>(initialNotifications || [
-        {
-            id: "1",
-            title: "Nova Proposta Recebida",
-            message: "Fornecedor B enviou uma proposta para o pedido #REQ-2025-001.",
-            time: "5 min atrás",
-            read: false,
-            type: "success"
-        },
-        {
-            id: "2",
-            title: "Atualização de Status",
-            message: "Seu pedido #REQ-2025-003 foi marcado como entregue.",
-            time: "2 horas atrás",
-            read: false,
-            type: "info"
-        },
-        {
-            id: "3",
-            title: "Mensagem do Sistema",
-            message: "Lembre-se de avaliar seus fornecedores após a entrega.",
-            time: "1 dia atrás",
-            read: true,
-            type: "warning"
-        }
-    ]);
+    const [notifications, setNotifications] = useState<Notification[]>([]);
     const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+            if (user) {
+                const q = query(
+                    collection(db, "notifications"),
+                    where("userId", "==", user.uid),
+                    orderBy("createdAt", "desc")
+                );
+
+                const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+                    const newNotifications: Notification[] = snapshot.docs.map(doc => {
+                        const data = doc.data();
+                        const timestamp = data.createdAt?.toDate() || new Date();
+                        return {
+                            id: doc.id,
+                            title: data.title,
+                            message: data.message,
+                            time: formatDistanceToNow(timestamp, { addSuffix: true, locale: ptBR }),
+                            read: data.read || false,
+                            type: data.type || "info",
+                            timestamp: timestamp.getTime(),
+                            createdAt: data.createdAt
+                        };
+                    });
+                    setNotifications(newNotifications);
+                });
+                return () => unsubscribeSnapshot();
+            } else {
+                setNotifications([]);
+            }
+        });
+        return () => unsubscribeAuth();
+    }, []);
 
     const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -58,14 +74,18 @@ export function NotificationBell({ initialNotifications }: NotificationBellProps
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const markAsRead = (id: string) => {
-        setNotifications(notifications.map(n =>
-            n.id === id ? { ...n, read: true } : n
-        ));
+    const markAsRead = async (id: string) => {
+        try {
+            const notifRef = doc(db, "notifications", id);
+            await updateDoc(notifRef, { read: true });
+        } catch (error) {
+            console.error("Error marking notification as read:", error);
+        }
     };
 
-    const markAllAsRead = () => {
-        setNotifications(notifications.map(n => ({ ...n, read: true })));
+    const markAllAsRead = async () => {
+        const unread = notifications.filter(n => !n.read);
+        unread.forEach(n => markAsRead(n.id));
     };
 
     return (

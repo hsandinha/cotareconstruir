@@ -7,6 +7,10 @@ import { ClientOrderSection } from "../../../components/dashboard/client/OrderSe
 import { ClientExploreSection } from "../../../components/dashboard/client/ExploreSection";
 import { ClientOpportunitiesSection } from "../../../components/dashboard/client/OpportunitiesSection";
 import { NotificationBell } from "../../../components/NotificationBell";
+import { auth, db } from "../../../lib/firebase";
+import { collection, query, where, getCountFromServer, doc, getDoc } from "firebase/firestore";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { useRouter } from "next/navigation";
 
 export type TabId =
     | "perfil"
@@ -24,9 +28,17 @@ const tabs: { id: TabId; label: string }[] = [
 ];
 
 export default function ClienteDashboard() {
+    const router = useRouter();
     const [tab, setTab] = useState<TabId>("perfil");
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const userMenuRef = useRef<HTMLDivElement | null>(null);
+    const [userName, setUserName] = useState("Cliente");
+    const [userInitial, setUserInitial] = useState("C");
+    const [stats, setStats] = useState({
+        works: 0,
+        quotations: 0,
+        orders: 0,
+    });
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -41,6 +53,63 @@ export default function ClienteDashboard() {
         };
     }, []);
 
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                try {
+                    // Fetch User Profile
+                    const userDocRef = doc(db, "users", user.uid);
+                    const userDoc = await getDoc(userDocRef);
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+                        const name = userData.companyName
+                            || userData.name
+                            || userData.nome
+                            || user.displayName
+                            || user.email
+                            || "Cliente";
+                        setUserName(name);
+                        setUserInitial(name.charAt(0).toUpperCase());
+                    }
+
+                    // Works Count
+                    const worksQuery = query(collection(db, "works"), where("userId", "==", user.uid));
+                    const worksSnapshot = await getCountFromServer(worksQuery);
+
+                    // Active Quotations Count (pending or received)
+                    const quotationsQuery = query(
+                        collection(db, "quotations"),
+                        where("userId", "==", user.uid),
+                        where("status", "in", ["pending", "received"])
+                    );
+                    const quotationsSnapshot = await getCountFromServer(quotationsQuery);
+
+                    // Finished Orders Count (finished)
+                    const ordersQuery = query(
+                        collection(db, "quotations"),
+                        where("userId", "==", user.uid),
+                        where("status", "==", "finished")
+                    );
+                    const ordersSnapshot = await getCountFromServer(ordersQuery);
+
+                    setStats({
+                        works: worksSnapshot.data().count,
+                        quotations: quotationsSnapshot.data().count,
+                        orders: ordersSnapshot.data().count,
+                    });
+                } catch (error) {
+                    console.error("Error fetching stats:", error);
+                }
+            } else {
+                setUserName("Cliente");
+                setUserInitial("C");
+                router.push("/login");
+            }
+        });
+
+        return () => unsubscribe();
+    }, []);
+
     const handleMenuSelection = (action: "perfil" | "cadastros" | "sair") => {
         switch (action) {
             case "perfil":
@@ -50,7 +119,7 @@ export default function ClienteDashboard() {
                 setTab("obras");
                 break;
             case "sair":
-                alert("Você saiu da conta.");
+                signOut(auth).then(() => router.push("/login"));
                 break;
         }
         setIsUserMenuOpen(false);
@@ -74,10 +143,10 @@ export default function ClienteDashboard() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-slate-50 text-slate-900">
             {/* Main Header */}
-            <div className="bg-white shadow-sm border-b border-gray-200">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="bg-white/90 backdrop-blur border-b border-slate-200/80 shadow-sm">
+                <div className="section-shell">
                     <div className="flex items-center justify-between h-16">
                         <div className="flex items-center">
                             <span className="text-lg font-semibold text-gray-900">Cotar</span>
@@ -89,38 +158,38 @@ export default function ClienteDashboard() {
                                 <button
                                     type="button"
                                     onClick={() => setIsUserMenuOpen((prev) => !prev)}
-                                    className="flex items-center gap-2 rounded-full border border-transparent px-2 py-1 hover:border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="flex items-center gap-2 rounded-full border border-transparent px-2 py-1 hover:border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 >
                                     <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                                        H
+                                        {userInitial}
                                     </div>
                                     <div className="hidden sm:block text-left">
-                                        <p className="text-xs text-gray-500">Bem vindo</p>
-                                        <p className="text-sm font-semibold text-gray-900 flex items-center">
-                                            Cliente
-                                            <svg className="ml-1 h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <p className="text-xs text-slate-500">Bem vindo</p>
+                                        <p className="text-sm font-semibold text-slate-900 flex items-center">
+                                            {userName}
+                                            <svg className="ml-1 h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                                             </svg>
                                         </p>
                                     </div>
                                 </button>
                                 {isUserMenuOpen && (
-                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 py-2 z-20">
+                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-100 py-2 z-20">
                                         <button
                                             onClick={() => handleMenuSelection("perfil")}
-                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                                         >
                                             Perfil
                                         </button>
                                         <button
                                             onClick={() => handleMenuSelection("cadastros")}
-                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                                         >
                                             Cadastros
                                         </button>
                                         <button
                                             onClick={() => handleMenuSelection("sair")}
-                                            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-50"
+                                            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-slate-50"
                                         >
                                             Sair
                                         </button>
@@ -133,16 +202,16 @@ export default function ClienteDashboard() {
             </div>
 
             {/* Tabs Header */}
-            <div className="bg-white border-b border-gray-200">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <nav className="flex space-x-8 overflow-x-auto">
+            <div className="bg-white border-b border-slate-200/80">
+                <div className="section-shell">
+                    <nav className="flex space-x-6 overflow-x-auto">
                         {tabs.map((item) => (
                             <button
                                 key={item.id}
                                 onClick={() => setTab(item.id)}
-                                className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${tab === item.id
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                className={`tab-button ${tab === item.id
+                                    ? 'border-blue-600 text-blue-700'
+                                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-200'
                                     }`}
                             >
                                 {item.label}
@@ -153,23 +222,11 @@ export default function ClienteDashboard() {
             </div>
 
             {/* Main Content */}
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                {/* Header Section */}
-                <div className="mb-8">
-                    <p className="text-xs font-semibold uppercase text-blue-600 mb-2">
-                        Hub estratégico do cliente
-                    </p>
-                    <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                        Centralize cadastros, cotações e decisões em um só lugar
-                    </h1>
-                    <p className="text-sm text-gray-600">
-                        Transparência total sem expor seus fornecedores e mantendo controle sobre aprovações internas.
-                    </p>
-                </div>
+            <div className="section-shell py-10">
 
                 {/* Stats Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                    <div className="card-elevated p-6">
                         <div className="flex items-center">
                             <div className="p-2 bg-blue-100 rounded-lg">
                                 <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -183,7 +240,7 @@ export default function ClienteDashboard() {
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                    <div className="card-elevated p-6">
                         <div className="flex items-center">
                             <div className="p-2 bg-green-100 rounded-lg">
                                 <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -192,12 +249,12 @@ export default function ClienteDashboard() {
                             </div>
                             <div className="ml-4">
                                 <p className="text-sm font-medium text-gray-500">Obras</p>
-                                <p className="text-2xl font-semibold text-gray-900">5</p>
+                                <p className="text-2xl font-semibold text-gray-900">{stats.works}</p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                    <div className="card-elevated p-6">
                         <div className="flex items-center">
                             <div className="p-2 bg-purple-100 rounded-lg">
                                 <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -206,12 +263,12 @@ export default function ClienteDashboard() {
                             </div>
                             <div className="ml-4">
                                 <p className="text-sm font-medium text-gray-500">Cotações</p>
-                                <p className="text-2xl font-semibold text-gray-900">8</p>
+                                <p className="text-2xl font-semibold text-gray-900">{stats.quotations}</p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                    <div className="card-elevated p-6">
                         <div className="flex items-center">
                             <div className="p-2 bg-orange-100 rounded-lg">
                                 <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -220,14 +277,14 @@ export default function ClienteDashboard() {
                             </div>
                             <div className="ml-4">
                                 <p className="text-sm font-medium text-gray-500">Ordens Ativas</p>
-                                <p className="text-2xl font-semibold text-gray-900">3</p>
+                                <p className="text-2xl font-semibold text-gray-900">{stats.orders}</p>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 {/* Main Content Area */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+                <div className="card-elevated">
                     <div className="p-6">
                         {renderTabContent()}
                     </div>
