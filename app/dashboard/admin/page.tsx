@@ -3,8 +3,9 @@
 import { useEffect, useState, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { auth, db } from "../../../lib/firebase";
-import { collection, getCountFromServer, query, where, getDocs, orderBy, limit, doc, updateDoc, deleteDoc, getDoc, startAfter, DocumentSnapshot } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { collection, getCountFromServer, query, where, getDocs, orderBy, limit, doc, updateDoc, deleteDoc, getDoc, startAfter, DocumentSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
+import { onAuthStateChanged, getAuth, createUserWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
+import { initializeApp, deleteApp } from "firebase/app";
 import { NotificationBell } from "../../../components/NotificationBell";
 import { logAction } from "../../../lib/services";
 import { useToast } from "@/components/ToastProvider";
@@ -21,7 +22,7 @@ const SkeletonRow = ({ cols }: { cols: number }) => (
 
 export default function AdminDashboard() {
     const router = useRouter();
-    const [activeTab, setActiveTab] = useState<"overview" | "users" | "audit" | "reports">("overview");
+    const [activeTab, setActiveTab] = useState<"overview" | "users" | "audit" | "reports" | "profile">("overview");
     const [stats, setStats] = useState({
         users: 0,
         suppliers: 0,
@@ -68,11 +69,27 @@ export default function AdminDashboard() {
     const [isAdmin, setIsAdmin] = useState(false);
     const [authLoading, setAuthLoading] = useState(true);
 
+    // Create User Modal State
+    const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
+    const [newUserEmail, setNewUserEmail] = useState("");
+    const [newUserPassword, setNewUserPassword] = useState("");
+    const [newUserName, setNewUserName] = useState("");
+    const [newUserRole, setNewUserRole] = useState("cliente");
+    const [isCreatingUser, setIsCreatingUser] = useState(false);
+
+    // Profile Tab State
+    const [profileName, setProfileName] = useState("");
+    const [currentPassword, setCurrentPassword] = useState("");
+    const [newProfilePassword, setNewProfilePassword] = useState("");
+    const [confirmProfilePassword, setConfirmProfilePassword] = useState("");
+    const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+
     const adminTabs: { id: typeof activeTab; label: string }[] = [
         { id: "overview", label: "Visão Geral" },
         { id: "users", label: "Gerenciar Usuários" },
         { id: "audit", label: "Auditoria" },
         { id: "reports", label: "Denúncias" },
+        { id: "profile", label: "Meu Perfil" },
     ];
 
     const fetchOverview = async () => {
@@ -135,6 +152,7 @@ export default function AdminDashboard() {
                 const name = data.companyName || data.name || user.displayName || user.email || "Admin";
                 console.log("Admin Check - User:", user.uid, "Role:", role, "Data:", data); // Debug log
                 setUserName(name);
+                setProfileName(name); // Initialize profile name
                 setUserInitial(name.charAt(0).toUpperCase());
 
                 setIsAdmin(true);
@@ -357,6 +375,107 @@ export default function AdminDashboard() {
         }
     };
 
+    const handleCreateUser = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newUserEmail || !newUserPassword || !newUserName) {
+            showToast("error", "Preencha todos os campos.");
+            return;
+        }
+
+        setIsCreatingUser(true);
+        let secondaryApp;
+        try {
+            // Initialize a secondary app to create user without logging out admin
+            secondaryApp = initializeApp(auth.app.options, "Secondary");
+            const secondaryAuth = getAuth(secondaryApp);
+
+            const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPassword);
+            const uid = userCredential.user.uid;
+
+            await setDoc(doc(db, "users", uid), {
+                email: newUserEmail,
+                name: newUserName,
+                role: newUserRole,
+                isActive: true,
+                createdAt: serverTimestamp(),
+                mustChangePassword: true, // Force password change on first login
+                companyName: newUserName // Default to name for now
+            });
+
+            showToast("success", "Usuário criado com sucesso!");
+            setIsCreateUserModalOpen(false);
+            setNewUserEmail("");
+            setNewUserPassword("");
+            setNewUserName("");
+            setNewUserRole("cliente");
+            fetchUsersPage(0); // Refresh list
+            logAction("ADMIN", "CREATE_USER", `Created user ${uid} (${newUserRole})`);
+
+        } catch (error: any) {
+            console.error("Error creating user:", error);
+            let msg = "Erro ao criar usuário.";
+            if (error.code === 'auth/email-already-in-use') msg = "Email já está em uso.";
+            if (error.code === 'auth/weak-password') msg = "Senha muito fraca.";
+            showToast("error", msg);
+        } finally {
+            if (secondaryApp) {
+                await deleteApp(secondaryApp);
+            }
+            setIsCreatingUser(false);
+        }
+    };
+
+    const handleUpdateProfile = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsUpdatingProfile(true);
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            // Update Name
+            if (profileName !== userName) {
+                await updateDoc(doc(db, "users", user.uid), {
+                    name: profileName,
+                    companyName: profileName
+                });
+                setUserName(profileName);
+                showToast("success", "Nome atualizado com sucesso!");
+            }
+
+            // Update Password
+            if (newProfilePassword) {
+                if (newProfilePassword !== confirmProfilePassword) {
+                    showToast("error", "As senhas não coincidem.");
+                    setIsUpdatingProfile(false);
+                    return;
+                }
+                if (newProfilePassword.length < 6) {
+                    showToast("error", "A senha deve ter pelo menos 6 caracteres.");
+                    setIsUpdatingProfile(false);
+                    return;
+                }
+
+                // Re-authenticate
+                const credential = EmailAuthProvider.credential(user.email!, currentPassword);
+                await reauthenticateWithCredential(user, credential);
+                await updatePassword(user, newProfilePassword);
+                showToast("success", "Senha atualizada com sucesso!");
+                setCurrentPassword("");
+                setNewProfilePassword("");
+                setConfirmProfilePassword("");
+            }
+        } catch (error: any) {
+            console.error("Error updating profile:", error);
+            if (error.code === 'auth/wrong-password') {
+                showToast("error", "Senha atual incorreta.");
+            } else {
+                showToast("error", "Erro ao atualizar perfil.");
+            }
+        } finally {
+            setIsUpdatingProfile(false);
+        }
+    };
+
     if (authLoading) return <div className="p-8 text-center">Carregando dashboard...</div>;
     if (!isAdmin) return <div className="p-8 text-center">Redirecionando...</div>;
 
@@ -526,6 +645,13 @@ export default function AdminDashboard() {
                                     </button>
                                 )}
                             </form>
+
+                            <button
+                                onClick={() => setIsCreateUserModalOpen(true)}
+                                className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 flex items-center gap-1"
+                            >
+                                <span className="text-lg leading-none">+</span> Adicionar
+                            </button>
 
                             <div className="flex items-center gap-2 text-xs text-slate-700">
                                 <label className="font-semibold">Perfil</label>
@@ -1023,7 +1149,178 @@ export default function AdminDashboard() {
                         </div>
                     </CardShell>
                 )}
+
+                {activeTab === "profile" && (
+                    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                        <CardShell title="Informações do Perfil" subtitle="Seus dados">
+                            <form onSubmit={handleUpdateProfile} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700">Nome / Empresa</label>
+                                    <input
+                                        type="text"
+                                        value={profileName}
+                                        onChange={(e) => setProfileName(e.target.value)}
+                                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700">Email</label>
+                                    <input
+                                        type="email"
+                                        value={auth.currentUser?.email || ""}
+                                        disabled
+                                        className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500"
+                                    />
+                                </div>
+
+                                <div className="pt-4 border-t border-slate-100">
+                                    <h4 className="mb-3 text-sm font-semibold text-slate-900">Alterar Senha</h4>
+                                    <div className="space-y-3">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-700">Senha Atual</label>
+                                            <input
+                                                type="password"
+                                                value={currentPassword}
+                                                onChange={(e) => setCurrentPassword(e.target.value)}
+                                                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                                                placeholder="Necessário para alterar a senha"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-700">Nova Senha</label>
+                                            <input
+                                                type="password"
+                                                value={newProfilePassword}
+                                                onChange={(e) => setNewProfilePassword(e.target.value)}
+                                                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                                                placeholder="Mínimo 6 caracteres"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-700">Confirmar Nova Senha</label>
+                                            <input
+                                                type="password"
+                                                value={confirmProfilePassword}
+                                                onChange={(e) => setConfirmProfilePassword(e.target.value)}
+                                                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-end pt-2">
+                                    <button
+                                        type="submit"
+                                        disabled={isUpdatingProfile}
+                                        className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                                    >
+                                        {isUpdatingProfile ? "Salvando..." : "Salvar Alterações"}
+                                    </button>
+                                </div>
+                            </form>
+                        </CardShell>
+
+                        <CardShell title="Segurança da Conta" subtitle="Status">
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 p-4">
+                                    <div>
+                                        <p className="text-sm font-semibold text-slate-900">Autenticação</p>
+                                        <p className="text-xs text-slate-500">Login via Email e Senha</p>
+                                    </div>
+                                    <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-800">Ativo</span>
+                                </div>
+                                <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 p-4">
+                                    <div>
+                                        <p className="text-sm font-semibold text-slate-900">ID do Usuário</p>
+                                        <p className="text-xs font-mono text-slate-500">{auth.currentUser?.uid}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 p-4">
+                                    <div>
+                                        <p className="text-sm font-semibold text-slate-900">Último Login</p>
+                                        <p className="text-xs text-slate-500">{auth.currentUser?.metadata.lastSignInTime}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardShell>
+                    </div>
+                )}
             </div>
+
+            {/* Create User Modal */}
+            {isCreateUserModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+                    <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+                        <h3 className="mb-4 text-lg font-bold text-slate-900">Adicionar Novo Usuário</h3>
+                        <form onSubmit={handleCreateUser} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700">Nome / Empresa</label>
+                                <input
+                                    type="text"
+                                    value={newUserName}
+                                    onChange={(e) => setNewUserName(e.target.value)}
+                                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                                    placeholder="Nome completo ou Razão Social"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700">Email</label>
+                                <input
+                                    type="email"
+                                    value={newUserEmail}
+                                    onChange={(e) => setNewUserEmail(e.target.value)}
+                                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                                    placeholder="email@exemplo.com"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700">Senha Inicial</label>
+                                <input
+                                    type="password"
+                                    value={newUserPassword}
+                                    onChange={(e) => setNewUserPassword(e.target.value)}
+                                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                                    placeholder="Mínimo 6 caracteres"
+                                    required
+                                    minLength={6}
+                                />
+                                <p className="mt-1 text-[10px] text-slate-500">O usuário será solicitado a trocar a senha no primeiro login.</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700">Perfil</label>
+                                <select
+                                    value={newUserRole}
+                                    onChange={(e) => setNewUserRole(e.target.value)}
+                                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                                >
+                                    <option value="cliente">Cliente</option>
+                                    <option value="fornecedor">Fornecedor</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                            </div>
+                            <div className="flex items-center justify-end gap-3 pt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsCreateUserModalOpen(false)}
+                                    className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                                    disabled={isCreatingUser}
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                                    disabled={isCreatingUser}
+                                >
+                                    {isCreatingUser ? "Criando..." : "Criar Usuário"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
