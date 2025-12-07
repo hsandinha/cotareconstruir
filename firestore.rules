@@ -69,5 +69,13 @@ service cloud.firestore {
     match /materials/{document=**} {
       allow read, write: if isAuthenticated();
     }
+
+    // Notifications: Allow users to read/update their own notifications
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAdmin(); // Only admin/system creates notifications
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
   }
 }
