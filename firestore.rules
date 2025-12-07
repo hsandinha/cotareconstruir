@@ -14,9 +14,11 @@ service cloud.firestore {
 
     // Helper to check if the user is an admin
     function isAdmin() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isAuthenticated() && (
+        request.auth.uid == 'gvfEWb6YRkToPypmiVajeuEISD93' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
     }
 
     // Users: Users can read/write their own profile. Admins can read/write all.
