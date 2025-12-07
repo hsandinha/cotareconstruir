@@ -132,6 +132,7 @@ export default function AdminDashboard() {
                 const data = userDoc.exists() ? userDoc.data() : {};
 
                 const name = data.companyName || data.name || user.displayName || user.email || "Admin";
+                console.log("Admin Check - User:", user.uid, "Role:", role, "Data:", data); // Debug log
                 setUserName(name);
                 setUserInitial(name.charAt(0).toUpperCase());
 

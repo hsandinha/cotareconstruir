@@ -14,6 +14,31 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    const getFriendlyErrorMessage = (errorCode: string) => {
+        switch (errorCode) {
+            case "auth/invalid-credential":
+                return "Email ou senha incorretos.";
+            case "auth/user-not-found":
+                return "Usuário não encontrado.";
+            case "auth/wrong-password":
+                return "Senha incorreta.";
+            case "auth/invalid-email":
+                return "Email inválido.";
+            case "auth/user-disabled":
+                return "Esta conta foi desativada.";
+            case "auth/too-many-requests":
+                return "Muitas tentativas falhas. Tente novamente mais tarde.";
+            case "auth/email-already-in-use":
+                return "Este email já está em uso.";
+            case "auth/popup-closed-by-user":
+                return "Login cancelado pelo usuário.";
+            case "auth/network-request-failed":
+                return "Erro de conexão. Verifique sua internet.";
+            default:
+                return "Ocorreu um erro ao fazer login. Tente novamente.";
+        }
+    };
+
     async function handleUserAuth(user: any, selectedRole: string) {
         const userRef = doc(db, "users", user.uid);
         const userSnap = await getDoc(userRef);
@@ -59,7 +84,7 @@ export default function LoginPage() {
             await handleUserAuth(result.user, role);
         } catch (err: any) {
             console.error(err);
-            setError(err.message || "Erro no login com Google");
+            setError(getFriendlyErrorMessage(err.code));
             setLoading(false);
         }
     }
@@ -74,7 +99,7 @@ export default function LoginPage() {
             await handleUserAuth(result.user, role);
         } catch (err: any) {
             console.error(err);
-            setError(err.message || "Erro no login");
+            setError(getFriendlyErrorMessage(err.code));
             setLoading(false);
         }
     }
