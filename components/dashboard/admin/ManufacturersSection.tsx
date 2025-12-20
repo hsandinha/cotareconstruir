@@ -19,12 +19,11 @@ interface Manufacturer {
     status: string;
 }
 
-export function SupplierManufacturersSection() {
+export function ManufacturersSection() {
     const [searchTerm, setSearchTerm] = useState("");
     const [showAddForm, setShowAddForm] = useState(false);
     const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
     const [loading, setLoading] = useState(true);
-    const [userUid, setUserUid] = useState<string | null>(null);
 
     const [formData, setFormData] = useState({
         name: "",
@@ -34,26 +33,17 @@ export function SupplierManufacturersSection() {
     });
 
     useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-            if (user) {
-                setUserUid(user.uid);
-                const q = query(collection(db, "users", user.uid, "manufacturers"));
-                const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
-                    const items: Manufacturer[] = [];
-                    snapshot.forEach((doc) => {
-                        items.push({ id: doc.id, ...doc.data() } as Manufacturer);
-                    });
-                    setManufacturers(items);
-                    setLoading(false);
-                });
-                return () => unsubscribeSnapshot();
-            } else {
-                setManufacturers([]);
-                setLoading(false);
-            }
+        // Admin vê fabricantes de nível global (coleção raiz)
+        const q = query(collection(db, "manufacturers"));
+        const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+            const items: Manufacturer[] = [];
+            snapshot.forEach((doc) => {
+                items.push({ id: doc.id, ...doc.data() } as Manufacturer);
+            });
+            setManufacturers(items);
+            setLoading(false);
         });
-
-        return () => unsubscribeAuth();
+        return () => unsubscribeSnapshot();
     }, []);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -62,14 +52,17 @@ export function SupplierManufacturersSection() {
     };
 
     const handleAddManufacturer = async () => {
-        if (!userUid) return;
         if (!formData.name) {
             alert("Nome do fabricante é obrigatório.");
             return;
         }
 
         try {
-            await addDoc(collection(db, "users", userUid, "manufacturers"), formData);
+            await addDoc(collection(db, "manufacturers"), {
+                ...formData,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            });
             setFormData({
                 name: "",
                 category: "",
@@ -85,10 +78,9 @@ export function SupplierManufacturersSection() {
     };
 
     const handleDeleteManufacturer = async (id: string) => {
-        if (!userUid) return;
         if (confirm("Tem certeza que deseja excluir este fabricante?")) {
             try {
-                await deleteDoc(doc(db, "users", userUid, "manufacturers", id));
+                await deleteDoc(doc(db, "manufacturers", id));
             } catch (error) {
                 console.error("Error deleting manufacturer:", error);
                 alert("Erro ao excluir fabricante.");

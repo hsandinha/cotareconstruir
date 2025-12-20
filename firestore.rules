@@ -17,7 +17,11 @@ service cloud.firestore {
       return isAuthenticated() && (
         request.auth.uid == 'gvfEWb6YRkToPypmiVajeuEISD93' ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+         (
+           (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'admin') ||
+           (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('roles', []).hasAny(['admin']))
+         )
+        )
       );
     }
 
@@ -38,6 +42,55 @@ service cloud.firestore {
       }
     }
 
+    // Works (Obras): Clients manage their works. Admins can manage all.
+    match /works/{workId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isAdmin());
+      allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Quotations: Clients manage their quotations. Suppliers can read pending ones.
+    match /quotations/{quotationId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || 
+        resource.data.status == 'pending' || 
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isAdmin());
+      allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+
+      // Subcollection: Proposals (within Quotation)
+      match /proposals/{proposalId} {
+         allow read: if isAuthenticated() && (
+           get(/databases/$(database)/documents/quotations/$(quotationId)).data.userId == request.auth.uid ||
+           resource.data.supplierId == request.auth.uid ||
+           isAdmin()
+         );
+         allow write: if isAuthenticated() && (
+           request.resource.data.supplierId == request.auth.uid ||
+           resource.data.supplierId == request.auth.uid ||
+           isAdmin()
+         );
+      }
+    }
+
+    // Proposals (Root collection for Supplier Dashboard)
+    match /proposals/{proposalId} {
+      allow read: if isAuthenticated() && (resource.data.supplierId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && (request.resource.data.supplierId == request.auth.uid || isAdmin());
+      allow update: if isAuthenticated() && (resource.data.supplierId == request.auth.uid || isAdmin());
+    }
+
+    // Materials: Suppliers manage their materials. Everyone can read (Marketplace).
+    match /materials/{materialId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (
+        (resource == null && request.resource.data.supplierId == request.auth.uid) ||
+        (resource != null && resource.data.supplierId == request.auth.uid) ||
+        isAdmin()
+      );
+    }
+
     // Audit Logs: Authenticated users can create logs. Only admins can read/manage.
     match /audit_logs/{document=**} {
       allow create: if isAuthenticated();
@@ -50,32 +103,98 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
-    // Proposals: Allow authenticated users to read/write (refine this for production)
-    match /proposals/{document=**} {
-      allow read, write: if isAuthenticated();
-    }
-
-    // Quotations: Allow authenticated users to read/write
-    match /quotations/{document=**} {
-      allow read, write: if isAuthenticated();
-    }
-
     // Chats: Allow authenticated users to read/write
     match /chats/{document=**} {
       allow read, write: if isAuthenticated();
     }
-    
-    // Materials: Allow authenticated users to read/write
-    match /materials/{document=**} {
-      allow read, write: if isAuthenticated();
-    }
 
-    // Notifications: Allow users to read/update their own notifications
+    // Notifications: Allow users to read/update their own notifications. Allow creation by auth users (e.g. suppliers notifying clients).
     match /notifications/{notificationId} {
       allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isAdmin(); // Only admin/system creates notifications
       allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
       allow delete: if isAdmin();
+      allow create: if isAuthenticated();
+    }
+
+    // Construction Management: Fases, Servicos, Grupos, Materiais
+    // Admins podem gerenciar todas as coleções de construção
+    match /fases/{faseId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    match /servicos/{servicoId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    match /grupos_insumo/{grupoId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    match /materiais/{materialId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Fornecedores: Admins podem gerenciar fornecedores
+    match /fornecedores/{fornecedorId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+      
+      // Subcoleção de materiais do fornecedor
+      match /materiais/{materialId} {
+        // Qualquer usuário autenticado pode ler (simplificado para evitar erros)
+        // Em produção, validar se o usuário tem fornecedorId == fornecedorId
+        allow read: if isAuthenticated();
+        
+        // Apenas o fornecedor dono ou admin pode escrever
+        allow write: if isAuthenticated() && (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('fornecedorId', '') == fornecedorId) ||
+          isAdmin()
+        );
+      }
+    }
+    
+    // Solicitações de Materiais: Fornecedores podem criar, admins podem gerenciar
+    match /solicitacoes_materiais/{solicitacaoId} {
+      // Função helper para verificar se o usuário é fornecedor
+      function isFornecedor() {
+        return isAuthenticated() && (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'fornecedor'
+        );
+      }
+      
+      allow read: if isFornecedor() || isAdmin();
+      allow create: if isFornecedor();
+      allow update, delete: if isAdmin();
+    }
+    
+    // Clientes: Admins podem gerenciar clientes
+    match /clientes/{clienteId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Fabricantes: Todos usuários autenticados podem ler, apenas admins podem escrever
+    match /manufacturers/{manufacturerId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Oportunidades: Todos usuários autenticados podem ler, apenas admins podem escrever
+    match /opportunities/{opportunityId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Pedidos: Todos usuários autenticados podem ler, apenas admins podem escrever
+    match /orders/{orderId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
   }
 }

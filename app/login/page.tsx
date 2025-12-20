@@ -10,7 +10,6 @@ export default function LoginPage() {
     const router = useRouter();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [role, setRole] = useState("cliente");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -39,40 +38,56 @@ export default function LoginPage() {
         }
     };
 
-    async function handleUserAuth(user: any, selectedRole: string) {
+    async function handleUserAuth(user: any) {
         const userRef = doc(db, "users", user.uid);
         const userSnap = await getDoc(userRef);
 
-        let userRole = selectedRole;
+        let userRoles: string[] = ["cliente"];
+        let primaryRole = "cliente";
 
         if (userSnap.exists()) {
             const userData = userSnap.data();
-            userRole = userData.role;
+            // Support both legacy 'role' and new 'roles' array
+            if (userData.roles && Array.isArray(userData.roles) && userData.roles.length > 0) {
+                userRoles = userData.roles;
+            } else if (userData.role) {
+                userRoles = [userData.role];
+            }
         } else {
             // Create new user document if it doesn't exist
             await setDoc(userRef, {
                 email: user.email,
-                role: selectedRole,
+                roles: ["cliente"],
+                role: "cliente", // Legacy support
                 name: user.displayName || "",
                 photoURL: user.photoURL || "",
                 createdAt: new Date().toISOString(),
             });
         }
 
+        // Determine redirect priority: Admin > Fornecedor > Cliente
+        if (userRoles.includes("admin") || userRoles.includes("administrador")) {
+            primaryRole = "admin";
+        } else if (userRoles.includes("fornecedor")) {
+            primaryRole = "fornecedor";
+        } else {
+            primaryRole = "cliente";
+        }
+
         const token = await user.getIdToken();
 
         // Save to localStorage for persistence
         localStorage.setItem("token", token);
-        localStorage.setItem("role", userRole);
+        localStorage.setItem("role", primaryRole); // Current active role
         localStorage.setItem("uid", user.uid);
 
         // Set cookies for Middleware
         document.cookie = `token=${token}; path=/; max-age=86400; SameSite=Strict`;
-        document.cookie = `role=${userRole}; path=/; max-age=86400; SameSite=Strict`;
+        document.cookie = `role=${primaryRole}; path=/; max-age=86400; SameSite=Strict`;
 
-        // Redirect based on role
-        if (userRole === "fornecedor") router.push("/dashboard/fornecedor");
-        else if (userRole === "admin" || userRole === "administrador") router.push("/dashboard/admin");
+        // Redirect based on priority role
+        if (primaryRole === "admin") router.push("/dashboard/admin");
+        else if (primaryRole === "fornecedor") router.push("/dashboard/fornecedor");
         else router.push("/dashboard/cliente");
     }
 
@@ -81,7 +96,7 @@ export default function LoginPage() {
         setError(null);
         try {
             const result = await signInWithPopup(auth, googleProvider);
-            await handleUserAuth(result.user, role);
+            await handleUserAuth(result.user);
         } catch (err: any) {
             console.error(err);
             setError(getFriendlyErrorMessage(err.code));
@@ -96,7 +111,7 @@ export default function LoginPage() {
 
         try {
             const result = await signInWithEmailAndPassword(auth, email, password);
-            await handleUserAuth(result.user, role);
+            await handleUserAuth(result.user);
         } catch (err: any) {
             console.error(err);
             setError(getFriendlyErrorMessage(err.code));
@@ -110,19 +125,6 @@ export default function LoginPage() {
                 <h1 className="mb-6 text-center text-2xl font-bold text-white">Entrar</h1>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                        <label className="mb-2 block text-sm font-medium text-slate-200">Eu sou</label>
-                        <select
-                            value={role}
-                            onChange={(e) => setRole(e.target.value)}
-                            className="w-full rounded-lg border border-white/10 bg-slate-900/60 px-4 py-2 text-white"
-                        >
-                            <option value="cliente">Cliente</option>
-                            <option value="fornecedor">Fornecedor</option>
-                            <option value="admin">Administrador</option>
-                        </select>
-                    </div>
-
                     <div>
                         <label className="mb-2 block text-sm font-medium text-slate-200">Email</label>
                         <input

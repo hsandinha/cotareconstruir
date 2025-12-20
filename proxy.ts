@@ -4,11 +4,29 @@ import type { NextRequest } from 'next/server'
 export function middleware(request: NextRequest) {
     const token = request.cookies.get('token')?.value
     const role = request.cookies.get('role')?.value
+    const mustChangePassword = request.cookies.get('mustChangePassword')?.value
 
     // Protect dashboard routes
     if (request.nextUrl.pathname.startsWith('/dashboard')) {
         if (!token) {
             return NextResponse.redirect(new URL('/login', request.url))
+        }
+
+        // Check if user must change password (except on change-password page)
+        if (mustChangePassword === 'true' && !request.nextUrl.pathname.startsWith('/dashboard/change-password')) {
+            return NextResponse.redirect(new URL('/dashboard/change-password', request.url))
+        }
+
+        // Prevent access to change-password if not required
+        if (request.nextUrl.pathname.startsWith('/dashboard/change-password') && mustChangePassword !== 'true') {
+            // Redirect to appropriate dashboard based on role
+            if (role === 'cliente') {
+                return NextResponse.redirect(new URL('/dashboard/cliente', request.url))
+            } else if (role === 'fornecedor') {
+                return NextResponse.redirect(new URL('/dashboard/fornecedor', request.url))
+            } else if (role === 'admin') {
+                return NextResponse.redirect(new URL('/dashboard/admin', request.url))
+            }
         }
 
         // Role based redirection/protection
@@ -42,5 +60,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-    matcher: '/dashboard/:path*',
+    matcher: ['/dashboard/:path*', '/dashboard/change-password'],
 }

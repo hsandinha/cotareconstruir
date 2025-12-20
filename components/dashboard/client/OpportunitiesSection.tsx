@@ -38,8 +38,12 @@ export function ClientOpportunitiesSection() {
                         ...doc.data()
                     }));
                     setOpportunities(opportunitiesData);
-                } catch (error) {
-                    console.error("Error fetching opportunities:", error);
+                } catch (error: any) {
+                    // Silenciar erro de permissão - coleção não existe ainda
+                    if (error.code !== 'permission-denied') {
+                        console.error("Error fetching opportunities:", error);
+                    }
+                    setOpportunities([]);
                 } finally {
                     setLoading(false);
                 }

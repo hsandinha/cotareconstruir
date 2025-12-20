@@ -1,20 +1,44 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { PlusIcon, MagnifyingGlassIcon, ShoppingCartIcon, WrenchScrewdriverIcon } from "@heroicons/react/24/outline";
+import { PlusIcon, MagnifyingGlassIcon, ShoppingCartIcon, WrenchScrewdriverIcon, ChevronRightIcon, ChevronDownIcon } from "@heroicons/react/24/outline";
 import { cartCategories } from "../../../lib/clientDashboardMocks";
 import { auth, db } from "../../../lib/firebase";
-import { collection, addDoc, query, where, onSnapshot } from "firebase/firestore";
+import { collection, addDoc, query, where, onSnapshot, getDocs, orderBy, getDoc, doc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
+import { Fase, Servico, GrupoInsumo, Material } from "../../../lib/constructionData";
+
+interface CartItem {
+    id: string;
+    name: string;
+    quantity: number;
+    unit: string;
+    group: string;
+    observation?: string;
+    faseNome?: string;
+    servicoNome?: string;
+    materialId?: string;
+}
 
 export function ClientExploreSection() {
     const [currentView, setCurrentView] = useState<"search" | "analysis" | "success">("search");
     const [searchTerm, setSearchTerm] = useState("");
-    const [cart, setCart] = useState<Array<{ id: string, name: string, quantity: number, unit: string, group: string, observation?: string }>>([]);
+    const [cart, setCart] = useState<CartItem[]>([]);
     const [selectedWork, setSelectedWork] = useState("");
     const [showManualEntry, setShowManualEntry] = useState(false);
     const [works, setWorks] = useState<any[]>([]);
     const [userUid, setUserUid] = useState<string | null>(null);
+    const [selectedWorkData, setSelectedWorkData] = useState<any>(null);
+    const [quotationMode, setQuotationMode] = useState<"search" | "tree">("search");
+
+    // Estados para modo árvore
+    const [fases, setFases] = useState<Fase[]>([]);
+    const [servicos, setServicos] = useState<Servico[]>([]);
+    const [grupos, setGrupos] = useState<GrupoInsumo[]>([]);
+    const [materiais, setMateriais] = useState<Material[]>([]);
+    const [expandedFases, setExpandedFases] = useState<Set<string>>(new Set());
+    const [expandedServicos, setExpandedServicos] = useState<Set<string>>(new Set());
+    const [expandedGrupos, setExpandedGrupos] = useState<Set<string>>(new Set());
 
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -37,6 +61,129 @@ export function ClientExploreSection() {
         return () => unsubscribeAuth();
     }, []);
 
+    // Carregar dados da estrutura de fases quando entrar no modo árvore
+    useEffect(() => {
+        if (quotationMode === "tree") {
+            loadConstructionData();
+        }
+    }, [quotationMode]);
+
+    // Quando selecionar uma obra, buscar seus dados
+    useEffect(() => {
+        if (selectedWork) {
+            const loadWorkData = async () => {
+                try {
+                    const workDoc = await getDoc(doc(db, "works", selectedWork));
+                    if (workDoc.exists()) {
+                        setSelectedWorkData({ id: workDoc.id, ...workDoc.data() });
+                    }
+                } catch (error) {
+                    console.error("Erro ao carregar dados da obra:", error);
+                }
+            };
+            loadWorkData();
+        } else {
+            setSelectedWorkData(null);
+        }
+    }, [selectedWork]);
+
+    const loadConstructionData = async () => {
+        try {
+            const [fasesSnap, servicosSnap, gruposSnap, materiaisSnap] = await Promise.all([
+                getDocs(query(collection(db, "fases"), orderBy("cronologia", "asc"))),
+                getDocs(collection(db, "servicos")),
+                getDocs(collection(db, "grupos_insumo")),
+                getDocs(collection(db, "materiais"))
+            ]);
+
+            setFases(fasesSnap.docs.map(d => ({ id: d.id, ...d.data() } as Fase)));
+            setServicos(servicosSnap.docs.map(d => ({ id: d.id, ...d.data() } as Servico)));
+            setGrupos(gruposSnap.docs.map(d => ({ id: d.id, ...d.data() } as GrupoInsumo)));
+            setMateriais(materiaisSnap.docs.map(d => ({ id: d.id, ...d.data() } as Material)));
+        } catch (error) {
+            console.error("Erro ao carregar dados da estrutura:", error);
+        }
+    };
+
+    // Função para verificar se uma fase está na data válida para receber propostas
+    const isFaseValidForQuotation = (faseNome: string): boolean => {
+        if (!selectedWorkData) return false;
+
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0); // Zera as horas para comparar apenas a data
+
+        // Verifica se é a fase atual da obra e se já está na data de recebimento
+        if (faseNome === selectedWorkData.etapa && selectedWorkData.inicioRecebimentoOferta) {
+            const inicioOferta = new Date(selectedWorkData.inicioRecebimentoOferta);
+            inicioOferta.setHours(0, 0, 0, 0);
+            if (hoje >= inicioOferta) {
+                return true;
+            }
+        }
+
+        // Verifica se existe uma etapa cadastrada para essa fase
+        if (selectedWorkData.stages && selectedWorkData.stages.length > 0) {
+            const stage = selectedWorkData.stages.find((s: any) => s.name === faseNome);
+
+            if (stage && stage.predictedDate && stage.quotationAdvanceDays) {
+                // Calcula a data de início de recebimento de ofertas
+                const dataInicio = new Date(stage.predictedDate);
+                dataInicio.setHours(0, 0, 0, 0);
+                const inicioRecebimento = new Date(dataInicio);
+                inicioRecebimento.setDate(inicioRecebimento.getDate() - stage.quotationAdvanceDays);
+
+                // Verifica se hoje já está dentro do período de recebimento
+                return hoje >= inicioRecebimento;
+            }
+        }
+
+        return false;
+    };
+
+    // Função para validar material adicionado via busca
+    const validateMaterialFase = (material: Material): { valid: boolean; message?: string; faseNome?: string } => {
+        if (!selectedWorkData || materiais.length === 0) return { valid: true };
+
+        // Encontrar a fase do material através dos grupos e serviços
+        let materialFase: Fase | null = null;
+
+        // Buscar grupos do material
+        for (const grupoId of material.gruposInsumoIds) {
+            // Buscar serviços que usam esse grupo
+            const servicosDoGrupo = servicos.filter(s => s.gruposInsumoIds.includes(grupoId));
+
+            for (const servico of servicosDoGrupo) {
+                // Buscar fases do serviço
+                for (const faseId of servico.faseIds) {
+                    const fase = fases.find(f => f.id === faseId);
+                    if (fase && (!materialFase || fase.cronologia < materialFase.cronologia)) {
+                        materialFase = fase;
+                    }
+                }
+            }
+        }
+
+        if (!materialFase) return { valid: true }; // Se não encontrou fase, permite adicionar
+
+        const isValid = isFaseValidForQuotation(materialFase.nome);
+
+        if (!isValid) {
+            return {
+                valid: false,
+                message: `⚠️ Este material faz parte da fase "${materialFase.nome}". Para cotar este material, você precisa cadastrar esta etapa no cronograma da obra com uma data de início de recebimento de ofertas válida.`,
+                faseNome: materialFase.nome
+            };
+        }
+
+        return { valid: true, faseNome: materialFase.nome };
+    };
+
+    // Filtrar fases válidas para exibir no modo árvore
+    const validFasesForQuotation = useMemo(() => {
+        if (!selectedWorkData) return [];
+        return fases.filter(f => isFaseValidForQuotation(f.nome));
+    }, [selectedWorkData, fases]);
+
     // Estado para entrada manual
     const [manualItem, setManualItem] = useState({
         name: "",
@@ -46,32 +193,78 @@ export function ClientExploreSection() {
         observation: ""
     });
 
-    const materialSuggestions = [
-        { name: "Cimento CP-II", group: "Aglomerante", unit: "saco" },
-        { name: "Areia Média", group: "Agregado", unit: "m³" },
-        { name: "Brita 1", group: "Agregado", unit: "m³" },
-        { name: "Cabo Flexível 2.5mm", group: "Elétrico", unit: "rolo" },
-        { name: "Tubo PVC 100mm", group: "Hidráulico", unit: "barra" },
-        { name: "Tijolo Baiano", group: "Alvenaria e Vedações", unit: "milheiro" },
-        { name: "Argamassa AC-III", group: "Aglomerante", unit: "saco" },
-        { name: "Tinta Acrílica Branco Neve", group: "Pintura", unit: "lata 18L" },
-    ];
+    // Agora busca nos materiais reais do Firestore
+    const filteredMaterialSuggestions = useMemo(() => {
+        if (!searchTerm || materiais.length === 0) return [];
+        return materiais.filter(m =>
+            m.nome.toLowerCase().includes(searchTerm.toLowerCase())
+        ).slice(0, 10); // Limita a 10 sugestões
+    }, [searchTerm, materiais]);
 
-    const addToCart = (material: string) => {
-        const suggestion = materialSuggestions.find(m => m.name.toLowerCase() === material.toLowerCase());
-        if (suggestion) {
-            // Verifica se já existe para somar ou avisar (aqui vamos permitir duplicar se quiser, ou apenas somar)
-            // Simplificação: Adiciona novo item
-            setCart([...cart, {
-                id: Date.now().toString(),
-                name: suggestion.name,
-                quantity: 1,
-                unit: suggestion.unit,
-                group: suggestion.group,
-                observation: ""
-            }]);
+    const addToCart = (material: Material) => {
+        // Validar fase do material
+        const validation = validateMaterialFase(material);
+
+        if (!validation.valid) {
+            alert(validation.message);
+            return;
         }
+
+        setCart([...cart, {
+            id: Date.now().toString(),
+            name: material.nome,
+            quantity: 1,
+            unit: material.unidade,
+            group: "Material", // Pode ser melhorado para buscar o grupo real
+            observation: "",
+            faseNome: validation.faseNome,
+            materialId: material.id
+        }]);
         setSearchTerm("");
+    };
+
+    const addMaterialFromTree = (material: Material, faseNome: string, servicoNome: string) => {
+        setCart([...cart, {
+            id: Date.now().toString(),
+            name: material.nome,
+            quantity: 1,
+            unit: material.unidade,
+            group: servicoNome,
+            observation: "",
+            faseNome: faseNome,
+            servicoNome: servicoNome,
+            materialId: material.id
+        }]);
+    };
+
+    const toggleFase = (faseId: string) => {
+        const newSet = new Set(expandedFases);
+        if (newSet.has(faseId)) {
+            newSet.delete(faseId);
+        } else {
+            newSet.add(faseId);
+        }
+        setExpandedFases(newSet);
+    };
+
+    const toggleServico = (servicoId: string) => {
+        const newSet = new Set(expandedServicos);
+        if (newSet.has(servicoId)) {
+            newSet.delete(servicoId);
+        } else {
+            newSet.add(servicoId);
+        }
+        setExpandedServicos(newSet);
+    };
+
+    const toggleGrupo = (grupoId: string) => {
+        const newSet = new Set(expandedGrupos);
+        if (newSet.has(grupoId)) {
+            newSet.delete(grupoId);
+        } else {
+            newSet.add(grupoId);
+        }
+        setExpandedGrupos(newSet);
     };
 
     const addManualItem = () => {
@@ -95,13 +288,6 @@ export function ClientExploreSection() {
     const updateItem = (id: string, field: string, value: any) => {
         setCart(cart.map(item => item.id === id ? { ...item, [field]: value } : item));
     };
-
-    const filteredSuggestions = useMemo(() => {
-        if (!searchTerm) return [];
-        return materialSuggestions.filter(m =>
-            m.name.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-    }, [searchTerm]);
 
     const groupedCart = useMemo(() => {
         const groups: { [key: string]: typeof cart } = {};
@@ -176,241 +362,429 @@ export function ClientExploreSection() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Área de Pesquisa e Adição */}
-                    <div className="lg:col-span-2 space-y-6">
-                        {/* Busca Inteligente */}
-                        <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm relative">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                                    <MagnifyingGlassIcon className="h-5 w-5 text-blue-600" />
-                                    O que você precisa comprar?
-                                </h3>
-                                <button
-                                    onClick={() => setShowManualEntry(!showManualEntry)}
-                                    className="text-sm text-blue-600 font-medium hover:underline"
-                                >
-                                    {showManualEntry ? "Voltar para busca" : "Não encontrou? Adicionar manual"}
-                                </button>
+                {/* Só mostra o resto do formulário se uma obra foi selecionada */}
+                {selectedWork && (
+                    <>
+                        {/* Seletor de Modo */}
+                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-2xl border border-blue-100">
+                            <div className="flex items-center gap-4">
+                                <span className="text-sm font-semibold text-slate-700">Modo de Cotação:</span>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setQuotationMode("search")}
+                                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${quotationMode === "search"
+                                            ? "bg-blue-600 text-white shadow-md"
+                                            : "bg-white text-slate-600 hover:bg-slate-50"
+                                            }`}
+                                    >
+                                        🔍 Busca Rápida
+                                    </button>
+                                    <button
+                                        onClick={() => setQuotationMode("tree")}
+                                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${quotationMode === "tree"
+                                            ? "bg-blue-600 text-white shadow-md"
+                                            : "bg-white text-slate-600 hover:bg-slate-50"
+                                            }`}
+                                    >
+                                        🌳 Navegação por Fases
+                                    </button>
+                                </div>
+                            </div>
+                            {selectedWorkData && (
+                                <div className="mt-3 text-sm text-slate-600">
+                                    <span className="font-medium">Fase Atual:</span> {selectedWorkData.etapa || "Não definida"}
+                                    {selectedWorkData.inicioRecebimentoOferta && (
+                                        <span className="ml-4">
+                                            <span className="font-medium">Recebe ofertas desde:</span> {new Date(selectedWorkData.inicioRecebimentoOferta).toLocaleDateString()}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            {/* Área de Pesquisa e Adição */}
+                            <div className="lg:col-span-2 space-y-6">
+
+                                {/* MODO BUSCA */}
+                                {quotationMode === "search" && (
+                                    <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm relative">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                                                <MagnifyingGlassIcon className="h-5 w-5 text-blue-600" />
+                                                O que você precisa comprar?
+                                            </h3>
+                                            <button
+                                                onClick={() => setShowManualEntry(!showManualEntry)}
+                                                className="text-sm text-blue-600 font-medium hover:underline"
+                                            >
+                                                {showManualEntry ? "Voltar para busca" : "Não encontrou? Adicionar manual"}
+                                            </button>
+                                        </div>
+
+                                        {!showManualEntry ? (
+                                            <div className="relative">
+                                                <input
+                                                    type="text"
+                                                    value={searchTerm}
+                                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                                    className="w-full px-4 py-4 pl-12 border border-slate-200 rounded-xl text-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                                    placeholder="Digite o nome do material (ex: Cimento, Areia)..."
+                                                />
+                                                <MagnifyingGlassIcon className="h-6 w-6 text-slate-400 absolute left-4 top-4" />
+
+                                                {/* Sugestões Dropdown */}
+                                                {filteredMaterialSuggestions.length > 0 && (
+                                                    <div className="absolute z-10 w-full mt-2 bg-white border border-slate-100 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                                                        {filteredMaterialSuggestions.map((material) => (
+                                                            <button
+                                                                key={material.id}
+                                                                onClick={() => addToCart(material)}
+                                                                className="w-full text-left px-4 py-3 hover:bg-slate-50 flex justify-between items-center border-b border-slate-50 last:border-0"
+                                                            >
+                                                                <span className="font-medium text-slate-700">{material.nome}</span>
+                                                                <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">{material.unidade}</span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Nome do Material</label>
+                                                        <input
+                                                            value={manualItem.name}
+                                                            onChange={(e) => setManualItem({ ...manualItem, name: e.target.value })}
+                                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                            placeholder="Ex: Porcelanato 60x60"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Categoria</label>
+                                                        <select
+                                                            value={manualItem.group}
+                                                            onChange={(e) => setManualItem({ ...manualItem, group: e.target.value })}
+                                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        >
+                                                            {cartCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Quantidade</label>
+                                                            <input
+                                                                type="number"
+                                                                min="1"
+                                                                value={manualItem.quantity}
+                                                                onChange={(e) => setManualItem({ ...manualItem, quantity: Number(e.target.value) })}
+                                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Unidade</label>
+                                                            <input
+                                                                value={manualItem.unit}
+                                                                onChange={(e) => setManualItem({ ...manualItem, unit: e.target.value })}
+                                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                placeholder="unid, m², kg"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Observação</label>
+                                                        <input
+                                                            value={manualItem.observation}
+                                                            onChange={(e) => setManualItem({ ...manualItem, observation: e.target.value })}
+                                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                            placeholder="Detalhes técnicos..."
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={addManualItem}
+                                                    className="w-full py-2 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800"
+                                                >
+                                                    Adicionar Item
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* MODO ÁRVORE */}
+                                {quotationMode === "tree" && (
+                                    <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
+                                        <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                                            🌳 Navegação por Fases
+                                        </h3>
+
+                                        {validFasesForQuotation.length === 0 ? (
+                                            <div className="text-center py-8 bg-slate-50 rounded-xl">
+                                                <p className="text-slate-500">Nenhuma fase disponível para cotação no momento.</p>
+                                                <p className="text-xs text-slate-400 mt-2">Verifique a fase atual e data de recebimento de ofertas da obra.</p>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {validFasesForQuotation.map((fase) => {
+                                                    const isFaseExpanded = expandedFases.has(fase.id);
+                                                    const servicosDaFase = servicos.filter(s => s.faseIds.includes(fase.id));
+
+                                                    return (
+                                                        <div key={fase.id} className="border border-slate-200 rounded-lg overflow-hidden">
+                                                            {/* Fase Header */}
+                                                            <div
+                                                                onClick={() => toggleFase(fase.id)}
+                                                                className="flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-blue-100 cursor-pointer hover:from-blue-100 hover:to-blue-200 transition-colors"
+                                                            >
+                                                                <div className="flex items-center gap-2">
+                                                                    {isFaseExpanded ? (
+                                                                        <ChevronDownIcon className="h-4 w-4 text-blue-600" />
+                                                                    ) : (
+                                                                        <ChevronRightIcon className="h-4 w-4 text-blue-600" />
+                                                                    )}
+                                                                    <span className="font-bold text-blue-900">
+                                                                        {fase.cronologia}. {fase.nome}
+                                                                    </span>
+                                                                </div>
+                                                                <span className="text-xs bg-blue-200 text-blue-700 px-2 py-1 rounded-full">
+                                                                    {servicosDaFase.length} serviços
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Serviços */}
+                                                            {isFaseExpanded && (
+                                                                <div className="bg-white">
+                                                                    {servicosDaFase.map((servico) => {
+                                                                        const isServicoExpanded = expandedServicos.has(servico.id);
+                                                                        const gruposDoServico = grupos.filter(g =>
+                                                                            servico.gruposInsumoIds.includes(g.id)
+                                                                        );
+
+                                                                        return (
+                                                                            <div key={servico.id} className="border-t border-slate-100">
+                                                                                {/* Serviço Header */}
+                                                                                <div
+                                                                                    onClick={() => toggleServico(servico.id)}
+                                                                                    className="flex items-center justify-between p-3 pl-8 bg-gradient-to-r from-indigo-50 to-indigo-100 cursor-pointer hover:from-indigo-100 hover:to-indigo-200 transition-colors"
+                                                                                >
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        {isServicoExpanded ? (
+                                                                                            <ChevronDownIcon className="h-4 w-4 text-indigo-600" />
+                                                                                        ) : (
+                                                                                            <ChevronRightIcon className="h-4 w-4 text-indigo-600" />
+                                                                                        )}
+                                                                                        <span className="font-semibold text-indigo-900 text-sm">
+                                                                                            {servico.nome}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <span className="text-xs bg-indigo-200 text-indigo-700 px-2 py-1 rounded-full">
+                                                                                        {gruposDoServico.length} grupos
+                                                                                    </span>
+                                                                                </div>
+
+                                                                                {/* Grupos */}
+                                                                                {isServicoExpanded && (
+                                                                                    <div className="bg-white">
+                                                                                        {gruposDoServico.map((grupo) => {
+                                                                                            const isGrupoExpanded = expandedGrupos.has(grupo.id);
+                                                                                            const materiaisDoGrupo = materiais.filter(m =>
+                                                                                                m.gruposInsumoIds.includes(grupo.id)
+                                                                                            );
+
+                                                                                            return (
+                                                                                                <div key={grupo.id} className="border-t border-slate-100">
+                                                                                                    {/* Grupo Header */}
+                                                                                                    <div
+                                                                                                        onClick={() => toggleGrupo(grupo.id)}
+                                                                                                        className="flex items-center justify-between p-3 pl-16 bg-gradient-to-r from-violet-50 to-violet-100 cursor-pointer hover:from-violet-100 hover:to-violet-200 transition-colors"
+                                                                                                    >
+                                                                                                        <div className="flex items-center gap-2">
+                                                                                                            {isGrupoExpanded ? (
+                                                                                                                <ChevronDownIcon className="h-4 w-4 text-violet-600" />
+                                                                                                            ) : (
+                                                                                                                <ChevronRightIcon className="h-4 w-4 text-violet-600" />
+                                                                                                            )}
+                                                                                                            <span className="font-medium text-violet-900 text-sm">
+                                                                                                                {grupo.nome}
+                                                                                                            </span>
+                                                                                                        </div>
+                                                                                                        <span className="text-xs bg-violet-200 text-violet-700 px-2 py-1 rounded-full">
+                                                                                                            {materiaisDoGrupo.length} materiais
+                                                                                                        </span>
+                                                                                                    </div>
+
+                                                                                                    {/* Materiais */}
+                                                                                                    {isGrupoExpanded && (
+                                                                                                        <div className="bg-white pl-24 pr-4 py-2 space-y-1">
+                                                                                                            {materiaisDoGrupo.map((material) => (
+                                                                                                                <div
+                                                                                                                    key={material.id}
+                                                                                                                    className="flex items-center justify-between p-2 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+                                                                                                                >
+                                                                                                                    <div className="flex items-center gap-2">
+                                                                                                                        <span className="text-sm text-slate-700">
+                                                                                                                            {material.nome}
+                                                                                                                        </span>
+                                                                                                                        <span className="text-xs text-slate-400 bg-slate-200 px-1.5 py-0.5 rounded">
+                                                                                                                            {material.unidade}
+                                                                                                                        </span>
+                                                                                                                    </div>
+                                                                                                                    <button
+                                                                                                                        onClick={() => addMaterialFromTree(material, fase.nome, servico.nome)}
+                                                                                                                        className="px-3 py-1 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors"
+                                                                                                                    >
+                                                                                                                        + Adicionar
+                                                                                                                    </button>
+                                                                                                                </div>
+                                                                                                            ))}
+                                                                                                            {materiaisDoGrupo.length === 0 && (
+                                                                                                                <p className="text-xs text-slate-400 italic py-2">
+                                                                                                                    Nenhum material cadastrado neste grupo
+                                                                                                                </p>
+                                                                                                            )}
+                                                                                                        </div>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                            );
+                                                                                        })}
+                                                                                        {gruposDoServico.length === 0 && (
+                                                                                            <p className="text-xs text-slate-400 italic py-2 pl-16">
+                                                                                                Nenhum grupo vinculado a este serviço
+                                                                                            </p>
+                                                                                        )}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                    {servicosDaFase.length === 0 && (
+                                                                        <p className="text-xs text-slate-400 italic py-2 pl-8">
+                                                                            Nenhum serviço cadastrado nesta fase
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Lista do Carrinho */}
+                                <div className="space-y-4">
+                                    <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                                        <ShoppingCartIcon className="h-5 w-5 text-blue-600" />
+                                        Itens no Carrinho ({cart.length})
+                                    </h3>
+
+                                    {cart.length === 0 ? (
+                                        <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+                                            <p className="text-slate-500">Seu carrinho está vazio.</p>
+                                            <p className="text-sm text-slate-400">Comece buscando materiais acima.</p>
+                                        </div>
+                                    ) : (
+                                        Object.entries(groupedCart).map(([group, items]) => (
+                                            <div key={group} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                                                <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
+                                                    <span className="font-semibold text-slate-700 text-sm uppercase tracking-wide">{group}</span>
+                                                    <span className="text-xs text-slate-500">{items.length} itens</span>
+                                                </div>
+                                                <div className="divide-y divide-slate-100">
+                                                    {items.map((item) => (
+                                                        <div key={item.id} className="p-4 hover:bg-slate-50 transition-colors">
+                                                            <div className="flex items-start justify-between gap-4">
+                                                                <div className="flex-1">
+                                                                    <p className="font-medium text-slate-900">{item.name}</p>
+                                                                    <input
+                                                                        type="text"
+                                                                        placeholder="Adicionar observação..."
+                                                                        value={item.observation}
+                                                                        onChange={(e) => updateItem(item.id, 'observation', e.target.value)}
+                                                                        className="mt-1 w-full text-sm text-slate-600 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:outline-none placeholder-slate-400"
+                                                                    />
+                                                                </div>
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="flex items-center border border-slate-200 rounded-lg bg-white">
+                                                                        <input
+                                                                            type="number"
+                                                                            min="1"
+                                                                            value={item.quantity}
+                                                                            onChange={(e) => updateItem(item.id, 'quantity', Number(e.target.value))}
+                                                                            className="w-16 px-2 py-1 text-center text-sm text-slate-900 focus:outline-none bg-transparent"
+                                                                        />
+                                                                        <span className="px-2 text-xs text-slate-500 border-l border-slate-200 bg-slate-50 h-full flex items-center rounded-r-lg">
+                                                                            {item.unit}
+                                                                        </span>
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={() => removeFromCart(item.id)}
+                                                                        className="text-slate-400 hover:text-red-500 p-1"
+                                                                    >
+                                                                        <span className="sr-only">Remover</span>
+                                                                        ×
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
                             </div>
 
-                            {!showManualEntry ? (
-                                <div className="relative">
-                                    <input
-                                        type="text"
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="w-full px-4 py-4 pl-12 border border-slate-200 rounded-xl text-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
-                                        placeholder="Digite o nome do material (ex: Cimento, Areia)..."
-                                    />
-                                    <MagnifyingGlassIcon className="h-6 w-6 text-slate-400 absolute left-4 top-4" />
-
-                                    {/* Sugestões Dropdown */}
-                                    {filteredSuggestions.length > 0 && (
-                                        <div className="absolute z-10 w-full mt-2 bg-white border border-slate-100 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-                                            {filteredSuggestions.map((material) => (
-                                                <button
-                                                    key={material.name}
-                                                    onClick={() => addToCart(material.name)}
-                                                    className="w-full text-left px-4 py-3 hover:bg-slate-50 flex justify-between items-center border-b border-slate-50 last:border-0"
-                                                >
-                                                    <span className="font-medium text-slate-700">{material.name}</span>
-                                                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">{material.group}</span>
-                                                </button>
-                                            ))}
+                            {/* Sidebar de Resumo e Ação */}
+                            <div className="space-y-6">
+                                <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-lg shadow-blue-200">
+                                    <h3 className="text-lg font-bold mb-2">Resumo da Cotação</h3>
+                                    <div className="space-y-2 mb-6 text-blue-100 text-sm">
+                                        <div className="flex justify-between">
+                                            <span>Itens totais</span>
+                                            <span className="font-semibold">{cart.length}</span>
                                         </div>
-                                    )}
-
-                                    {/* Sugestões Rápidas */}
-                                    <div className="mt-4">
-                                        <p className="text-xs font-semibold text-slate-400 uppercase mb-2">Sugestões frequentes</p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {materialSuggestions.slice(0, 5).map((material) => (
-                                                <button
-                                                    key={material.name}
-                                                    onClick={() => addToCart(material.name)}
-                                                    className="px-3 py-1.5 text-sm bg-slate-50 text-slate-600 rounded-lg border border-slate-200 hover:border-blue-300 hover:text-blue-600 transition-colors"
-                                                >
-                                                    + {material.name}
-                                                </button>
-                                            ))}
+                                        <div className="flex justify-between">
+                                            <span>Grupos</span>
+                                            <span className="font-semibold">{Object.keys(groupedCart).length}</span>
                                         </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Nome do Material</label>
-                                            <input
-                                                value={manualItem.name}
-                                                onChange={(e) => setManualItem({ ...manualItem, name: e.target.value })}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                placeholder="Ex: Porcelanato 60x60"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Categoria</label>
-                                            <select
-                                                value={manualItem.group}
-                                                onChange={(e) => setManualItem({ ...manualItem, group: e.target.value })}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            >
-                                                {cartCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Quantidade</label>
-                                                <input
-                                                    type="number"
-                                                    min="1"
-                                                    value={manualItem.quantity}
-                                                    onChange={(e) => setManualItem({ ...manualItem, quantity: Number(e.target.value) })}
-                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Unidade</label>
-                                                <input
-                                                    value={manualItem.unit}
-                                                    onChange={(e) => setManualItem({ ...manualItem, unit: e.target.value })}
-                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    placeholder="unid, m², kg"
-                                                />
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Observação</label>
-                                            <input
-                                                value={manualItem.observation}
-                                                onChange={(e) => setManualItem({ ...manualItem, observation: e.target.value })}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                placeholder="Detalhes técnicos..."
-                                            />
+                                        <div className="flex justify-between">
+                                            <span>Obra</span>
+                                            <span className="font-semibold truncate max-w-[150px]">
+                                                {selectedWork ? works.find(w => w.id === selectedWork)?.obra : "Não selecionada"}
+                                            </span>
                                         </div>
                                     </div>
                                     <button
-                                        onClick={addManualItem}
-                                        className="w-full py-2 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800"
+                                        onClick={() => setCurrentView("analysis")}
+                                        disabled={cart.length === 0}
+                                        className="w-full py-3 bg-white text-blue-600 rounded-xl font-bold hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                                     >
-                                        Adicionar Item
+                                        Analisar Lista →
                                     </button>
                                 </div>
-                            )}
-                        </div>
 
-                        {/* Lista do Carrinho */}
-                        <div className="space-y-4">
-                            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                                <ShoppingCartIcon className="h-5 w-5 text-blue-600" />
-                                Itens no Carrinho ({cart.length})
-                            </h3>
-
-                            {cart.length === 0 ? (
-                                <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
-                                    <p className="text-slate-500">Seu carrinho está vazio.</p>
-                                    <p className="text-sm text-slate-400">Comece buscando materiais acima.</p>
-                                </div>
-                            ) : (
-                                Object.entries(groupedCart).map(([group, items]) => (
-                                    <div key={group} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                                        <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
-                                            <span className="font-semibold text-slate-700 text-sm uppercase tracking-wide">{group}</span>
-                                            <span className="text-xs text-slate-500">{items.length} itens</span>
-                                        </div>
-                                        <div className="divide-y divide-slate-100">
-                                            {items.map((item) => (
-                                                <div key={item.id} className="p-4 hover:bg-slate-50 transition-colors">
-                                                    <div className="flex items-start justify-between gap-4">
-                                                        <div className="flex-1">
-                                                            <p className="font-medium text-slate-900">{item.name}</p>
-                                                            <input
-                                                                type="text"
-                                                                placeholder="Adicionar observação..."
-                                                                value={item.observation}
-                                                                onChange={(e) => updateItem(item.id, 'observation', e.target.value)}
-                                                                className="mt-1 w-full text-sm text-slate-600 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:outline-none placeholder-slate-400"
-                                                            />
-                                                        </div>
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="flex items-center border border-slate-200 rounded-lg bg-white">
-                                                                <input
-                                                                    type="number"
-                                                                    min="1"
-                                                                    value={item.quantity}
-                                                                    onChange={(e) => updateItem(item.id, 'quantity', Number(e.target.value))}
-                                                                    className="w-16 px-2 py-1 text-center text-sm text-slate-900 focus:outline-none bg-transparent"
-                                                                />
-                                                                <span className="px-2 text-xs text-slate-500 border-l border-slate-200 bg-slate-50 h-full flex items-center rounded-r-lg">
-                                                                    {item.unit}
-                                                                </span>
-                                                            </div>
-                                                            <button
-                                                                onClick={() => removeFromCart(item.id)}
-                                                                className="text-slate-400 hover:text-red-500 p-1"
-                                                            >
-                                                                <span className="sr-only">Remover</span>
-                                                                ×
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
+                                <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                                    <div className="flex items-start gap-3">
+                                        <WrenchScrewdriverIcon className="h-6 w-6 text-orange-500 mt-1" />
+                                        <div>
+                                            <h4 className="font-semibold text-slate-900 text-sm">Dica do Especialista</h4>
+                                            <p className="text-xs text-slate-500 mt-1">
+                                                Agrupar materiais da mesma fase (ex: elétrica e hidráulica) pode aumentar seu poder de negociação com fornecedores Especializados.
+                                            </p>
                                         </div>
                                     </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Sidebar de Resumo e Ação */}
-                    <div className="space-y-6">
-                        <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-lg shadow-blue-200">
-                            <h3 className="text-lg font-bold mb-2">Resumo da Cotação</h3>
-                            <div className="space-y-2 mb-6 text-blue-100 text-sm">
-                                <div className="flex justify-between">
-                                    <span>Itens totais</span>
-                                    <span className="font-semibold">{cart.length}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span>Grupos</span>
-                                    <span className="font-semibold">{Object.keys(groupedCart).length}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span>Obra</span>
-                                    <span className="font-semibold truncate max-w-[150px]">
-                                        {selectedWork ? works.find(w => w.id === selectedWork)?.obra : "Não selecionada"}
-                                    </span>
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => setCurrentView("analysis")}
-                                disabled={cart.length === 0}
-                                className="w-full py-3 bg-white text-blue-600 rounded-xl font-bold hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-                            >
-                                Analisar Lista →
-                            </button>
-                        </div>
-
-                        <div className="bg-white rounded-2xl border border-slate-200 p-6">
-                            <div className="flex items-start gap-3">
-                                <WrenchScrewdriverIcon className="h-6 w-6 text-orange-500 mt-1" />
-                                <div>
-                                    <h4 className="font-semibold text-slate-900 text-sm">Dica do Especialista</h4>
-                                    <p className="text-xs text-slate-500 mt-1">
-                                        Agrupar materiais da mesma fase (ex: elétrica e hidráulica) pode aumentar seu poder de negociação com fornecedores Especializados.
-                                    </p>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
+                    </>
+                )}
             </div>
         );
     }
-
-
 
     if (currentView === "success") {
         return (
@@ -454,8 +828,6 @@ export function ClientExploreSection() {
             </div>
         );
     }
-
-
 
     if (currentView === "analysis") {
         return (

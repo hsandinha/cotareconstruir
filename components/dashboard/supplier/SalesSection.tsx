@@ -107,14 +107,25 @@ export function SupplierSalesSection() {
                 setUserUid(user.uid);
                 // Query orders where supplierId is the current user
                 const q = query(collection(db, "orders"), where("supplierId", "==", user.uid));
-                const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
-                    const items: SaleOrder[] = [];
-                    snapshot.forEach((doc) => {
-                        items.push({ id: doc.id, ...doc.data() } as SaleOrder);
-                    });
-                    setOrders(items);
-                    setLoading(false);
-                });
+                const unsubscribeSnapshot = onSnapshot(
+                    q,
+                    (snapshot) => {
+                        const items: SaleOrder[] = [];
+                        snapshot.forEach((doc) => {
+                            items.push({ id: doc.id, ...doc.data() } as SaleOrder);
+                        });
+                        setOrders(items);
+                        setLoading(false);
+                    },
+                    (error) => {
+                        // Silenciar erro de permissão - é esperado quando coleção não existe
+                        if (error.code !== 'permission-denied') {
+                            console.error("Erro ao carregar vendas:", error);
+                        }
+                        setOrders([]);
+                        setLoading(false);
+                    }
+                );
                 return () => unsubscribeSnapshot();
             } else {
                 setOrders([]);

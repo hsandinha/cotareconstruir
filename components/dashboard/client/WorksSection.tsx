@@ -4,7 +4,7 @@ import { useState, useEffect, type FormEvent } from "react";
 import { PlusIcon, CalendarIcon, CheckCircleIcon, ClockIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { Work, WorkStage, constructionStages } from "../../../lib/clientDashboardMocks";
 import { auth, db } from "../../../lib/firebase";
-import { collection, addDoc, query, where, onSnapshot, doc, updateDoc, deleteDoc, arrayUnion, arrayRemove } from "firebase/firestore";
+import { collection, addDoc, query, where, onSnapshot, doc, updateDoc, deleteDoc, arrayUnion, arrayRemove, getDocs, orderBy } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { formatCepBr } from "../../../lib/utils";
 
@@ -26,6 +26,7 @@ export function ClientWorksSection() {
     const [showStageModal, setShowStageModal] = useState(false);
     const [isWorkFormVisible, setIsWorkFormVisible] = useState(false);
     const [collapsedWorks, setCollapsedWorks] = useState<Record<string | number, boolean>>({});
+    const [fases, setFases] = useState<Array<{ id: string; nome: string; ordem: number }>>([]);
     const [form, setForm] = useState({
         obra: "",
         centroCustos: "",
@@ -42,6 +43,7 @@ export function ClientWorksSection() {
         padrao: "",
         dataInicio: "",
         previsaoTermino: "",
+        diasAntecedenciaOferta: 15,
         horarioEntrega: "",
     });
     const [deliverySchedule, setDeliverySchedule] = useState<WeekSchedule>({
@@ -56,10 +58,29 @@ export function ClientWorksSection() {
     const [stageForm, setStageForm] = useState({
         stageId: "",
         predictedDate: "",
+        endDate: "",
         quotationAdvanceDays: 15,
     });
 
     useEffect(() => {
+        // Carregar fases do Firestore
+        const loadFases = async () => {
+            try {
+                const qFases = query(collection(db, "fases"), orderBy("cronologia", "asc"));
+                const snapshot = await getDocs(qFases);
+                const fasesData = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    nome: doc.data().nome,
+                    ordem: doc.data().cronologia || 0
+                }));
+                setFases(fasesData);
+            } catch (error) {
+                console.error("Erro ao carregar fases:", error);
+            }
+        };
+
+        loadFases();
+
         const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
             if (user) {
                 setUserUid(user.uid);
@@ -130,9 +151,18 @@ export function ClientWorksSection() {
         e.preventDefault();
         if (!form.obra || !form.bairro || !userUid) return;
 
+        // Calcular data de início de recebimento de oferta
+        let inicioRecebimentoOferta = "";
+        if (form.dataInicio && form.diasAntecedenciaOferta) {
+            const date = new Date(form.dataInicio);
+            date.setDate(date.getDate() - form.diasAntecedenciaOferta);
+            inicioRecebimentoOferta = date.toISOString().split('T')[0];
+        }
+
         try {
             await addDoc(collection(db, "works"), {
                 ...form,
+                inicioRecebimentoOferta,
                 userId: userUid,
                 stages: [],
                 deliverySchedule,
@@ -155,6 +185,7 @@ export function ClientWorksSection() {
                 padrao: "",
                 dataInicio: "",
                 previsaoTermino: "",
+                diasAntecedenciaOferta: 15,
                 horarioEntrega: "",
             });
             setIsWorkFormVisible(false);
@@ -168,13 +199,13 @@ export function ClientWorksSection() {
         e.preventDefault();
         if (!selectedWork || !stageForm.stageId || !stageForm.predictedDate) return;
 
-        const selectedStageInfo = constructionStages.find(s => s.id === stageForm.stageId);
-        if (!selectedStageInfo) return;
+        const selectedFase = fases.find(f => f.id === stageForm.stageId);
+        if (!selectedFase) return;
 
         const newStage: WorkStage = {
             id: stageForm.stageId,
-            name: selectedStageInfo.name,
-            category: selectedStageInfo.category,
+            name: selectedFase.nome,
+            category: "Fase da Obra", // Pode ser ajustado se houver categorias nas fases
             predictedDate: stageForm.predictedDate,
             isCompleted: false,
             quotationAdvanceDays: stageForm.quotationAdvanceDays,
@@ -186,7 +217,7 @@ export function ClientWorksSection() {
                 stages: arrayUnion(newStage)
             });
 
-            setStageForm({ stageId: "", predictedDate: "", quotationAdvanceDays: 15 });
+            setStageForm({ stageId: "", predictedDate: "", endDate: "", quotationAdvanceDays: 15 });
             setShowStageModal(false);
         } catch (error) {
             console.error("Erro ao adicionar etapa:", error);
@@ -251,8 +282,8 @@ export function ClientWorksSection() {
     }
 
     const availableStages = selectedWork
-        ? constructionStages.filter(
-            cs => !works.find(w => w.id === selectedWork)?.stages?.some(s => s.id === cs.id)
+        ? fases.filter(
+            fase => !works.find(w => w.id === selectedWork)?.stages?.some(s => s.name === fase.nome)
         )
         : [];
 
@@ -370,48 +401,14 @@ export function ClientWorksSection() {
                                         />
                                     </label>
                                 </div>
-                                <label className="block">
-                                    <span className="text-xs font-semibold text-gray-700">Restrições de Entrega?</span>
-                                    <input
-                                        value={form.restricoesEntrega}
-                                        onChange={(e) => setForm({ ...form, restricoesEntrega: e.target.value })}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                        placeholder="Descreva se houver..."
-                                    />
-                                </label>
+
                             </div>
                         </div>
 
                         {/* 3. Características */}
                         <div>
                             <h3 className="text-sm font-semibold uppercase tracking-wide text-blue-600 mb-4">3. Características</h3>
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-                                <label className="block">
-                                    <span className="text-xs font-semibold text-gray-700">Etapa Atual</span>
-                                    <select
-                                        value={form.etapa}
-                                        onChange={(e) => setForm({ ...form, etapa: e.target.value })}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                    >
-                                        <option value="">Selecione...</option>
-                                        <option value="Preliminares">Preliminares</option>
-                                        <option value="Terraplenagem">Terraplenagem</option>
-                                        <option value="Fundações">Fundações</option>
-                                        <option value="Estrutura">Estrutura</option>
-                                        <option value="Instalações Brutas">Instalações Brutas</option>
-                                        <option value="Impermeabilização">Impermeabilização</option>
-                                        <option value="Alvenaria e Vedações">Alvenaria e Vedações</option>
-                                        <option value="Cobertura">Cobertura</option>
-                                        <option value="Instalações">Instalações</option>
-                                        <option value="Esquadrias">Esquadrias</option>
-                                        <option value="Revestimentos">Revestimentos</option>
-                                        <option value="Pintura">Pintura</option>
-                                        <option value="Acabamentos Finais">Acabamentos Finais</option>
-                                        <option value="Urbanização">Urbanização</option>
-                                        <option value="Finalização">Finalização</option>
-                                        <option value="Entrega">Entrega</option>
-                                    </select>
-                                </label>
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                                 <label className="block">
                                     <span className="text-xs font-semibold text-gray-700">Tipo de Obra</span>
                                     <select
@@ -451,10 +448,25 @@ export function ClientWorksSection() {
                             </div>
                         </div>
 
-                        {/* 4. Datas e Horários */}
+                        {/* 4. Datas e Recebimento */}
                         <div>
-                            <h3 className="text-sm font-semibold uppercase tracking-wide text-blue-600 mb-4">4. Datas e Recebimento</h3>
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                            <h3 className="text-sm font-semibold uppercase tracking-wide text-blue-600 mb-4">4. Etapas da Obra</h3>
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                                <label className="block">
+                                    <span className="text-xs font-semibold text-gray-700">Etapa Atual</span>
+                                    <select
+                                        value={form.etapa}
+                                        onChange={(e) => setForm({ ...form, etapa: e.target.value })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    >
+                                        <option value="">Selecione...</option>
+                                        {fases.map((fase) => (
+                                            <option key={fase.id} value={fase.nome}>
+                                                {fase.nome}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
                                 <label className="block">
                                     <span className="text-xs font-semibold text-gray-700">Data Início</span>
                                     <input
@@ -465,7 +477,7 @@ export function ClientWorksSection() {
                                     />
                                 </label>
                                 <label className="block">
-                                    <span className="text-xs font-semibold text-gray-700">Previsão Término</span>
+                                    <span className="text-xs font-semibold text-gray-700">Data Fim da Etapa</span>
                                     <input
                                         type="date"
                                         value={form.previsaoTermino}
@@ -473,48 +485,79 @@ export function ClientWorksSection() {
                                         className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     />
                                 </label>
+                                <label className="block">
+                                    <span className="text-xs font-semibold text-gray-700">Antecedência para Receber Ofertas (dias)</span>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={form.diasAntecedenciaOferta}
+                                        onChange={(e) => setForm({ ...form, diasAntecedenciaOferta: Number(e.target.value) })}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        placeholder="15"
+                                    />
+                                    {form.dataInicio && form.diasAntecedenciaOferta && (
+                                        <p className="mt-1 text-xs text-gray-500">
+                                            Início do recebimento: {(() => {
+                                                const date = new Date(form.dataInicio);
+                                                date.setDate(date.getDate() - form.diasAntecedenciaOferta);
+                                                return date.toLocaleDateString('pt-BR');
+                                            })()}
+                                        </p>
+                                    )}
+                                </label>
                             </div>
+                        </div>
 
-                            {/* Dias e Horários de Entrega */}
-                            <div>
-                                <h4 className="text-xs font-semibold text-gray-700 mb-3">Dias e Horários de Entrega</h4>
-                                <div className="space-y-2">
-                                    {Object.entries(dayNames).map(([dayKey, dayLabel]) => (
-                                        <div
-                                            key={dayKey}
-                                            className="flex items-center gap-3 p-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                                        >
-                                            <div className="flex items-center gap-2 flex-1">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={deliverySchedule[dayKey].enabled}
-                                                    onChange={() => toggleDeliveryDay(dayKey)}
-                                                    className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                                                />
-                                                <span className={`text-sm font-medium min-w-[70px] ${deliverySchedule[dayKey].enabled ? "text-gray-900" : "text-gray-400"}`}>
-                                                    {dayLabel}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <input
-                                                    type="time"
-                                                    value={deliverySchedule[dayKey].startTime}
-                                                    onChange={(e) => updateDeliveryTime(dayKey, "startTime", e.target.value)}
-                                                    disabled={!deliverySchedule[dayKey].enabled}
-                                                    className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400 text-gray-900"
-                                                />
-                                                <span className="text-gray-400">às</span>
-                                                <input
-                                                    type="time"
-                                                    value={deliverySchedule[dayKey].endTime}
-                                                    onChange={(e) => updateDeliveryTime(dayKey, "endTime", e.target.value)}
-                                                    disabled={!deliverySchedule[dayKey].enabled}
-                                                    className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400 text-gray-900"
-                                                />
-                                            </div>
+                        {/* 5. Horário de Entregas de Materiais */}
+                        <div>
+                            <h3 className="text-sm font-semibold uppercase tracking-wide text-blue-600 mb-4">5. Horário de Entregas de Materiais</h3>
+
+                            <label className="block mb-4">
+                                <span className="text-xs font-semibold text-gray-700">Restrições de Entrega?</span>
+                                <input
+                                    value={form.restricoesEntrega}
+                                    onChange={(e) => setForm({ ...form, restricoesEntrega: e.target.value })}
+                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    placeholder="Descreva se houver..."
+                                />
+                            </label>
+
+                            <div className="space-y-2">
+                                {Object.entries(dayNames).map(([dayKey, dayLabel]) => (
+                                    <div
+                                        key={dayKey}
+                                        className="flex items-center gap-3 p-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                                    >
+                                        <div className="flex items-center gap-2 flex-1">
+                                            <input
+                                                type="checkbox"
+                                                checked={deliverySchedule[dayKey].enabled}
+                                                onChange={() => toggleDeliveryDay(dayKey)}
+                                                className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                            />
+                                            <span className={`text-sm font-medium min-w-[70px] ${deliverySchedule[dayKey].enabled ? "text-gray-900" : "text-gray-400"}`}>
+                                                {dayLabel}
+                                            </span>
                                         </div>
-                                    ))}
-                                </div>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="time"
+                                                value={deliverySchedule[dayKey].startTime}
+                                                onChange={(e) => updateDeliveryTime(dayKey, "startTime", e.target.value)}
+                                                disabled={!deliverySchedule[dayKey].enabled}
+                                                className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400 text-gray-900"
+                                            />
+                                            <span className="text-gray-400">às</span>
+                                            <input
+                                                type="time"
+                                                value={deliverySchedule[dayKey].endTime}
+                                                onChange={(e) => updateDeliveryTime(dayKey, "endTime", e.target.value)}
+                                                disabled={!deliverySchedule[dayKey].enabled}
+                                                className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400 text-gray-900"
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
 
@@ -698,27 +741,17 @@ export function ClientWorksSection() {
                                         required
                                     >
                                         <option value="">Escolha uma etapa da construção</option>
-                                        {Object.entries(
-                                            availableStages.reduce((acc, stage) => {
-                                                if (!acc[stage.category]) acc[stage.category] = [];
-                                                acc[stage.category].push(stage);
-                                                return acc;
-                                            }, {} as { [key: string]: typeof availableStages })
-                                        ).map(([category, stages]) => (
-                                            <optgroup key={category} label={category}>
-                                                {stages.map((stage) => (
-                                                    <option key={stage.id} value={stage.id}>
-                                                        {stage.name}
-                                                    </option>
-                                                ))}
-                                            </optgroup>
+                                        {availableStages.map((fase) => (
+                                            <option key={fase.id} value={fase.id}>
+                                                {fase.ordem}. {fase.nome}
+                                            </option>
                                         ))}
                                     </select>
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-medium text-gray-900 mb-2">
-                                        Data Prevista para Execução *
+                                        Data Início *
                                     </label>
                                     <input
                                         type="date"
@@ -731,7 +764,19 @@ export function ClientWorksSection() {
 
                                 <div>
                                     <label className="block text-sm font-medium text-gray-900 mb-2">
-                                        Antecedência para Receber Cotações (dias)
+                                        Data Fim da Etapa
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={stageForm.endDate}
+                                        onChange={(e) => setStageForm({ ...stageForm, endDate: e.target.value })}
+                                        className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-900 mb-2">
+                                        Antecedência para Receber Ofertas (dias)
                                     </label>
                                     <input
                                         type="number"
@@ -741,14 +786,15 @@ export function ClientWorksSection() {
                                         onChange={(e) => setStageForm({ ...stageForm, quotationAdvanceDays: parseInt(e.target.value) || 15 })}
                                         className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
-                                    <p className="text-xs text-gray-600 mt-1">
-                                        Você começará a receber cotações{' '}
-                                        {stageForm.predictedDate && (
-                                            <span className="font-medium text-orange-700">
-                                                a partir de {formatDate(calculateQuotationDate(stageForm.predictedDate, stageForm.quotationAdvanceDays))}
-                                            </span>
-                                        )}
-                                    </p>
+                                    {stageForm.predictedDate && stageForm.quotationAdvanceDays && (
+                                        <p className="mt-1 text-xs text-gray-500">
+                                            Início do recebimento: {(() => {
+                                                const date = new Date(stageForm.predictedDate);
+                                                date.setDate(date.getDate() - stageForm.quotationAdvanceDays);
+                                                return date.toLocaleDateString('pt-BR');
+                                            })()}
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -770,7 +816,7 @@ export function ClientWorksSection() {
                                     type="button"
                                     onClick={() => {
                                         setShowStageModal(false);
-                                        setStageForm({ stageId: "", predictedDate: "", quotationAdvanceDays: 15 });
+                                        setStageForm({ stageId: "", predictedDate: "", endDate: "", quotationAdvanceDays: 15 });
                                     }}
                                     className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
                                 >

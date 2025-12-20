@@ -109,6 +109,18 @@ export function ClientProfileSection() {
         return () => unsubscribe();
     }, []);
 
+    const sortedMembers = useMemo(() => {
+        const withIndex = teamMembers.map((member, originalIndex) => ({ member, originalIndex }));
+        withIndex.sort((a, b) => {
+            const aVal = (a.member[sortBy] || "").toLowerCase();
+            const bVal = (b.member[sortBy] || "").toLowerCase();
+            if (aVal < bVal) return sortDir === "asc" ? -1 : 1;
+            if (aVal > bVal) return sortDir === "asc" ? 1 : -1;
+            return 0;
+        });
+        return withIndex;
+    }, [teamMembers, sortBy, sortDir]);
+
     const handleSave = async () => {
         if (!userUid) return;
 
@@ -250,18 +262,6 @@ export function ClientProfileSection() {
         setEditingIndex(null);
         showToast("success", "Funcionário atualizado.");
     };
-
-    const sortedMembers = useMemo(() => {
-        const withIndex = teamMembers.map((member, originalIndex) => ({ member, originalIndex }));
-        withIndex.sort((a, b) => {
-            const aVal = (a.member[sortBy] || "").toLowerCase();
-            const bVal = (b.member[sortBy] || "").toLowerCase();
-            if (aVal < bVal) return sortDir === "asc" ? -1 : 1;
-            if (aVal > bVal) return sortDir === "asc" ? 1 : -1;
-            return 0;
-        });
-        return withIndex;
-    }, [teamMembers, sortBy, sortDir]);
 
     return (
         <div className="space-y-6">

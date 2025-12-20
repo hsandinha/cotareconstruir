@@ -8,6 +8,20 @@ export type WorkStage = {
     quotationAdvanceDays: number;
 };
 
+export const constructionStages = [
+    { id: 'servicos-preliminares', name: 'Serviços Preliminares e Mobilização', category: 'Início' },
+    { id: 'terraplenagem', name: 'Terraplenagem', category: 'Fundações' },
+    { id: 'fundacoes', name: 'Fundações', category: 'Fundações' },
+    { id: 'estrutura', name: 'Estrutura', category: 'Estrutura' },
+    { id: 'instalacoes-brutas', name: 'Instalações (Brutas/Embutidas)', category: 'Instalações' },
+    { id: 'alvenaria-vedacoes', name: 'Alvenaria e Vedações', category: 'Vedação' },
+    { id: 'impermeabilizacao', name: 'Impermeabilização', category: 'Impermeabilização' },
+    { id: 'cobertura', name: 'Cobertura', category: 'Cobertura' },
+    { id: 'instalacoes', name: 'Instalações', category: 'Instalações' },
+    { id: 'esquadrias', name: 'Esquadrias', category: 'Acabamentos' },
+    { id: 'revestimentos', name: 'Revestimentos', category: 'Acabamentos' },
+];
+
 export type Work = {
     id: string | number;
     obra: string;
@@ -27,109 +41,6 @@ export type Work = {
     stages?: WorkStage[];
 };
 
-export const constructionStages = [
-    // Fase de Execução da Obra
-    // Serviços Preliminares e Mobilização
-    { id: 'limpeza-preparo', name: 'Limpeza e preparo do terreno', category: 'Preliminares' },
-    { id: 'fechamento-obra', name: 'Fechamento da obra (muros, tapumes)', category: 'Preliminares' },
-    { id: 'canteiro-obras', name: 'Implantação do canteiro de obras', category: 'Preliminares' },
-    { id: 'instalacoes-provisorias', name: 'Instalações provisórias (água, luz, etc)', category: 'Preliminares' },
-    { id: 'placa-obra', name: 'Instalação da placa da obra', category: 'Preliminares' },
-    { id: 'locacao-obra', name: 'Locação da obra', category: 'Preliminares' },
-    { id: 'demolicoes', name: 'Demolições', category: 'Preliminares' },
-
-    // Serviços de Terraplenagem
-    { id: 'corte-aterro', name: 'Corte e aterro', category: 'Terraplenagem' },
-    { id: 'compactacao-solo', name: 'Compactação do solo', category: 'Terraplenagem' },
-    { id: 'escavacoes', name: 'Escavações para fundações e infraestrutura', category: 'Terraplenagem' },
-    { id: 'drenagem', name: 'Drenagem do terreno', category: 'Terraplenagem' },
-
-    // Serviços de Fundações
-    { id: 'sapatas-estacas', name: 'Execução de sapatas, estacas, tubulões, blocos', category: 'Fundações' },
-    { id: 'baldrames', name: 'Execução de baldrames', category: 'Fundações' },
-    { id: 'impermeabilizacao-baldrames', name: 'Impermeabilização de baldrames', category: 'Fundações' },
-
-    // Serviços de Estrutura
-    { id: 'armaduras', name: 'Montagem de armaduras', category: 'Estrutura' },
-    { id: 'formas', name: 'Montagem de formas', category: 'Estrutura' },
-    { id: 'concretagem', name: 'Concretagem (Pilares, Vigas, Lajes, Escadas)', category: 'Estrutura' },
-    { id: 'cura-desforma', name: 'Cura e desforma do concreto', category: 'Estrutura' },
-    { id: 'estrutura-metalica', name: 'Instalação de estrutura metálica', category: 'Estrutura' },
-
-    // Serviços de Instalações (Brutas/Embutidas)
-    { id: 'tubulacoes-embutidas', name: 'Passagem de tubulações e fiações embutidas', category: 'Instalações Brutas' },
-
-    // Serviços de Impermeabilização
-    { id: 'preparo-lajes', name: 'Preparo da superfície das lajes', category: 'Impermeabilização' },
-    { id: 'impermeabilizacao-lajes', name: 'Aplicação de sistema impermeabilizante em lajes', category: 'Impermeabilização' },
-    { id: 'testes-estanqueidade', name: 'Testes de Estanqueidade', category: 'Impermeabilização' },
-    { id: 'protecao-mecanica', name: 'Camada de proteção mecânica', category: 'Impermeabilização' },
-
-    // Serviços de Alvenaria e Vedações
-    { id: 'alvenaria-vedacao', name: 'Levantamento de alvenaria de vedação', category: 'Alvenaria e Vedações' },
-    { id: 'vergas', name: 'Execução de vergas e contravergas', category: 'Alvenaria e Vedações' },
-    { id: 'drywall', name: 'Montagem de paredes de dry-wall ou divisórias', category: 'Alvenaria e Vedações' },
-
-    // Serviços de Cobertura
-    { id: 'estrutura-telhado', name: 'Montagem da estrutura do telhado', category: 'Cobertura' },
-    { id: 'telhas', name: 'Instalação de telhas', category: 'Cobertura' },
-    { id: 'calhas-rufos', name: 'Instalação de calhas, rufos e condutores', category: 'Cobertura' },
-
-    // Serviços de Instalações
-    { id: 'hidraulica', name: 'Hidráulica (água, esgoto, pluvial)', category: 'Instalações' },
-    { id: 'eletrica', name: 'Elétrica (fiação, quadros, proteção)', category: 'Instalações' },
-    { id: 'logica-telefonia', name: 'Lógica/Telefonia e Segurança', category: 'Instalações' },
-    { id: 'gas', name: 'Gás (tubulações, aquecedores)', category: 'Instalações' },
-    { id: 'hvac', name: 'Mecânica (HVAC)', category: 'Instalações' },
-    { id: 'ppci', name: 'PPCI (Incêndio)', category: 'Instalações' },
-
-    // Serviços de Esquadrias
-    { id: 'contramarcos', name: 'Assentamento de contramarcos', category: 'Esquadrias' },
-    { id: 'marcos', name: 'Instalação de marcos (batentes)', category: 'Esquadrias' },
-    { id: 'folhas-portas-janelas', name: 'Instalação de folhas de portas e janelas', category: 'Esquadrias' },
-    { id: 'vidros', name: 'Instalação de vidros', category: 'Esquadrias' },
-
-    // Serviços de Revestimentos
-    { id: 'chapisco', name: 'Chapisco', category: 'Revestimentos' },
-    { id: 'emboco-reboco', name: 'Emboço e reboco', category: 'Revestimentos' },
-    { id: 'gesso', name: 'Aplicação de gesso', category: 'Revestimentos' },
-    { id: 'fachadas', name: 'Revestimento de fachadas', category: 'Revestimentos' },
-    { id: 'pisos', name: 'Assentamento de pisos e rodapés', category: 'Revestimentos' },
-    { id: 'revestimento-parede', name: 'Assentamento de revestimentos de parede', category: 'Revestimentos' },
-
-    // Serviços de Pintura
-    { id: 'preparo-pintura', name: 'Preparação de superfícies', category: 'Pintura' },
-    { id: 'aplicacao-tinta', name: 'Aplicação de fundo e tinta', category: 'Pintura' },
-
-    // Serviços de Acabamentos Finais
-    { id: 'loucas', name: 'Instalação de louças sanitárias', category: 'Acabamentos Finais' },
-    { id: 'metais', name: 'Instalação de metais', category: 'Acabamentos Finais' },
-    { id: 'eletrica-final', name: 'Instalação de luminárias, tomadas, interruptores', category: 'Acabamentos Finais' },
-    { id: 'bancadas', name: 'Instalação de bancadas, soleiras e peitoris', category: 'Acabamentos Finais' },
-    { id: 'corrimoes', name: 'Instalação de corrimãos e guarda-corpos', category: 'Acabamentos Finais' },
-    { id: 'acessorios', name: 'Instalação de acessórios', category: 'Acabamentos Finais' },
-    { id: 'mobiliario', name: 'Instalação de mobiliário fixo', category: 'Acabamentos Finais' },
-
-    // Serviços de Urbanização e Paisagismo
-    { id: 'calcadas', name: 'Execução de calçadas, passeios, rampas', category: 'Urbanização' },
-    { id: 'pavimentacao', name: 'Implantação de pavimentação', category: 'Urbanização' },
-    { id: 'jardinagem', name: 'Jardinagem e plantio', category: 'Urbanização' },
-    { id: 'iluminacao-externa', name: 'Instalação de iluminação externa', category: 'Urbanização' },
-    { id: 'muros-portoes', name: 'Construção de muros e portões', category: 'Urbanização' },
-
-    // Fase de Finalização e Entrega
-    // Serviços de Testes
-    { id: 'testes-sistemas', name: 'Testes de sistemas', category: 'Finalização' },
-    { id: 'testes-equipamentos', name: 'Testes de equipamentos', category: 'Finalização' },
-
-    // Serviços de Limpeza
-    { id: 'limpeza-grossa', name: 'Limpeza grossa da obra', category: 'Finalização' },
-    { id: 'limpeza-fina', name: 'Limpeza fina e pós-obra', category: 'Finalização' },
-
-    // Serviços de Vistoria e Correção
-    { id: 'vistoria', name: 'Vistoria interna e externa', category: 'Entrega' },
-    { id: 'reparos', name: 'Execução de reparos e ajustes', category: 'Entrega' },
-];
 
 export const initialWorks: Work[] = [
     {

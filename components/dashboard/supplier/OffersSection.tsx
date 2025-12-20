@@ -45,14 +45,25 @@ export function SupplierOffersSection() {
             if (user) {
                 setUserUid(user.uid);
                 const q = query(collection(db, "users", user.uid, "offers"));
-                const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
-                    const items: Offer[] = [];
-                    snapshot.forEach((doc) => {
-                        items.push({ id: doc.id, ...doc.data() } as Offer);
-                    });
-                    setOffers(items);
-                    setLoading(false);
-                });
+                const unsubscribeSnapshot = onSnapshot(
+                    q,
+                    (snapshot) => {
+                        const items: Offer[] = [];
+                        snapshot.forEach((doc) => {
+                            items.push({ id: doc.id, ...doc.data() } as Offer);
+                        });
+                        setOffers(items);
+                        setLoading(false);
+                    },
+                    (error) => {
+                        // Silenciar erro de permissão - é esperado quando coleção não existe
+                        if (error.code !== 'permission-denied') {
+                            console.error("Erro ao carregar ofertas:", error);
+                        }
+                        setOffers([]);
+                        setLoading(false);
+                    }
+                );
                 return () => unsubscribeSnapshot();
             } else {
                 setOffers([]);
@@ -131,7 +142,7 @@ export function SupplierOffersSection() {
                         Acompanhe o desempenho e gerencie suas ofertas relâmpago ativas.
                     </p>
                 </div>
-                <button 
+                <button
                     onClick={() => setIsModalOpen(true)}
                     className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
                 >
@@ -152,8 +163,8 @@ export function SupplierOffersSection() {
                         <div key={offer.id} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
                             <div className="flex items-center gap-4 w-full md:w-auto">
                                 <div className={`p-3 rounded-full ${offer.status === 'active' ? 'bg-green-100 text-green-600' :
-                                        offer.status === 'paused' ? 'bg-amber-100 text-amber-600' :
-                                            'bg-gray-100 text-gray-600'
+                                    offer.status === 'paused' ? 'bg-amber-100 text-amber-600' :
+                                        'bg-gray-100 text-gray-600'
                                     }`}>
                                     <MegaphoneIcon className="h-6 w-6" />
                                 </div>
@@ -183,8 +194,8 @@ export function SupplierOffersSection() {
                                     <button
                                         onClick={() => toggleStatus(offer)}
                                         className={`p-2 rounded-lg transition-colors ${offer.status === 'active'
-                                                ? 'text-amber-600 hover:bg-amber-50'
-                                                : 'text-green-600 hover:bg-green-50'
+                                            ? 'text-amber-600 hover:bg-amber-50'
+                                            : 'text-green-600 hover:bg-green-50'
                                             }`}
                                         title={offer.status === 'active' ? 'Pausar' : 'Ativar'}
                                     >
@@ -228,7 +239,7 @@ export function SupplierOffersSection() {
                                     type="text"
                                     required
                                     value={newOffer.material}
-                                    onChange={(e) => setNewOffer({...newOffer, material: e.target.value})}
+                                    onChange={(e) => setNewOffer({ ...newOffer, material: e.target.value })}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                     placeholder="Ex: Cimento CP-II"
                                 />
@@ -238,7 +249,7 @@ export function SupplierOffersSection() {
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Desconto</label>
                                     <select
                                         value={newOffer.type}
-                                        onChange={(e) => setNewOffer({...newOffer, type: e.target.value as "percentage" | "fixed"})}
+                                        onChange={(e) => setNewOffer({ ...newOffer, type: e.target.value as "percentage" | "fixed" })}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                     >
                                         <option value="percentage">Porcentagem (%)</option>
@@ -253,7 +264,7 @@ export function SupplierOffersSection() {
                                         min="0"
                                         step="0.01"
                                         value={newOffer.value}
-                                        onChange={(e) => setNewOffer({...newOffer, value: e.target.value})}
+                                        onChange={(e) => setNewOffer({ ...newOffer, value: e.target.value })}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         placeholder={newOffer.type === 'percentage' ? "10" : "15.00"}
                                     />
@@ -266,7 +277,7 @@ export function SupplierOffersSection() {
                                         type="date"
                                         required
                                         value={newOffer.startDate}
-                                        onChange={(e) => setNewOffer({...newOffer, startDate: e.target.value})}
+                                        onChange={(e) => setNewOffer({ ...newOffer, startDate: e.target.value })}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                     />
                                 </div>
@@ -276,7 +287,7 @@ export function SupplierOffersSection() {
                                         type="date"
                                         required
                                         value={newOffer.endDate}
-                                        onChange={(e) => setNewOffer({...newOffer, endDate: e.target.value})}
+                                        onChange={(e) => setNewOffer({ ...newOffer, endDate: e.target.value })}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                     />
                                 </div>

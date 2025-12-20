@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useState, ReactNode } from "react";
+import { useEffect, useState, useRef, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { auth, db } from "../../../lib/firebase";
 import { collection, getCountFromServer, query, where, getDocs, orderBy, limit, doc, updateDoc, deleteDoc, getDoc, startAfter, DocumentSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
 import { onAuthStateChanged, getAuth, createUserWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential, signOut } from "firebase/auth";
 import { initializeApp, deleteApp } from "firebase/app";
 import { NotificationBell } from "../../../components/NotificationBell";
+import { ProfileSwitcher } from "@/components/ProfileSwitcher";
 import { logAction } from "../../../lib/services";
 import { useToast } from "@/components/ToastProvider";
+import ConstructionManagement from "@/components/dashboard/admin/ConstructionManagement";
+import ClientesManagement from "@/components/dashboard/admin/ClientesManagement";
+import FornecedoresManagement from "@/components/dashboard/admin/FornecedoresManagement";
+import { ManufacturersSection } from "@/components/dashboard/admin/ManufacturersSection";
 
 const SkeletonRow = ({ cols }: { cols: number }) => (
     <tr className="animate-pulse border-t border-slate-100">
@@ -20,9 +26,103 @@ const SkeletonRow = ({ cols }: { cols: number }) => (
     </tr>
 );
 
+const RoleSelector = ({
+    currentRoles,
+    onUpdate
+}: {
+    currentRoles: string[],
+    onUpdate: (newRoles: string[]) => void
+}) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [coords, setCoords] = useState({ top: 0, left: 0 });
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const availableRoles = ['cliente', 'fornecedor', 'admin'];
+
+    const toggleRole = (role: string) => {
+        const newRoles = currentRoles.includes(role)
+            ? currentRoles.filter(r => r !== role)
+            : [...currentRoles, role];
+        onUpdate(newRoles);
+    };
+
+    const handleToggle = () => {
+        if (!isOpen && buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            setCoords({
+                top: rect.bottom + window.scrollY + 4,
+                left: rect.left + window.scrollX
+            });
+        }
+        setIsOpen(!isOpen);
+    };
+
+    useEffect(() => {
+        if (isOpen) {
+            const handleScroll = () => setIsOpen(false);
+            window.addEventListener('scroll', handleScroll, true);
+            window.addEventListener('resize', handleScroll);
+            return () => {
+                window.removeEventListener('scroll', handleScroll, true);
+                window.removeEventListener('resize', handleScroll);
+            };
+        }
+    }, [isOpen]);
+
+    return (
+        <>
+            <button
+                ref={buttonRef}
+                type="button"
+                onClick={handleToggle}
+                className="flex flex-wrap gap-1 items-center min-w-[140px] p-1.5 border border-slate-200 bg-white hover:border-blue-300 rounded-lg transition-all text-left"
+            >
+                {currentRoles.length > 0 ? (
+                    currentRoles.map(role => (
+                        <span key={role} className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${role === 'admin' ? 'bg-red-100 text-red-800' :
+                            role === 'fornecedor' ? 'bg-purple-100 text-purple-800' :
+                                'bg-blue-100 text-blue-800'
+                            }`}>
+                            {role}
+                        </span>
+                    ))
+                ) : (
+                    <span className="text-xs text-slate-400 italic px-1">Sem perfil</span>
+                )}
+                <div className="ml-auto text-slate-400 text-[10px]">▼</div>
+            </button>
+
+            {isOpen && typeof document !== 'undefined' && createPortal(
+                <>
+                    <div className="fixed inset-0 z-[9998]" onClick={() => setIsOpen(false)} />
+                    <div
+                        className="absolute w-48 bg-white rounded-xl shadow-xl border border-slate-100 z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+                        style={{ top: coords.top, left: coords.left }}
+                    >
+                        <div className="p-2 space-y-1">
+                            {availableRoles.map(role => (
+                                <div
+                                    key={role}
+                                    onClick={(e) => { e.stopPropagation(); toggleRole(role); }}
+                                    className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${currentRoles.includes(role) ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'}`}
+                                >
+                                    <div className={`w-4 h-4 rounded border flex items-center justify-center ${currentRoles.includes(role) ? 'bg-blue-600 border-blue-600' : 'border-slate-300 bg-white'}`}>
+                                        {currentRoles.includes(role) && <div className="w-2 h-2 bg-white rounded-sm" />}
+                                    </div>
+                                    <span className="text-sm font-medium capitalize">{role}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </>,
+                document.body
+            )}
+        </>
+    );
+};
+
 export default function AdminDashboard() {
     const router = useRouter();
-    const [activeTab, setActiveTab] = useState<"overview" | "users" | "audit" | "reports" | "profile">("overview");
+    const [activeTab, setActiveTab] = useState<"overview" | "users" | "clientes" | "fornecedores" | "fabricantes" | "audit" | "reports" | "profile" | "gestao-obra">("gestao-obra");
     const [stats, setStats] = useState({
         users: 0,
         suppliers: 0,
@@ -66,6 +166,7 @@ export default function AdminDashboard() {
     const [loading, setLoading] = useState(true);
     const [userName, setUserName] = useState("Admin");
     const [userInitial, setUserInitial] = useState("A");
+    const [userRoles, setUserRoles] = useState<string[]>([]);
     const [isAdmin, setIsAdmin] = useState(false);
     const [authLoading, setAuthLoading] = useState(true);
 
@@ -85,8 +186,12 @@ export default function AdminDashboard() {
     const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
     const adminTabs: { id: typeof activeTab; label: string }[] = [
+        { id: "gestao-obra", label: "Gestão de Obra" },
         { id: "overview", label: "Visão Geral" },
         { id: "users", label: "Gerenciar Usuários" },
+        { id: "clientes", label: "Clientes" },
+        { id: "fornecedores", label: "Fornecedores" },
+        { id: "fabricantes", label: "Fabricantes" },
         { id: "audit", label: "Auditoria" },
         { id: "reports", label: "Denúncias" },
         { id: "profile", label: "Meu Perfil" },
@@ -148,6 +253,15 @@ export default function AdminDashboard() {
                 const userDoc = await getDoc(userDocRef);
                 const data = userDoc.exists() ? userDoc.data() : {};
                 const role = data.role || "cliente";
+
+                // Fetch all roles
+                let roles: string[] = ["cliente"];
+                if (data.roles && Array.isArray(data.roles) && data.roles.length > 0) {
+                    roles = data.roles;
+                } else if (data.role) {
+                    roles = [data.role];
+                }
+                setUserRoles(roles);
 
                 const name = data.companyName || data.name || user.displayName || user.email || "Admin";
                 console.log("Admin Check - User:", user.uid, "Role:", role, "Data:", data); // Debug log
@@ -336,15 +450,28 @@ export default function AdminDashboard() {
         }
     };
 
-    const handleUpdateRole = async (userId: string, newRole: string) => {
-        if (!confirm(`Tem certeza que deseja alterar o perfil deste usuário para ${newRole}?`)) return;
+    const handleUpdateRoles = async (userId: string, newRoles: string[]) => {
         try {
-            await updateDoc(doc(db, "users", userId), { role: newRole });
-            showToast("success", "Perfil atualizado com sucesso!");
-            fetchUsersPage(usersPageIndex);
+            // Ensure at least one role is selected or handle empty state if allowed
+            // For backward compatibility, we update 'role' to be the first role in the list or 'cliente'
+            const primaryRole = newRoles.length > 0 ? newRoles[0] : 'cliente';
+
+            await updateDoc(doc(db, "users", userId), {
+                roles: newRoles,
+                role: primaryRole
+            });
+
+            showToast("success", "Perfis atualizados com sucesso!");
+
+            // Optimistic update
+            setUsersPage(prev => prev.map(u => u.id === userId ? { ...u, roles: newRoles, role: primaryRole } : u));
+
+            // Also update recent users if present
+            setRecentUsers(prev => prev.map(u => u.id === userId ? { ...u, roles: newRoles, role: primaryRole } : u));
+
         } catch (error) {
-            console.error("Error updating role:", error);
-            showToast("error", "Erro ao atualizar perfil.");
+            console.error("Error updating roles:", error);
+            showToast("error", "Erro ao atualizar perfis.");
         }
     };
 
@@ -523,21 +650,12 @@ export default function AdminDashboard() {
                         </div>
                         <div className="flex items-center gap-4">
                             <NotificationBell />
-                            <div className="flex items-center gap-2 rounded-full border border-transparent px-2 py-1">
-                                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white">
-                                    {userInitial}
-                                </div>
-                                <div className="hidden sm:block text-left">
-                                    <p className="text-xs text-slate-500">Bem vindo</p>
-                                    <p className="text-sm font-semibold text-slate-900">{userName}</p>
-                                </div>
-                            </div>
-                            <button
-                                onClick={handleLogout}
-                                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-red-600"
-                            >
-                                Sair
-                            </button>
+                            <ProfileSwitcher
+                                currentRole="admin"
+                                availableRoles={userRoles}
+                                userName={userName}
+                                userInitial={userInitial}
+                            />
                         </div>
                     </div>
                 </div>
@@ -586,9 +704,16 @@ export default function AdminDashboard() {
                                                         <span>{user.createdAt?.toDate ? user.createdAt.toDate().toLocaleDateString('pt-BR') : 'Data N/A'}</span>
                                                     </div>
                                                 </div>
-                                                <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${user.role === 'fornecedor' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
-                                                    {user.role === 'fornecedor' ? 'Fornecedor' : user.role === 'cliente' ? 'Cliente' : user.role}
-                                                </span>
+                                                <div className="flex flex-wrap gap-1 justify-end max-w-[150px]">
+                                                    {(user.roles || (user.role ? [user.role] : ['cliente'])).map((role: string) => (
+                                                        <span key={role} className={`rounded-full px-2 py-1 text-[11px] font-semibold capitalize ${role === 'admin' ? 'bg-red-100 text-red-800' :
+                                                            role === 'fornecedor' ? 'bg-purple-100 text-purple-800' :
+                                                                'bg-blue-100 text-blue-800'
+                                                            }`}>
+                                                            {role}
+                                                        </span>
+                                                    ))}
+                                                </div>
                                             </div>
                                         </li>
                                     ))}
@@ -732,12 +857,10 @@ export default function AdminDashboard() {
                                                 </td>
                                                 <td className="px-4 py-3 align-top text-sm text-slate-600">{user.email}</td>
                                                 <td className="px-4 py-3 align-top">
-                                                    <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${user.role === 'admin' ? 'bg-red-100 text-red-800' :
-                                                        user.role === 'fornecedor' ? 'bg-purple-100 text-purple-800' :
-                                                            'bg-blue-100 text-blue-800'
-                                                        }`}>
-                                                        {user.role || 'cliente'}
-                                                    </span>
+                                                    <RoleSelector
+                                                        currentRoles={user.roles || (user.role ? [user.role] : ['cliente'])}
+                                                        onUpdate={(newRoles) => handleUpdateRoles(user.id, newRoles)}
+                                                    />
                                                 </td>
                                                 <td className="px-4 py-3 align-top">
                                                     <button
@@ -758,15 +881,6 @@ export default function AdminDashboard() {
                                                     })()}
                                                 </td>
                                                 <td className="px-4 py-3 align-top text-right text-sm font-medium space-x-2">
-                                                    <select
-                                                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 focus:border-blue-400 focus:outline-none"
-                                                        value={user.role || 'cliente'}
-                                                        onChange={(e) => handleUpdateRole(user.id, e.target.value)}
-                                                    >
-                                                        <option value="cliente">Cliente</option>
-                                                        <option value="fornecedor">Fornecedor</option>
-                                                        <option value="admin">Admin</option>
-                                                    </select>
                                                     <button
                                                         onClick={() => handleDeleteUser(user.id)}
                                                         className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100"
@@ -810,12 +924,10 @@ export default function AdminDashboard() {
                                         </div>
 
                                         <div className="flex items-center gap-2 mb-3">
-                                            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${user.role === 'admin' ? 'bg-red-100 text-red-800' :
-                                                user.role === 'fornecedor' ? 'bg-purple-100 text-purple-800' :
-                                                    'bg-blue-100 text-blue-800'
-                                                }`}>
-                                                {user.role || 'cliente'}
-                                            </span>
+                                            <RoleSelector
+                                                currentRoles={user.roles || (user.role ? [user.role] : ['cliente'])}
+                                                onUpdate={(newRoles) => handleUpdateRoles(user.id, newRoles)}
+                                            />
                                             <span className="text-xs text-slate-400">•</span>
                                             <span className="text-xs text-slate-500">
                                                 {(() => {
@@ -830,18 +942,9 @@ export default function AdminDashboard() {
                                         </div>
 
                                         <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
-                                            <select
-                                                className="flex-1 rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-800 focus:border-blue-400 focus:outline-none"
-                                                value={user.role || 'cliente'}
-                                                onChange={(e) => handleUpdateRole(user.id, e.target.value)}
-                                            >
-                                                <option value="cliente">Cliente</option>
-                                                <option value="fornecedor">Fornecedor</option>
-                                                <option value="admin">Admin</option>
-                                            </select>
                                             <button
                                                 onClick={() => handleDeleteUser(user.id)}
-                                                className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100"
+                                                className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100 ml-auto"
                                             >
                                                 Excluir
                                             </button>
@@ -1164,6 +1267,22 @@ export default function AdminDashboard() {
                             </div>
                         </div>
                     </CardShell>
+                )}
+
+                {activeTab === "gestao-obra" && (
+                    <ConstructionManagement />
+                )}
+
+                {activeTab === "clientes" && (
+                    <ClientesManagement />
+                )}
+
+                {activeTab === "fornecedores" && (
+                    <FornecedoresManagement />
+                )}
+
+                {activeTab === "fabricantes" && (
+                    <ManufacturersSection />
                 )}
 
                 {activeTab === "profile" && (

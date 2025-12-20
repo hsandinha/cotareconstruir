@@ -20,9 +20,17 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
             try {
                 const userDoc = await getDoc(doc(db, "users", user.uid));
-                const role = userDoc.exists() ? userDoc.data().role : "cliente";
+                let isAdmin = false;
 
-                if (role !== "admin") {
+                if (userDoc.exists()) {
+                    const data = userDoc.data();
+                    // Check legacy 'role' field
+                    if (data.role === "admin") isAdmin = true;
+                    // Check new 'roles' array
+                    if (data.roles && Array.isArray(data.roles) && data.roles.includes("admin")) isAdmin = true;
+                }
+
+                if (!isAdmin) {
                     router.push("/dashboard/cliente"); // Redirect non-admins
                 } else {
                     setAuthorized(true);

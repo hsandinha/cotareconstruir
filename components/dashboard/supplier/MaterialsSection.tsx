@@ -1,90 +1,231 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
     MagnifyingGlassIcon,
-    PlusIcon,
-    PencilSquareIcon,
-    TrashIcon,
-    MegaphoneIcon,
-    CloudArrowUpIcon,
+    CheckIcon,
+    XMarkIcon,
+    PlusCircleIcon,
     ArrowUpIcon,
-    ArrowDownIcon
+    ArrowDownIcon,
+    ExclamationTriangleIcon,
+    PaperAirplaneIcon,
+    Squares2X2Icon
 } from "@heroicons/react/24/outline";
+import { CheckCircleIcon, ClockIcon } from "@heroicons/react/24/solid";
 import { auth, db } from "../../../lib/firebase";
-import { collection, addDoc, deleteDoc, doc, onSnapshot, updateDoc, query, orderBy } from "firebase/firestore";
+import { collection, doc, onSnapshot, getDocs, getDoc, setDoc, addDoc, serverTimestamp } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 
-interface Material {
+// Interfaces
+interface MaterialBase {
     id: string;
-    codigo: string;
     nome: string;
-    grupo: string;
-    fabricante: string;
     unidade: string;
+    gruposInsumoIds: string[];
+    descricao?: string;
+    fabricante?: string;
+}
+
+interface FornecedorMaterial {
+    materialId: string;
     preco: number;
-    status: string;
     estoque: number;
+    ativo: boolean;
     dataAtualizacao: string;
+}
+
+interface GrupoInsumo {
+    id: string;
+    nome: string;
 }
 
 export function SupplierMaterialsSection() {
     const [searchTerm, setSearchTerm] = useState("");
-    const [selectedItems, setSelectedItems] = useState<string[]>([]);
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
-    const [showAddForm, setShowAddForm] = useState(false);
-    const [materials, setMaterials] = useState<Material[]>([]);
     const [loading, setLoading] = useState(true);
     const [userUid, setUserUid] = useState<string | null>(null);
+    const [fornecedorId, setFornecedorId] = useState<string | null>(null);
 
-    // Form State
-    const [formData, setFormData] = useState({
-        grupo: "",
-        nome: "",
-        fabricante: "",
-        unidade: "un",
-        preco: "",
-        estoque: "",
-        codigo: ""
-    });
+    // Dados base do sistema
+    const [materiaisBase, setMateriaisBase] = useState<MaterialBase[]>([]);
+    const [grupos, setGrupos] = useState<GrupoInsumo[]>([]);
+    const [fornecedorGrupoIds, setFornecedorGrupoIds] = useState<string[]>([]);
 
-    const manufacturers = [
-        { id: 1, name: "Votorantim" },
-        { id: 2, name: "Tigre" },
-        { id: 3, name: "Gerdau" },
-        { id: 4, name: "Portobello" },
-        { id: 5, name: "Amanco" },
-        { id: 6, name: "Suvinil" },
-        { id: 7, name: "Outros" }
-    ];
+    // Materiais do fornecedor (preços e estoque)
+    const [fornecedorMateriais, setFornecedorMateriais] = useState<Map<string, FornecedorMaterial>>(new Map());
 
-    const [offerModalOpen, setOfferModalOpen] = useState(false);
-    const [selectedMaterialForOffer, setSelectedMaterialForOffer] = useState<Material | null>(null);
-    const [offerType, setOfferType] = useState<'percentage' | 'fixed'>('percentage');
-    const [offerValue, setOfferValue] = useState('');
+    // Filtros
+    const [filterGrupo, setFilterGrupo] = useState<string>("all");
+    const [filterStatus, setFilterStatus] = useState<"all" | "configured" | "pending">("all");
 
+    // Edição inline
+    const [editingMaterial, setEditingMaterial] = useState<string | null>(null);
+    const [editPreco, setEditPreco] = useState("");
+    const [editEstoque, setEditEstoque] = useState("");
+
+    // Modal de solicitação
+    const [showRequestModal, setShowRequestModal] = useState(false);
+    const [requestMaterialName, setRequestMaterialName] = useState("");
+    const [requestMaterialDesc, setRequestMaterialDesc] = useState("");
+    const [requestGrupo, setRequestGrupo] = useState("");
+    const [sendingRequest, setSendingRequest] = useState(false);
+
+    // Carregar dados do usuário e fornecedor
     useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 setUserUid(user.uid);
-                const q = query(collection(db, "users", user.uid, "products"));
-                const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
-                    const items: Material[] = [];
-                    snapshot.forEach((doc) => {
-                        items.push({ id: doc.id, ...doc.data() } as Material);
-                    });
-                    setMaterials(items);
-                    setLoading(false);
-                });
-                return () => unsubscribeSnapshot();
-            } else {
-                setMaterials([]);
-                setLoading(false);
+
+                // Buscar fornecedor vinculado ao usuário
+                const userDoc = await getDoc(doc(db, "users", user.uid));
+                if (userDoc.exists()) {
+                    const userData = userDoc.data();
+                    if (userData.fornecedorId) {
+                        setFornecedorId(userData.fornecedorId);
+
+                        // Buscar dados do fornecedor
+                        const fornecedorDoc = await getDoc(doc(db, "fornecedores", userData.fornecedorId));
+                        if (fornecedorDoc.exists()) {
+                            const fornecedorData = fornecedorDoc.data();
+                            setFornecedorGrupoIds(fornecedorData.grupoInsumoIds || []);
+                        }
+                    }
+                }
             }
+            setLoading(false);
         });
 
         return () => unsubscribeAuth();
     }, []);
+
+    // Carregar materiais base e grupos
+    useEffect(() => {
+        const loadBaseData = async () => {
+            try {
+                // Carregar grupos
+                const gruposSnap = await getDocs(collection(db, "grupos_insumo"));
+                const gruposData = gruposSnap.docs.map(doc => ({
+                    id: doc.id,
+                    nome: doc.data().nome
+                }));
+                setGrupos(gruposData.sort((a, b) => a.nome.localeCompare(b.nome)));
+
+                // Carregar materiais
+                const materiaisSnap = await getDocs(collection(db, "materiais"));
+                const materiaisData = materiaisSnap.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                })) as MaterialBase[];
+                setMateriaisBase(materiaisData.sort((a, b) => a.nome.localeCompare(b.nome)));
+            } catch (error) {
+                console.error("Erro ao carregar dados base:", error);
+            }
+        };
+
+        loadBaseData();
+    }, []);
+
+    // Carregar materiais configurados pelo fornecedor
+    useEffect(() => {
+        if (!fornecedorId) return;
+
+        const loadFornecedorMateriais = async () => {
+            try {
+                const snapshot = await getDocs(collection(db, "fornecedores", fornecedorId, "materiais"));
+                const materiaisMap = new Map<string, FornecedorMaterial>();
+                snapshot.forEach(doc => {
+                    materiaisMap.set(doc.id, doc.data() as FornecedorMaterial);
+                });
+                setFornecedorMateriais(materiaisMap);
+            } catch (error: any) {
+                console.error("Erro ao carregar materiais do fornecedor:", error);
+                // Se der erro de permissão, apenas inicializa vazio
+                if (error.code === 'permission-denied') {
+                    console.warn('Sem permissão para acessar materiais. Inicializando vazio.');
+                    setFornecedorMateriais(new Map());
+                }
+            }
+        };
+
+        loadFornecedorMateriais();
+    }, [fornecedorId]);
+
+    // Filtrar materiais pelos grupos do fornecedor
+    const materiaisDisponiveis = useMemo(() => {
+        if (fornecedorGrupoIds.length === 0) return [];
+
+        return materiaisBase.filter(material =>
+            material.gruposInsumoIds?.some(grupoId => fornecedorGrupoIds.includes(grupoId))
+        );
+    }, [materiaisBase, fornecedorGrupoIds]);
+
+    // Aplicar filtros e busca
+    const materiaisFiltrados = useMemo(() => {
+        let result = materiaisDisponiveis;
+
+        // Filtro por busca
+        if (searchTerm) {
+            result = result.filter(m =>
+                m.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                m.descricao?.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+        }
+
+        // Filtro por grupo
+        if (filterGrupo !== "all") {
+            result = result.filter(m => m.gruposInsumoIds?.includes(filterGrupo));
+        }
+
+        // Filtro por status
+        if (filterStatus === "configured") {
+            result = result.filter(m => fornecedorMateriais.has(m.id));
+        } else if (filterStatus === "pending") {
+            result = result.filter(m => !fornecedorMateriais.has(m.id));
+        }
+
+        // Ordenação
+        if (sortConfig) {
+            result = [...result].sort((a, b) => {
+                let aVal: any, bVal: any;
+
+                if (sortConfig.key === 'preco') {
+                    aVal = fornecedorMateriais.get(a.id)?.preco || 0;
+                    bVal = fornecedorMateriais.get(b.id)?.preco || 0;
+                } else if (sortConfig.key === 'estoque') {
+                    aVal = fornecedorMateriais.get(a.id)?.estoque || 0;
+                    bVal = fornecedorMateriais.get(b.id)?.estoque || 0;
+                } else {
+                    aVal = (a as any)[sortConfig.key] || '';
+                    bVal = (b as any)[sortConfig.key] || '';
+                }
+
+                if (typeof aVal === 'string') {
+                    aVal = aVal.toLowerCase();
+                    bVal = bVal.toLowerCase();
+                }
+
+                if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        return result;
+    }, [materiaisDisponiveis, searchTerm, filterGrupo, filterStatus, sortConfig, fornecedorMateriais]);
+
+    // Stats
+    const stats = useMemo(() => {
+        const total = materiaisDisponiveis.length;
+        const configurados = materiaisDisponiveis.filter(m => fornecedorMateriais.has(m.id)).length;
+        const pendentes = total - configurados;
+        return { total, configurados, pendentes };
+    }, [materiaisDisponiveis, fornecedorMateriais]);
+
+    // Grupos disponíveis para o fornecedor
+    const gruposDisponiveis = useMemo(() => {
+        return grupos.filter(g => fornecedorGrupoIds.includes(g.id));
+    }, [grupos, fornecedorGrupoIds]);
 
     const handleSort = (key: string) => {
         let direction: 'asc' | 'desc' = 'asc';
@@ -94,656 +235,446 @@ export function SupplierMaterialsSection() {
         setSortConfig({ key, direction });
     };
 
-    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.checked) {
-            setSelectedItems(filteredMaterials.map(m => m.id));
-        } else {
-            setSelectedItems([]);
+    const startEditing = (materialId: string) => {
+        const current = fornecedorMateriais.get(materialId);
+        setEditingMaterial(materialId);
+        setEditPreco(current?.preco?.toString() || "");
+        setEditEstoque(current?.estoque?.toString() || "");
+    };
+
+    const cancelEditing = () => {
+        setEditingMaterial(null);
+        setEditPreco("");
+        setEditEstoque("");
+    };
+
+    const saveEditing = async () => {
+        if (!fornecedorId || !editingMaterial) return;
+
+        try {
+            const materialRef = doc(db, "fornecedores", fornecedorId, "materiais", editingMaterial);
+            await setDoc(materialRef, {
+                materialId: editingMaterial,
+                preco: parseFloat(editPreco) || 0,
+                estoque: parseInt(editEstoque) || 0,
+                ativo: true,
+                dataAtualizacao: new Date().toISOString()
+            }, { merge: true });
+
+            cancelEditing();
+        } catch (error) {
+            console.error("Erro ao salvar:", error);
+            alert("Erro ao salvar. Tente novamente.");
         }
     };
 
-    const handleSelectItem = (id: string) => {
-        if (selectedItems.includes(id)) {
-            setSelectedItems(selectedItems.filter(item => item !== id));
-        } else {
-            setSelectedItems([...selectedItems, id]);
-        }
-    };
-
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
-
-    const handleAddMaterial = async () => {
-        if (!userUid) return;
-        if (!formData.nome || !formData.grupo || !formData.fabricante || !formData.unidade) {
-            alert("Preencha os campos obrigatórios.");
+    const handleRequestMaterial = async () => {
+        if (!requestMaterialName.trim()) {
+            alert("Digite o nome do material");
             return;
         }
 
+        setSendingRequest(true);
         try {
-            await addDoc(collection(db, "users", userUid, "products"), {
-                ...formData,
-                preco: Number(formData.preco) || 0,
-                estoque: Number(formData.estoque) || 0,
-                status: "Ativo",
-                dataAtualizacao: new Date().toISOString()
-            });
-            setFormData({
-                grupo: "",
-                nome: "",
-                fabricante: "",
-                unidade: "un",
-                preco: "",
-                estoque: "",
-                codigo: ""
+            await addDoc(collection(db, "solicitacoes_materiais"), {
+                fornecedorId,
+                userId: userUid,
+                nomeMaterial: requestMaterialName,
+                descricao: requestMaterialDesc,
+                grupoSugerido: requestGrupo,
+                status: "pendente",
+                criadoEm: serverTimestamp()
             });
 
-            // Update user's last activity timestamp
-            await updateDoc(doc(db, "users", userUid), {
-                lastProductUpdate: new Date().toISOString()
-            });
-
-            setShowAddForm(false);
-            alert("Material adicionado com sucesso!");
+            alert("Solicitação enviada com sucesso! O administrador irá analisar.");
+            setShowRequestModal(false);
+            setRequestMaterialName("");
+            setRequestMaterialDesc("");
+            setRequestGrupo("");
         } catch (error) {
-            console.error("Error adding material:", error);
-            alert("Erro ao adicionar material.");
+            console.error("Erro ao enviar solicitação:", error);
+            alert("Erro ao enviar solicitação. Tente novamente.");
+        } finally {
+            setSendingRequest(false);
         }
     };
 
-    const handleDeleteMaterial = async (id: string) => {
-        if (!userUid) return;
-        if (confirm("Tem certeza que deseja excluir este material?")) {
-            try {
-                await deleteDoc(doc(db, "users", userUid, "products", id));
-            } catch (error) {
-                console.error("Error deleting material:", error);
-                alert("Erro ao excluir material.");
-            }
-        }
-    };
-
-    const handleBulkDelete = async () => {
-        if (!userUid) return;
-        if (confirm(`Tem certeza que deseja excluir ${selectedItems.length} itens selecionados?`)) {
-            try {
-                await Promise.all(selectedItems.map(id => deleteDoc(doc(db, "users", userUid, "products", id))));
-                setSelectedItems([]);
-            } catch (error) {
-                console.error("Error deleting materials:", error);
-                alert("Erro ao excluir materiais.");
-            }
-        }
-    };
-
-    const handleUpdateStock = async (id: string, value: number) => {
-        if (!userUid) return;
-        try {
-            await updateDoc(doc(db, "users", userUid, "products", id), {
-                estoque: Math.max(0, value),
-                dataAtualizacao: new Date().toISOString()
-            });
-
-            // Update user's last activity timestamp
-            await updateDoc(doc(db, "users", userUid), {
-                lastProductUpdate: new Date().toISOString()
-            });
-        } catch (error) {
-            console.error("Error updating stock:", error);
-        }
-    };
-
-    const filteredMaterials = materials
-        .filter(m =>
-            m.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            m.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            m.grupo.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-        .sort((a, b) => {
-            if (!sortConfig) return 0;
-
-            const { key, direction } = sortConfig;
-            let aValue: any = (a as any)[key];
-            let bValue: any = (b as any)[key];
-
-            // Handle numeric values for price
-            if (key === 'preco') {
-                aValue = Number(aValue);
-                bValue = Number(bValue);
-            } else {
-                aValue = String(aValue).toLowerCase();
-                bValue = String(bValue).toLowerCase();
-            }
-
-            if (aValue < bValue) return direction === 'asc' ? -1 : 1;
-            if (aValue > bValue) return direction === 'asc' ? 1 : -1;
-            return 0;
-        });
-
-    const handleMakeOffer = (material: Material) => {
-        setSelectedMaterialForOffer(material);
-        setOfferModalOpen(true);
-        setOfferValue('');
-    };
-
-    const handleSendOffer = () => {
-        if (!offerValue) return;
-
-        const message = offerType === 'percentage'
-            ? `${offerValue}% de desconto`
-            : `R$ ${offerValue}`;
-
-        alert(`Oferta relâmpago para "${selectedMaterialForOffer?.nome}" enviada com sucesso! \nCondição: ${message}`);
-        setOfferModalOpen(false);
+    const getGrupoNome = (grupoId: string) => {
+        return grupos.find(g => g.id === grupoId)?.nome || grupoId;
     };
 
     if (loading) {
-        return <div className="p-8 text-center text-gray-500">Carregando materiais...</div>;
+        return (
+            <div className="p-8 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <span className="ml-3 text-gray-600">Carregando materiais...</span>
+            </div>
+        );
+    }
+
+    if (fornecedorGrupoIds.length === 0) {
+        return (
+            <div className="p-8">
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+                    <ExclamationTriangleIcon className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-amber-800 mb-2">Cadastro Pendente</h3>
+                    <p className="text-amber-700">
+                        Sua empresa ainda não foi associada a nenhum grupo de insumos.
+                        Entre em contato com o administrador para completar seu cadastro.
+                    </p>
+                </div>
+            </div>
+        );
     }
 
     return (
         <div className="space-y-6">
-            {/* Header & Actions */}
+            {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h3 className="text-xl font-bold text-gray-900">Cadastro de Materiais</h3>
+                    <h3 className="text-xl font-bold text-gray-900">Meus Materiais</h3>
                     <p className="text-sm text-gray-600">
-                        Gerencie seu catálogo de produtos para receber cotações relevantes.
+                        Configure preços e estoque dos materiais disponíveis para sua empresa.
                     </p>
                 </div>
-                <div className="flex gap-3">
-                    <div className="relative">
-                        <input
-                            type="text"
-                            placeholder="Buscar material..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full md:w-64"
-                        />
-                        <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" />
-                    </div>
-                    <button
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
-                        onClick={() => alert("Funcionalidade de importação em massa será implementada em breve.")}
-                    >
-                        <CloudArrowUpIcon className="h-5 w-5" />
-                        Importar em Massa
-                    </button>
-                    <button
-                        onClick={() => setShowAddForm((v) => !v)}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                        aria-expanded={showAddForm}
-                        aria-controls="add-item-form"
-                    >
-                        <PlusIcon className="h-5 w-5" />
-                        {showAddForm ? 'Fechar' : 'Adicionar Item'}
-                    </button>
-                </div>
+                <button
+                    onClick={() => setShowRequestModal(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 transition-colors"
+                >
+                    <PlusCircleIcon className="h-5 w-5" />
+                    Solicitar Novo Material
+                </button>
             </div>
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                    <p className="text-sm text-gray-500 font-medium">Total de Itens</p>
-                    <p className="text-2xl font-bold text-gray-900 mt-1">{materials.length}</p>
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-blue-100 rounded-lg">
+                            <Squares2X2Icon className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-500 font-medium">Total de Materiais</p>
+                            <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+                        </div>
+                    </div>
                 </div>
                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                    <p className="text-sm text-gray-500 font-medium">Grupos Ativos</p>
-                    <p className="text-2xl font-bold text-blue-600 mt-1">
-                        {new Set(materials.map(m => m.grupo)).size}
-                    </p>
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-green-100 rounded-lg">
+                            <CheckCircleIcon className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-500 font-medium">Configurados</p>
+                            <p className="text-2xl font-bold text-green-600">{stats.configurados}</p>
+                        </div>
+                    </div>
                 </div>
                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                    <p className="text-sm text-gray-500 font-medium">Última Atualização</p>
-                    <p className="text-2xl font-bold text-green-600 mt-1">Hoje</p>
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-amber-100 rounded-lg">
+                            <ClockIcon className="h-5 w-5 text-amber-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-500 font-medium">Pendentes</p>
+                            <p className="text-2xl font-bold text-amber-600">{stats.pendentes}</p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            {/* Main Content - stacked sections */}
-            <div className="grid grid-cols-1 gap-6">
-                {/* Form Section (collapsible) */}
-                {showAddForm && (
-                    <div id="add-item-form">
-                        <div className="bg-white border border-gray-200 rounded-xl p-6">
-                            <h4 className="text-lg font-semibold text-gray-900 mb-4">Adicionar Item</h4>
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Grupo / Categoria *</label>
-                                    <select
-                                        name="grupo"
-                                        value={formData.grupo}
-                                        onChange={handleInputChange}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    >
-                                        <option value="">Selecione...</option>
-                                        <option value="Preliminares">Preliminares</option>
-                                        <option value="Terraplenagem">Terraplenagem</option>
-                                        <option value="Fundações">Fundações</option>
-                                        <option value="Estrutura">Estrutura</option>
-                                        <option value="Instalações">Instalações</option>
-                                        <option value="Alvenaria e Vedações">Alvenaria e Vedações</option>
-                                        <option value="Cobertura">Cobertura</option>
-                                        <option value="Esquadrias">Esquadrias</option>
-                                        <option value="Revestimentos">Revestimentos</option>
-                                        <option value="Pintura">Pintura</option>
-                                        <option value="Acabamentos Finais">Acabamentos Finais</option>
-                                        <option value="Urbanização">Urbanização</option>
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Material *</label>
-                                    <input
-                                        type="text"
-                                        name="nome"
-                                        value={formData.nome}
-                                        onChange={handleInputChange}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                        placeholder="Ex: Cimento CP-II"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Fabricante *</label>
-                                    <select
-                                        name="fabricante"
-                                        value={formData.fabricante}
-                                        onChange={handleInputChange}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    >
-                                        <option value="">Selecione...</option>
-                                        {manufacturers.map((m) => (
-                                            <option key={m.id} value={m.name}>{m.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Unidade *</label>
-                                        <select
-                                            name="unidade"
-                                            value={formData.unidade}
-                                            onChange={handleInputChange}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                        >
-                                            <option value="un">Unidade</option>
-                                            <option value="m">Metro</option>
-                                            <option value="m2">m²</option>
-                                            <option value="m3">m³</option>
-                                            <option value="kg">Kg</option>
-                                            <option value="sc">Saco</option>
-                                            <option value="lt">Litro</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Preço (R$)</label>
-                                        <input
-                                            type="number"
-                                            name="preco"
-                                            value={formData.preco}
-                                            onChange={handleInputChange}
-                                            step="0.01"
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="0,00"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Estoque Atual</label>
-                                        <input
-                                            type="number"
-                                            name="estoque"
-                                            value={formData.estoque}
-                                            onChange={handleInputChange}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="Ex: 100"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Código Interno (SKU)</label>
-                                        <input
-                                            type="text"
-                                            name="codigo"
-                                            value={formData.codigo}
-                                            onChange={handleInputChange}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="Opcional"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="pt-2">
-                                    <button
-                                        onClick={handleAddMaterial}
-                                        className="w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors"
-                                    >
-                                        Cadastrar Material
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+            {/* Filters */}
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                <div className="flex flex-col md:flex-row gap-4">
+                    {/* Search */}
+                    <div className="relative flex-1">
+                        <input
+                            type="text"
+                            placeholder="Buscar material..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+                        />
+                        <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" />
                     </div>
-                )}
 
-                {/* List Section */}
-                <div>
-                    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                        <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50">
-                                    <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-4">
-                                            <div className="flex items-center gap-3">
-                                                <input
-                                                    type="checkbox"
-                                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                                    onChange={handleSelectAll}
-                                                    checked={filteredMaterials.length > 0 && selectedItems.length === filteredMaterials.length}
-                                                />
-                                                {selectedItems.length > 0 && (
-                                                    <button
-                                                        onClick={handleBulkDelete}
-                                                        className="inline-flex items-center gap-1 px-2 py-1 bg-red-500 text-white text-xs font-medium rounded border border-white shadow-sm hover:bg-red-600 transition-all"
-                                                        title="Excluir Selecionados"
-                                                    >
-                                                        <TrashIcon className="h-3 w-3" />
-                                                        <span>{selectedItems.length}</span>
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </th>
-                                        <th
-                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                                            onClick={() => handleSort('nome')}
-                                        >
-                                            <div className="flex items-center gap-1">
-                                                Item
-                                                {sortConfig?.key === 'nome' && (
-                                                    sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-3 w-3" /> : <ArrowDownIcon className="h-3 w-3" />
-                                                )}
-                                            </div>
-                                        </th>
-                                        <th
-                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                                            onClick={() => handleSort('grupo')}
-                                        >
-                                            <div className="flex items-center gap-1">
-                                                Grupo
-                                                {sortConfig?.key === 'grupo' && (
-                                                    sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-3 w-3" /> : <ArrowDownIcon className="h-3 w-3" />
-                                                )}
-                                            </div>
-                                        </th>
-                                        <th
-                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                                            onClick={() => handleSort('fabricante')}
-                                        >
-                                            <div className="flex items-center gap-1">
-                                                Fabricante
-                                                {sortConfig?.key === 'fabricante' && (
-                                                    sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-3 w-3" /> : <ArrowDownIcon className="h-3 w-3" />
-                                                )}
-                                            </div>
-                                        </th>
-                                        <th
-                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                                            onClick={() => handleSort('preco')}
-                                        >
-                                            <div className="flex items-center gap-1">
-                                                Preço
-                                                {sortConfig?.key === 'preco' && (
-                                                    sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-3 w-3" /> : <ArrowDownIcon className="h-3 w-3" />
-                                                )}
-                                            </div>
-                                        </th>
-                                        <th
-                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                                        >
-                                            Estoque
-                                        </th>
-                                        <th
-                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                                        >
-                                            Atualizado
-                                        </th>
-                                        <th
-                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                                            onClick={() => handleSort('status')}
-                                        >
-                                            <div className="flex items-center gap-1">
-                                                Status
-                                                {sortConfig?.key === 'status' && (
-                                                    sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-3 w-3" /> : <ArrowDownIcon className="h-3 w-3" />
-                                                )}
-                                            </div>
-                                        </th>
-                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                    {filteredMaterials.map((material) => (
-                                        <tr key={material.id} className={`hover:bg-gray-50 transition-colors ${selectedItems.includes(material.id) ? 'bg-blue-50' : ''}`}>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <input
-                                                    type="checkbox"
-                                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                                    checked={selectedItems.includes(material.id)}
-                                                    onChange={() => handleSelectItem(material.id)}
-                                                />
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="flex flex-col">
-                                                    <span className="text-sm font-medium text-gray-900">{material.nome}</span>
-                                                    <span className="text-xs text-gray-500">SKU: {material.codigo} • {material.unidade}</span>
+                    {/* Filter by Grupo */}
+                    <select
+                        value={filterGrupo}
+                        onChange={(e) => setFilterGrupo(e.target.value)}
+                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                        <option value="all">Todos os Grupos</option>
+                        {gruposDisponiveis.map(g => (
+                            <option key={g.id} value={g.id}>{g.nome}</option>
+                        ))}
+                    </select>
+
+                    {/* Filter by Status */}
+                    <select
+                        value={filterStatus}
+                        onChange={(e) => setFilterStatus(e.target.value as any)}
+                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                        <option value="all">Todos os Status</option>
+                        <option value="configured">Configurados</option>
+                        <option value="pending">Pendentes</option>
+                    </select>
+                </div>
+            </div>
+
+            {/* Materials Table */}
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                    onClick={() => handleSort('nome')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Material
+                                        {sortConfig?.key === 'nome' && (
+                                            sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-4 w-4" /> : <ArrowDownIcon className="h-4 w-4" />
+                                        )}
+                                    </div>
+                                </th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Grupo
+                                </th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Unidade
+                                </th>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                    onClick={() => handleSort('preco')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Preço (R$)
+                                        {sortConfig?.key === 'preco' && (
+                                            sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-4 w-4" /> : <ArrowDownIcon className="h-4 w-4" />
+                                        )}
+                                    </div>
+                                </th>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                    onClick={() => handleSort('estoque')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Estoque
+                                        {sortConfig?.key === 'estoque' && (
+                                            sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-4 w-4" /> : <ArrowDownIcon className="h-4 w-4" />
+                                        )}
+                                    </div>
+                                </th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Status
+                                </th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Ações
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {materiaisFiltrados.length === 0 ? (
+                                <tr>
+                                    <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                                        Nenhum material encontrado
+                                    </td>
+                                </tr>
+                            ) : (
+                                materiaisFiltrados.map((material) => {
+                                    const config = fornecedorMateriais.get(material.id);
+                                    const isEditing = editingMaterial === material.id;
+                                    const isConfigured = !!config;
+
+                                    return (
+                                        <tr key={material.id} className={`hover:bg-gray-50 ${!isConfigured ? 'bg-amber-50/30' : ''}`}>
+                                            <td className="px-6 py-4">
+                                                <div>
+                                                    <p className="text-sm font-medium text-gray-900">{material.nome}</p>
+                                                    {material.descricao && (
+                                                        <p className="text-xs text-gray-500 mt-0.5">{material.descricao}</p>
+                                                    )}
+                                                    {material.fabricante && (
+                                                        <p className="text-xs text-blue-600 mt-0.5">{material.fabricante}</p>
+                                                    )}
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                    {material.grupo}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {material.fabricante || '-'}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                                R$ {material.preco.toFixed(2)}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                <input
-                                                    type="number"
-                                                    min={0}
-                                                    value={material.estoque ?? 0}
-                                                    onChange={(e) => handleUpdateStock(material.id, Number(e.target.value))}
-                                                    className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                />
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                {(() => {
-                                                    const updatedAt = material.dataAtualizacao ? new Date(material.dataAtualizacao) : null;
-                                                    if (!updatedAt) return <span className="text-xs text-gray-500">—</span>;
-                                                    const diffMs = Date.now() - updatedAt.getTime();
-                                                    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                                                    const stale = diffDays >= 30;
-                                                    return (
-                                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${stale ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-                                                            {diffDays === 0 ? 'Hoje' : `${diffDays}d`}
+                                            <td className="px-6 py-4">
+                                                <div className="flex flex-wrap gap-1">
+                                                    {material.gruposInsumoIds?.slice(0, 2).map(grupoId => (
+                                                        <span key={grupoId} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                                            {getGrupoNome(grupoId)}
                                                         </span>
-                                                    );
-                                                })()}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                                    {material.status}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <div className="flex justify-end gap-2">
-                                                    <button
-                                                        onClick={() => handleMakeOffer(material)}
-                                                        className="text-amber-600 hover:text-amber-900 p-1"
-                                                        title="Disparar Oferta"
-                                                    >
-                                                        <MegaphoneIcon className="h-4 w-4" />
-                                                    </button>
-                                                    <button className="text-blue-600 hover:text-blue-900 p-1">
-                                                        <PencilSquareIcon className="h-4 w-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDeleteMaterial(material.id)}
-                                                        className="text-red-600 hover:text-red-900 p-1"
-                                                    >
-                                                        <TrashIcon className="h-4 w-4" />
-                                                    </button>
+                                                    ))}
+                                                    {material.gruposInsumoIds?.length > 2 && (
+                                                        <span className="text-xs text-gray-500">+{material.gruposInsumoIds.length - 2}</span>
+                                                    )}
                                                 </div>
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-gray-600">
+                                                {material.unidade}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                {isEditing ? (
+                                                    <input
+                                                        type="number"
+                                                        value={editPreco}
+                                                        onChange={(e) => setEditPreco(e.target.value)}
+                                                        className="w-24 px-2 py-1 border border-blue-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                                                        step="0.01"
+                                                        min="0"
+                                                        autoFocus
+                                                    />
+                                                ) : (
+                                                    <span className={`text-sm ${isConfigured ? 'font-medium text-gray-900' : 'text-gray-400'}`}>
+                                                        {isConfigured ? `R$ ${config.preco.toFixed(2)}` : '-'}
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                {isEditing ? (
+                                                    <input
+                                                        type="number"
+                                                        value={editEstoque}
+                                                        onChange={(e) => setEditEstoque(e.target.value)}
+                                                        className="w-20 px-2 py-1 border border-blue-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                                                        min="0"
+                                                    />
+                                                ) : (
+                                                    <span className={`text-sm ${isConfigured ? 'font-medium text-gray-900' : 'text-gray-400'}`}>
+                                                        {isConfigured ? config.estoque : '-'}
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                {isConfigured ? (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                        <CheckCircleIcon className="h-3.5 w-3.5" />
+                                                        Configurado
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                                        <ClockIcon className="h-3.5 w-3.5" />
+                                                        Pendente
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                {isEditing ? (
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button
+                                                            onClick={saveEditing}
+                                                            className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
+                                                            title="Salvar"
+                                                        >
+                                                            <CheckIcon className="h-4 w-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={cancelEditing}
+                                                            className="p-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                                                            title="Cancelar"
+                                                        >
+                                                            <XMarkIcon className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => startEditing(material.id)}
+                                                        className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                                                    >
+                                                        {isConfigured ? 'Editar' : 'Configurar'}
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                        {filteredMaterials.length === 0 && (
-                            <div className="p-8 text-center text-gray-500">
-                                Nenhum material encontrado.
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Out of Stock Section */}
-                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                    <div className="p-4 flex items-center justify-between border-b border-gray-100">
-                        <h4 className="text-sm font-semibold text-gray-900">Sem Estoque</h4>
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                            {materials.filter((m) => (m.estoque ?? 0) === 0).length} itens
-                        </span>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grupo</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unidade</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Preço</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Atualizado</th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {materials.filter((m) => (m.estoque ?? 0) === 0).map((material) => (
-                                    <tr key={`oos-${material.id}`} className="hover:bg-gray-50 transition-colors">
-                                        <td className="px-6 py-4">
-                                            <div className="flex flex-col">
-                                                <span className="text-sm font-medium text-gray-900">{material.nome}</span>
-                                                <span className="text-xs text-gray-500">SKU: {material.codigo}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                                {material.grupo}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-gray-600">{material.unidade}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-600">R$ {material.preco.toFixed(2)}</td>
-                                        <td className="px-6 py-4">
-                                            {(() => {
-                                                const updatedAt = material.dataAtualizacao ? new Date(material.dataAtualizacao) : null;
-                                                if (!updatedAt) return <span className="text-xs text-gray-500">—</span>;
-                                                const diffMs = Date.now() - updatedAt.getTime();
-                                                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                                                const stale = diffDays >= 30;
-                                                return (
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${stale ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
-                                                        {diffDays === 0 ? 'Hoje' : `${diffDays}d`}
-                                                    </span>
-                                                );
-                                            })()}
-                                        </td>
-                                    </tr>
-                                ))}
-                                {materials.filter((m) => (m.estoque ?? 0) === 0).length === 0 && (
-                                    <tr>
-                                        <td colSpan={5} className="px-6 py-8 text-center text-sm text-gray-500">Nenhum item sem estoque.</td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                                    );
+                                })
+                            )}
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
-            {/* Offer Modal */}
-            {offerModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-                        <h3 className="text-lg font-bold text-gray-900">Criar Oferta Relâmpago</h3>
-                        <p className="mt-1 text-sm text-gray-600">
-                            Defina a condição especial para <strong>{selectedMaterialForOffer?.nome}</strong>.
-                        </p>
-
-                        <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
-                            <p className="text-sm text-blue-800">
-                                Preço Base Atual: <span className="font-bold">R$ {selectedMaterialForOffer?.preco.toFixed(2)}</span>
+            {/* Modal de Solicitação de Material */}
+            {showRequestModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                        <div className="p-6 border-b border-gray-100">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-bold text-gray-900">Solicitar Novo Material</h3>
+                                <button
+                                    onClick={() => setShowRequestModal(false)}
+                                    className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                                >
+                                    <XMarkIcon className="h-5 w-5 text-gray-500" />
+                                </button>
+                            </div>
+                            <p className="text-sm text-gray-500 mt-1">
+                                Não encontrou o material? Solicite o cadastro ao administrador.
                             </p>
                         </div>
 
-                        <div className="mt-6 space-y-4">
+                        <div className="p-6 space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Oferta</label>
-                                <div className="flex gap-4">
-                                    <label className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="radio"
-                                            name="offerType"
-                                            checked={offerType === 'percentage'}
-                                            onChange={() => setOfferType('percentage')}
-                                            className="text-blue-600 focus:ring-blue-500"
-                                        />
-                                        <span className="text-sm text-gray-900">Porcentagem (%)</span>
-                                    </label>
-                                    <label className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="radio"
-                                            name="offerType"
-                                            checked={offerType === 'fixed'}
-                                            onChange={() => setOfferType('fixed')}
-                                            className="text-blue-600 focus:ring-blue-500"
-                                        />
-                                        <span className="text-sm text-gray-900">Valor Fixo (R$)</span>
-                                    </label>
-                                </div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Nome do Material *
+                                </label>
+                                <input
+                                    type="text"
+                                    value={requestMaterialName}
+                                    onChange={(e) => setRequestMaterialName(e.target.value)}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="Ex: Cimento Portland CP-II"
+                                />
                             </div>
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    {offerType === 'percentage' ? 'Desconto (%)' : 'Novo Preço (R$)'}
+                                    Descrição (Opcional)
                                 </label>
-                                <input
-                                    type="number"
-                                    value={offerValue}
-                                    onChange={(e) => setOfferValue(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    placeholder={offerType === 'percentage' ? "Ex: 10" : "Ex: 19.90"}
+                                <textarea
+                                    value={requestMaterialDesc}
+                                    onChange={(e) => setRequestMaterialDesc(e.target.value)}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    rows={3}
+                                    placeholder="Especificações, marca, etc..."
                                 />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Grupo Sugerido
+                                </label>
+                                <select
+                                    value={requestGrupo}
+                                    onChange={(e) => setRequestGrupo(e.target.value)}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="">Selecione...</option>
+                                    {gruposDisponiveis.map(g => (
+                                        <option key={g.id} value={g.nome}>{g.nome}</option>
+                                    ))}
+                                </select>
                             </div>
                         </div>
 
-                        <div className="mt-8 flex justify-end gap-3">
+                        <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
                             <button
-                                onClick={() => setOfferModalOpen(false)}
-                                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                                onClick={() => setShowRequestModal(false)}
+                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors font-medium"
                             >
                                 Cancelar
                             </button>
                             <button
-                                onClick={handleSendOffer}
-                                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                                onClick={handleRequestMaterial}
+                                disabled={sendingRequest || !requestMaterialName.trim()}
+                                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                Disparar Oferta
+                                <PaperAirplaneIcon className="h-4 w-4" />
+                                {sendingRequest ? 'Enviando...' : 'Enviar Solicitação'}
                             </button>
                         </div>
                     </div>

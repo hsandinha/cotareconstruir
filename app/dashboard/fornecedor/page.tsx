@@ -3,12 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { SupplierProfileSection } from "../../../components/dashboard/supplier/ProfileSection";
 import { SupplierMaterialsSection } from "../../../components/dashboard/supplier/MaterialsSection";
-import { SupplierManufacturersSection } from "../../../components/dashboard/supplier/ManufacturersSection";
-import { SupplierSalesSection } from "../../../components/dashboard/supplier/SalesSection";
-import { SupplierOffersSection } from "../../../components/dashboard/supplier/OffersSection";
-import { SupplierQuotationInboxSection } from "../../../components/dashboard/supplier/QuotationInboxSection";
-import { SupplierVerificationSection } from "../../../components/dashboard/supplier/VerificationSection";
+import { SupplierMyProductsSection } from "../../../components/dashboard/supplier/MyProductsSection";
+import { SupplierSalesAndQuotationsSection } from "../../../components/dashboard/supplier/SalesAndQuotationsSection";
 import { NotificationBell } from "../../../components/NotificationBell";
+import { ProfileSwitcher } from "../../../components/ProfileSwitcher";
 import { auth, db } from "../../../lib/firebase";
 import { collection, query, where, getCountFromServer, doc, getDoc } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -17,49 +15,29 @@ import { useRouter } from "next/navigation";
 export type SupplierTabId =
     | "perfil"
     | "materiais"
-    | "fabricantes"
-    | "vendas"
     | "ofertas"
-    | "cotacoes"
-    | "verificacao";
+    | "vendas-cotacoes";
 
 const tabs: { id: SupplierTabId; label: string }[] = [
     { id: "perfil", label: "Cadastro & Perfil" },
-    { id: "verificacao", label: "Verificação" },
     { id: "materiais", label: "Cadastro de Materiais" },
-    { id: "fabricantes", label: "Fabricantes" },
-    { id: "vendas", label: "Minhas Vendas" },
     { id: "ofertas", label: "Minhas Ofertas" },
-    { id: "cotacoes", label: "Cotações Recebidas" },
+    { id: "vendas-cotacoes", label: "Vendas & Cotações" },
 ];
 
 
 export default function FornecedorDashboard() {
     const router = useRouter();
     const [tab, setTab] = useState<SupplierTabId>("perfil");
-    const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-    const userMenuRef = useRef<HTMLDivElement | null>(null);
     const [userName, setUserName] = useState("Fornecedor");
     const [userInitial, setUserInitial] = useState("F");
+    const [userRoles, setUserRoles] = useState<string[]>([]);
     const [stats, setStats] = useState({
         activeConsultations: 0,
         sentProposals: 0,
         registeredMaterials: 0,
         approvals: 0,
     });
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-                setIsUserMenuOpen(false);
-            }
-        };
-
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
-        };
-    }, []);
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -73,6 +51,7 @@ export default function FornecedorDashboard() {
                         const name = userData.name || userData.nome || "Fornecedor";
                         setUserName(name);
                         setUserInitial(name.charAt(0).toUpperCase());
+                        setUserRoles(userData.roles || []);
                     }
 
                     // Active Consultations (All pending quotations in the system)
@@ -122,48 +101,16 @@ export default function FornecedorDashboard() {
         return () => unsubscribe();
     }, []);
 
-    const handleMenuSelection = (action: "perfil" | "cadastros" | "fabricantes" | "vendas" | "ofertas" | "sair") => {
-        switch (action) {
-            case "perfil":
-                setTab("perfil");
-                break;
-            case "cadastros":
-                setTab("materiais");
-                break;
-            case "fabricantes":
-                setTab("fabricantes");
-                break;
-            case "vendas":
-                setTab("vendas");
-                break;
-            case "ofertas":
-                setTab("ofertas");
-                break;
-            case "sair":
-                signOut(auth).then(() => {
-                    router.push("/login");
-                });
-                break;
-        }
-        setIsUserMenuOpen(false);
-    };
-
     function renderTabContent() {
         switch (tab) {
             case "perfil":
                 return <SupplierProfileSection />;
-            case "verificacao":
-                return <SupplierVerificationSection />;
             case "materiais":
                 return <SupplierMaterialsSection />;
-            case "fabricantes":
-                return <SupplierManufacturersSection />;
-            case "vendas":
-                return <SupplierSalesSection />;
             case "ofertas":
-                return <SupplierOffersSection />;
-            case "cotacoes":
-                return <SupplierQuotationInboxSection />;
+                return <SupplierMyProductsSection />;
+            case "vendas-cotacoes":
+                return <SupplierSalesAndQuotationsSection />;
             default:
                 return <SupplierProfileSection />;
         }
@@ -181,66 +128,12 @@ export default function FornecedorDashboard() {
                         </div>
                         <div className="flex items-center space-x-4">
                             <NotificationBell />
-                            <div className="relative" ref={userMenuRef}>
-                                <button
-                                    type="button"
-                                    onClick={() => setIsUserMenuOpen((prev) => !prev)}
-                                    className="flex items-center gap-2 rounded-full border border-transparent px-2 py-1 hover:border-slate-200 focus:outline-none focus:ring-2 focus:ring-green-500"
-                                >
-                                    <div className="w-9 h-9 bg-green-600 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                                        {userInitial}
-                                    </div>
-                                    <div className="hidden sm:block text-left">
-                                        <p className="text-xs text-slate-500">Bem vindo</p>
-                                        <p className="text-sm font-semibold text-slate-900 flex items-center">
-                                            {userName}
-                                            <svg className="ml-1 h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                                            </svg>
-                                        </p>
-                                    </div>
-                                </button>
-                                {isUserMenuOpen && (
-                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-100 py-2 z-20">
-                                        <button
-                                            onClick={() => handleMenuSelection("perfil")}
-                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                                        >
-                                            Perfil
-                                        </button>
-                                        <button
-                                            onClick={() => handleMenuSelection("cadastros")}
-                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                                        >
-                                            Cadastros
-                                        </button>
-                                        <button
-                                            onClick={() => handleMenuSelection("fabricantes")}
-                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                                        >
-                                            Fabricantes
-                                        </button>
-                                        <button
-                                            onClick={() => handleMenuSelection("vendas")}
-                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                                        >
-                                            Minhas Vendas
-                                        </button>
-                                        <button
-                                            onClick={() => handleMenuSelection("ofertas")}
-                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                                        >
-                                            Minhas Ofertas
-                                        </button>
-                                        <button
-                                            onClick={() => handleMenuSelection("sair")}
-                                            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-slate-50"
-                                        >
-                                            Sair
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
+                            <ProfileSwitcher
+                                currentRole="fornecedor"
+                                availableRoles={userRoles}
+                                userName={userName}
+                                userInitial={userInitial}
+                            />
                         </div>
                     </div>
                 </div>
