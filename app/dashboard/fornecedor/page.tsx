@@ -7,10 +7,12 @@ import { SupplierMyProductsSection } from "../../../components/dashboard/supplie
 import { SupplierSalesAndQuotationsSection } from "../../../components/dashboard/supplier/SalesAndQuotationsSection";
 import { NotificationBell } from "../../../components/NotificationBell";
 import { ProfileSwitcher } from "../../../components/ProfileSwitcher";
+import PendingProfileModal from "../../../components/PendingProfileModal";
 import { auth, db } from "../../../lib/firebase";
 import { collection, query, where, getCountFromServer, doc, getDoc } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
+import { checkProfileLinkStatus } from "../../../lib/profileLinkService";
 
 export type SupplierTabId =
     | "perfil"
@@ -32,6 +34,9 @@ export default function FornecedorDashboard() {
     const [userName, setUserName] = useState("Fornecedor");
     const [userInitial, setUserInitial] = useState("F");
     const [userRoles, setUserRoles] = useState<string[]>([]);
+    const [userEmail, setUserEmail] = useState("");
+    const [userId, setUserId] = useState("");
+    const [showPendingProfileModal, setShowPendingProfileModal] = useState(false);
     const [stats, setStats] = useState({
         activeConsultations: 0,
         sentProposals: 0,
@@ -43,15 +48,24 @@ export default function FornecedorDashboard() {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 try {
+                    setUserId(user.uid);
+                    setUserEmail(user.email || "");
+
                     // Fetch User Profile
                     const userDocRef = doc(db, "users", user.uid);
                     const userDoc = await getDoc(userDocRef);
                     if (userDoc.exists()) {
                         const userData = userDoc.data();
-                        const name = userData.name || userData.nome || "Fornecedor";
+                        const name = userData.name || userData.nome || userData.companyName || "Fornecedor";
                         setUserName(name);
                         setUserInitial(name.charAt(0).toUpperCase());
                         setUserRoles(userData.roles || []);
+
+                        // Verificar se precisa completar cadastro de fornecedor
+                        const profileStatus = await checkProfileLinkStatus(user.uid);
+                        if (profileStatus.pendingFornecedorProfile) {
+                            setShowPendingProfileModal(true);
+                        }
                     }
 
                     // Active Consultations (All pending quotations in the system)
@@ -228,6 +242,21 @@ export default function FornecedorDashboard() {
                     </div>
                 </div>
             </div>
+
+            {/* Modal de Cadastro Pendente */}
+            <PendingProfileModal
+                isOpen={showPendingProfileModal}
+                onClose={() => setShowPendingProfileModal(false)}
+                profileType="fornecedor"
+                userId={userId}
+                userEmail={userEmail}
+                userName={userName}
+                onComplete={() => {
+                    setShowPendingProfileModal(false);
+                    // Recarregar a página para atualizar os dados
+                    window.location.reload();
+                }}
+            />
         </div>
     );
 }

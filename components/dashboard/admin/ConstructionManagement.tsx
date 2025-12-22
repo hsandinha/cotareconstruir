@@ -148,7 +148,7 @@ const TreeItem = ({
     const hasChildren = React.Children.count(children) > 0;
 
     return (
-        <div className="w-full">
+        <div className="w-full group">
             <div
                 className={`
                     flex items-center justify-between p-3 
@@ -193,7 +193,7 @@ const TreeItem = ({
                 </div>
 
                 {actions && (
-                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                         {actions}
                     </div>
                 )}
@@ -775,10 +775,22 @@ export default function ConstructionManagement() {
                             level={0}
                             icon={Wrench}
                             actions={
-                                <>
-                                    <button onClick={() => openModal('servicos', servico)} className="p-1 text-slate-400 hover:text-blue-600"><Edit2 className="w-3 h-3" /></button>
-                                    <button onClick={() => handleDelete('servicos', servico.id)} className="p-1 text-slate-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
-                                </>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); openModal('servicos', servico); }}
+                                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                        title="Editar serviço"
+                                    >
+                                        <Edit2 className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleDelete('servicos', servico.id); }}
+                                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                        title="Excluir serviço"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
                             }
                         >
                             <div className="pl-12 pr-4 py-2 space-y-4">
@@ -860,10 +872,22 @@ export default function ConstructionManagement() {
                             level={0}
                             icon={Boxes}
                             actions={
-                                <>
-                                    <button onClick={() => openModal('grupos', grupo)} className="p-1 text-slate-400 hover:text-blue-600"><Edit2 className="w-3 h-3" /></button>
-                                    <button onClick={() => handleDelete('grupos', grupo.id)} className="p-1 text-slate-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
-                                </>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); openModal('grupos', grupo); }}
+                                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                        title="Editar grupo"
+                                    >
+                                        <Edit2 className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleDelete('grupos', grupo.id); }}
+                                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                        title="Excluir grupo"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
                             }
                         >
                             <div className="pl-12 pr-4 py-2 space-y-4">
@@ -958,10 +982,22 @@ export default function ConstructionManagement() {
                             level={0}
                             icon={Package}
                             actions={
-                                <>
-                                    <button onClick={() => openModal('materiais', material)} className="p-1 text-slate-400 hover:text-blue-600"><Edit2 className="w-3 h-3" /></button>
-                                    <button onClick={() => handleDelete('materiais', material.id)} className="p-1 text-slate-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
-                                </>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); openModal('materiais', material); }}
+                                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                        title="Editar material"
+                                    >
+                                        <Edit2 className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleDelete('materiais', material.id); }}
+                                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                        title="Excluir material"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
                             }
                         >
                             <div className="pl-12 pr-4 py-2 space-y-4">

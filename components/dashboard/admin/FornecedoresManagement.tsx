@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, deleteDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Search, Edit2, Trash2, X, Save, Package, CreditCard, Tags, UserPlus, UserCheck, RefreshCw, Mail } from 'lucide-react';
+import { Search, Edit2, Trash2, X, Save, Package, CreditCard, Tags, UserPlus, UserCheck, RefreshCw, Mail, Plus } from 'lucide-react';
 import { createUserAccount, resetUserPassword } from '@/lib/userAccountService';
 import { useToast } from '@/components/ToastProvider';
 
@@ -56,6 +56,66 @@ export default function FornecedoresManagement() {
     const [formData, setFormData] = useState<Partial<Fornecedor>>({});
     const [selectedGrupoToAdd, setSelectedGrupoToAdd] = useState<string>('');
     const [saving, setSaving] = useState(false);
+    const [createAccessOnSave, setCreateAccessOnSave] = useState(true);
+    const [loadingCnpj, setLoadingCnpj] = useState(false);
+    const [loadingCep, setLoadingCep] = useState(false);
+
+    // Função para consultar CNPJ
+    const handleCnpjLookup = async (cnpj: string) => {
+        const clean = cnpj.replace(/\D/g, '');
+        if (clean.length !== 14) return;
+
+        setLoadingCnpj(true);
+        try {
+            const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${clean}`);
+            if (!response.ok) throw new Error('CNPJ não encontrado');
+            const data = await response.json();
+
+            setFormData(prev => ({
+                ...prev,
+                razaoSocial: data.razao_social || prev.razaoSocial,
+                endereco: data.logradouro || '',
+                numero: data.numero || '',
+                bairro: data.bairro || '',
+                cidade: data.municipio || '',
+                estado: data.uf || '',
+                cep: data.cep || '',
+                fone: data.ddd_telefone_1 ? `(${data.ddd_telefone_1.slice(0, 2)}) ${data.ddd_telefone_1.slice(2)}` : prev.fone,
+                email: data.email || prev.email
+            }));
+            showToast('success', 'Dados preenchidos pelo CNPJ');
+        } catch (error) {
+            showToast('error', 'CNPJ não encontrado');
+        } finally {
+            setLoadingCnpj(false);
+        }
+    };
+
+    // Função para buscar CEP
+    const handleCepLookup = async (cep: string) => {
+        const clean = cep.replace(/\D/g, '');
+        if (clean.length !== 8) return;
+
+        setLoadingCep(true);
+        try {
+            const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${clean}`);
+            if (!response.ok) throw new Error('CEP não encontrado');
+            const data = await response.json();
+
+            setFormData(prev => ({
+                ...prev,
+                endereco: data.street || '',
+                bairro: data.neighborhood || '',
+                cidade: data.city || '',
+                estado: data.state || ''
+            }));
+            showToast('success', 'Endereço preenchido pelo CEP');
+        } catch (error) {
+            showToast('error', 'CEP não encontrado');
+        } finally {
+            setLoadingCep(false);
+        }
+    };
 
     useEffect(() => {
         loadFornecedores();
@@ -115,20 +175,71 @@ export default function FornecedoresManagement() {
     };
 
     const handleSave = async () => {
-        if (!formData.razaoSocial || !editingFornecedor) {
-            alert('Razão Social é obrigatória');
+        if (!formData.razaoSocial) {
+            showToast('error', 'Razão Social é obrigatória');
+            return;
+        }
+        if (!formData.email) {
+            showToast('error', 'Email é obrigatório');
             return;
         }
 
         try {
-            await updateDoc(doc(db, 'fornecedores', editingFornecedor.id), {
-                ...formData,
-                updatedAt: new Date(),
-            });
+            setSaving(true);
+
+            if (editingFornecedor) {
+                // Editando fornecedor existente
+                await updateDoc(doc(db, 'fornecedores', editingFornecedor.id), {
+                    ...formData,
+                    updatedAt: new Date(),
+                });
+                showToast('success', 'Fornecedor atualizado com sucesso!');
+            } else {
+                // Criando novo fornecedor
+                const codigo = `F${Date.now().toString().slice(-6)}`;
+                const fornecedorRef = await addDoc(collection(db, 'fornecedores'), {
+                    ...formData,
+                    codigo,
+                    codigoGrupo: '',
+                    grupoInsumos: '',
+                    grupoInsumoIds: [],
+                    inscricaoEstadual: formData.inscricaoEstadual || '',
+                    cartaoCredito: formData.cartaoCredito || false,
+                    ativo: formData.ativo ?? true,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                });
+
+                // Se marcou para criar acesso junto
+                if (createAccessOnSave && formData.email) {
+                    try {
+                        await createUserAccount({
+                            email: formData.email,
+                            entityType: 'fornecedor',
+                            entityId: fornecedorRef.id,
+                            entityName: formData.razaoSocial || '',
+                            whatsapp: formData.whatsapp
+                        });
+                        showToast('success', 'Fornecedor criado com acesso! Credenciais enviadas por email.');
+                    } catch (accessError: any) {
+                        if (accessError.message?.includes('já possui uma conta')) {
+                            showToast('success', 'Fornecedor criado! Email já possui conta no sistema.');
+                        } else {
+                            showToast('success', 'Fornecedor criado! Erro ao criar acesso: ' + accessError.message);
+                        }
+                    }
+                } else {
+                    showToast('success', 'Fornecedor criado com sucesso!');
+                }
+            }
+
             loadFornecedores();
             closeModal();
         } catch (error) {
             console.error('Erro ao salvar fornecedor:', error);
+            showToast('error', 'Erro ao salvar fornecedor');
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -143,9 +254,29 @@ export default function FornecedoresManagement() {
         }
     };
 
-    const openModal = (fornecedor: Fornecedor) => {
-        setEditingFornecedor(fornecedor);
-        setFormData(fornecedor);
+    const openModal = (fornecedor?: Fornecedor) => {
+        if (fornecedor) {
+            setEditingFornecedor(fornecedor);
+            setFormData(fornecedor);
+        } else {
+            setEditingFornecedor(null);
+            setFormData({
+                razaoSocial: '',
+                cnpj: '',
+                contato: '',
+                email: '',
+                fone: '',
+                whatsapp: '',
+                endereco: '',
+                bairro: '',
+                cidade: '',
+                estado: '',
+                cep: '',
+                ativo: true,
+                cartaoCredito: false,
+            });
+            setCreateAccessOnSave(true);
+        }
         setIsModalOpen(true);
     };
 
@@ -271,6 +402,13 @@ export default function FornecedoresManagement() {
                     <h2 className="text-2xl font-bold text-slate-900">Gestão de Fornecedores</h2>
                     <p className="text-sm text-slate-600">Gerencie todos os fornecedores cadastrados</p>
                 </div>
+                <button
+                    onClick={() => openModal()}
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors font-medium"
+                >
+                    <Plus className="w-5 h-5" />
+                    Novo Fornecedor
+                </button>
             </div>
 
             {/* Search */}
@@ -404,17 +542,19 @@ export default function FornecedoresManagement() {
             </div>
 
             {/* Modal */}
-            {isModalOpen && editingFornecedor && (
+            {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
                     <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
                         <div className="flex items-center justify-between p-6 border-b border-slate-200">
-                            <h3 className="text-xl font-bold text-slate-900">Editar Fornecedor</h3>
+                            <h3 className="text-xl font-bold text-slate-900">
+                                {editingFornecedor ? 'Editar Fornecedor' : 'Novo Fornecedor'}
+                            </h3>
                             <button onClick={closeModal} className="p-2 hover:bg-slate-100 rounded-full">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-4">
+                        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="col-span-2">
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Razão Social *</label>
@@ -427,12 +567,23 @@ export default function FornecedoresManagement() {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">CNPJ</label>
-                                    <input
-                                        type="text"
-                                        value={formData.cnpj || ''}
-                                        onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={formData.cnpj || ''}
+                                            onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
+                                            className="flex-1 px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                            placeholder="00.000.000/0000-00"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => formData.cnpj && handleCnpjLookup(formData.cnpj)}
+                                            disabled={loadingCnpj || !formData.cnpj}
+                                            className="px-3 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 disabled:opacity-50 transition-colors"
+                                        >
+                                            {loadingCnpj ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                                        </button>
+                                    </div>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Inscrição Estadual</label>
@@ -443,14 +594,13 @@ export default function FornecedoresManagement() {
                                         className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                                     />
                                 </div>
-                                <div className="col-span-2">
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Grupo(s) de Insumos</label>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Email *</label>
                                     <input
-                                        type="text"
-                                        value={formData.grupoInsumos || ''}
-                                        onChange={(e) => setFormData({ ...formData, grupoInsumos: e.target.value })}
+                                        type="email"
+                                        value={formData.email || ''}
+                                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                         className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                        placeholder="Separados por vírgula"
                                     />
                                 </div>
                                 <div>
@@ -459,15 +609,6 @@ export default function FornecedoresManagement() {
                                         type="text"
                                         value={formData.contato || ''}
                                         onChange={(e) => setFormData({ ...formData, contato: e.target.value })}
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-                                    <input
-                                        type="email"
-                                        value={formData.email || ''}
-                                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                         className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                                     />
                                 </div>
@@ -488,6 +629,26 @@ export default function FornecedoresManagement() {
                                         onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
                                         className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                                     />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">CEP</label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={formData.cep || ''}
+                                            onChange={(e) => setFormData({ ...formData, cep: e.target.value })}
+                                            className="flex-1 px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                            placeholder="00000-000"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => formData.cep && handleCepLookup(formData.cep)}
+                                            disabled={loadingCep || !formData.cep}
+                                            className="px-3 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 disabled:opacity-50 transition-colors"
+                                        >
+                                            {loadingCep ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                                        </button>
+                                    </div>
                                 </div>
                                 <div className="col-span-2">
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Endereço</label>
@@ -535,16 +696,20 @@ export default function FornecedoresManagement() {
                                         maxLength={2}
                                     />
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">CEP</label>
-                                    <input
-                                        type="text"
-                                        value={formData.cep || ''}
-                                        onChange={(e) => setFormData({ ...formData, cep: e.target.value })}
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
-                                </div>
-                                <div className="flex items-center gap-4">
+                                <div className="col-span-2 flex flex-wrap items-center gap-6">
+                                    {!editingFornecedor && (
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={createAccessOnSave}
+                                                onChange={(e) => setCreateAccessOnSave(e.target.checked)}
+                                                className="rounded text-purple-600"
+                                            />
+                                            <label className="text-sm font-medium text-purple-700">
+                                                Criar acesso ao sistema automaticamente
+                                            </label>
+                                        </div>
+                                    )}
                                     <div className="flex items-center gap-2">
                                         <input
                                             type="checkbox"
@@ -576,10 +741,11 @@ export default function FornecedoresManagement() {
                             </button>
                             <button
                                 onClick={handleSave}
-                                className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
+                                disabled={saving}
+                                className="flex items-center gap-2 px-6 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50"
                             >
-                                <Save className="w-4 h-4" />
-                                Salvar
+                                {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                {editingFornecedor ? 'Salvar' : 'Criar Fornecedor'}
                             </button>
                         </div>
                     </div>

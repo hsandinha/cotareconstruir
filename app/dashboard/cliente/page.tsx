@@ -8,10 +8,12 @@ import { ClientExploreSection } from "../../../components/dashboard/client/Explo
 import { ClientOpportunitiesSection } from "../../../components/dashboard/client/OpportunitiesSection";
 import { NotificationBell } from "../../../components/NotificationBell";
 import { ProfileSwitcher } from "../../../components/ProfileSwitcher";
+import PendingProfileModal from "../../../components/PendingProfileModal";
 import { auth, db } from "../../../lib/firebase";
 import { collection, query, where, getCountFromServer, doc, getDoc } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
+import { checkProfileLinkStatus } from "../../../lib/profileLinkService";
 
 export type TabId =
     | "perfil"
@@ -34,6 +36,9 @@ export default function ClienteDashboard() {
     const [userName, setUserName] = useState("Cliente");
     const [userInitial, setUserInitial] = useState("C");
     const [userRoles, setUserRoles] = useState<string[]>([]);
+    const [userEmail, setUserEmail] = useState("");
+    const [userId, setUserId] = useState("");
+    const [showPendingProfileModal, setShowPendingProfileModal] = useState(false);
     const [stats, setStats] = useState({
         works: 0,
         quotations: 0,
@@ -44,6 +49,9 @@ export default function ClienteDashboard() {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 try {
+                    setUserId(user.uid);
+                    setUserEmail(user.email || "");
+
                     // Fetch User Profile
                     const userDocRef = doc(db, "users", user.uid);
                     const userDoc = await getDoc(userDocRef);
@@ -58,6 +66,12 @@ export default function ClienteDashboard() {
                         setUserName(name);
                         setUserInitial(name.charAt(0).toUpperCase());
                         setUserRoles(userData.roles || []);
+
+                        // Verificar se precisa completar cadastro de cliente
+                        const profileStatus = await checkProfileLinkStatus(user.uid);
+                        if (profileStatus.pendingClienteProfile) {
+                            setShowPendingProfileModal(true);
+                        }
                     }
 
                     // Works Count
@@ -227,6 +241,21 @@ export default function ClienteDashboard() {
                     </div>
                 </div>
             </div>
+
+            {/* Modal de Cadastro Pendente */}
+            <PendingProfileModal
+                isOpen={showPendingProfileModal}
+                onClose={() => setShowPendingProfileModal(false)}
+                profileType="cliente"
+                userId={userId}
+                userEmail={userEmail}
+                userName={userName}
+                onComplete={() => {
+                    setShowPendingProfileModal(false);
+                    // Recarregar a página para atualizar os dados
+                    window.location.reload();
+                }}
+            />
         </div>
     );
 }

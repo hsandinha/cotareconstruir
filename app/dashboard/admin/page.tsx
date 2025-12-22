@@ -10,6 +10,7 @@ import { initializeApp, deleteApp } from "firebase/app";
 import { NotificationBell } from "../../../components/NotificationBell";
 import { ProfileSwitcher } from "@/components/ProfileSwitcher";
 import { logAction } from "../../../lib/services";
+import { handleRolesUpdate } from "../../../lib/profileLinkService";
 import { useToast } from "@/components/ToastProvider";
 import ConstructionManagement from "@/components/dashboard/admin/ConstructionManagement";
 import ClientesManagement from "@/components/dashboard/admin/ClientesManagement";
@@ -452,6 +453,18 @@ export default function AdminDashboard() {
 
     const handleUpdateRoles = async (userId: string, newRoles: string[]) => {
         try {
+            // Buscar dados do usuário para obter os roles anteriores e email
+            const userDoc = await getDoc(doc(db, "users", userId));
+            if (!userDoc.exists()) {
+                showToast("error", "Usuário não encontrado.");
+                return;
+            }
+
+            const userData = userDoc.data();
+            const previousRoles = userData.roles || (userData.role ? [userData.role] : []);
+            const userEmail = userData.email;
+            const userName = userData.name || userData.companyName;
+
             // Ensure at least one role is selected or handle empty state if allowed
             // For backward compatibility, we update 'role' to be the first role in the list or 'cliente'
             const primaryRole = newRoles.length > 0 ? newRoles[0] : 'cliente';
@@ -461,7 +474,23 @@ export default function AdminDashboard() {
                 role: primaryRole
             });
 
-            showToast("success", "Perfis atualizados com sucesso!");
+            // Gerenciar vínculos com clientes/fornecedores
+            const linkResult = await handleRolesUpdate(
+                userId,
+                previousRoles,
+                newRoles,
+                userEmail,
+                userName
+            );
+
+            if (linkResult.pendingProfiles.length > 0) {
+                showToast("success", linkResult.message || "Perfis atualizados! Usuário precisa completar cadastro.");
+            } else {
+                showToast("success", "Perfis atualizados com sucesso!");
+            }
+
+            // Log action
+            await logAction(auth.currentUser?.uid || "ADMIN", "UPDATE_ROLES", `Updated roles for ${userId}: ${newRoles.join(', ')}`);
 
             // Optimistic update
             setUsersPage(prev => prev.map(u => u.id === userId ? { ...u, roles: newRoles, role: primaryRole } : u));
@@ -861,6 +890,21 @@ export default function AdminDashboard() {
                                                         currentRoles={user.roles || (user.role ? [user.role] : ['cliente'])}
                                                         onUpdate={(newRoles) => handleUpdateRoles(user.id, newRoles)}
                                                     />
+                                                    {/* Indicador de cadastro pendente */}
+                                                    {(user.pendingClienteProfile || user.pendingFornecedorProfile) && (
+                                                        <div className="mt-1 flex flex-wrap gap-1">
+                                                            {user.pendingClienteProfile && (
+                                                                <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">
+                                                                    ⚠ Cadastro Cliente Pendente
+                                                                </span>
+                                                            )}
+                                                            {user.pendingFornecedorProfile && (
+                                                                <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">
+                                                                    ⚠ Cadastro Fornecedor Pendente
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3 align-top">
                                                     <button
@@ -940,6 +984,22 @@ export default function AdminDashboard() {
                                                 })()}
                                             </span>
                                         </div>
+
+                                        {/* Indicador de cadastro pendente - Mobile */}
+                                        {(user.pendingClienteProfile || user.pendingFornecedorProfile) && (
+                                            <div className="mb-3 flex flex-wrap gap-1">
+                                                {user.pendingClienteProfile && (
+                                                    <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">
+                                                        ⚠ Cadastro Cliente Pendente
+                                                    </span>
+                                                )}
+                                                {user.pendingFornecedorProfile && (
+                                                    <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">
+                                                        ⚠ Cadastro Fornecedor Pendente
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
 
                                         <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
                                             <button

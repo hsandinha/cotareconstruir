@@ -61,12 +61,12 @@ export function ClientExploreSection() {
         return () => unsubscribeAuth();
     }, []);
 
-    // Carregar dados da estrutura de fases quando entrar no modo árvore
+    // Carregar dados da estrutura sempre que uma obra for selecionada (para busca funcionar)
     useEffect(() => {
-        if (quotationMode === "tree") {
+        if (selectedWork) {
             loadConstructionData();
         }
-    }, [quotationMode]);
+    }, [selectedWork]);
 
     // Quando selecionar uma obra, buscar seus dados
     useEffect(() => {
@@ -141,41 +141,46 @@ export function ClientExploreSection() {
     };
 
     // Função para validar material adicionado via busca
-    const validateMaterialFase = (material: Material): { valid: boolean; message?: string; faseNome?: string } => {
-        if (!selectedWorkData || materiais.length === 0) return { valid: true };
+    const validateMaterialFase = (material: Material): { valid: boolean; faseNome?: string } => {
+        // Se não tem dados carregados ainda, não valida (permite adicionar)
+        if (!selectedWorkData) return { valid: true };
+        if (fases.length === 0 || servicos.length === 0) return { valid: true };
+
+        const faseAtualObra = selectedWorkData.etapa;
+        if (!faseAtualObra) return { valid: true }; // Se obra não tem fase definida, permite
 
         // Encontrar a fase do material através dos grupos e serviços
         let materialFase: Fase | null = null;
 
         // Buscar grupos do material
-        for (const grupoId of material.gruposInsumoIds) {
-            // Buscar serviços que usam esse grupo
-            const servicosDoGrupo = servicos.filter(s => s.gruposInsumoIds.includes(grupoId));
+        if (material.gruposInsumoIds && material.gruposInsumoIds.length > 0) {
+            for (const grupoId of material.gruposInsumoIds) {
+                // Buscar serviços que usam esse grupo
+                const servicosDoGrupo = servicos.filter(s =>
+                    s.gruposInsumoIds && s.gruposInsumoIds.includes(grupoId)
+                );
 
-            for (const servico of servicosDoGrupo) {
-                // Buscar fases do serviço
-                for (const faseId of servico.faseIds) {
-                    const fase = fases.find(f => f.id === faseId);
-                    if (fase && (!materialFase || fase.cronologia < materialFase.cronologia)) {
-                        materialFase = fase;
+                for (const servico of servicosDoGrupo) {
+                    // Buscar fases do serviço
+                    if (servico.faseIds && servico.faseIds.length > 0) {
+                        for (const faseId of servico.faseIds) {
+                            const fase = fases.find(f => f.id === faseId);
+                            if (fase && (!materialFase || fase.cronologia < materialFase.cronologia)) {
+                                materialFase = fase;
+                            }
+                        }
                     }
                 }
             }
         }
 
-        if (!materialFase) return { valid: true }; // Se não encontrou fase, permite adicionar
-
-        const isValid = isFaseValidForQuotation(materialFase.nome);
-
-        if (!isValid) {
-            return {
-                valid: false,
-                message: `⚠️ Este material faz parte da fase "${materialFase.nome}". Para cotar este material, você precisa cadastrar esta etapa no cronograma da obra com uma data de início de recebimento de ofertas válida.`,
-                faseNome: materialFase.nome
-            };
+        // Se encontrou fase e é a mesma da obra atual, está válido
+        if (materialFase && materialFase.nome === faseAtualObra) {
+            return { valid: true, faseNome: materialFase.nome };
         }
 
-        return { valid: true, faseNome: materialFase.nome };
+        // Se não encontrou fase ou é diferente da atual, retorna inválido
+        return { valid: false, faseNome: materialFase?.nome };
     };
 
     // Filtrar fases válidas para exibir no modo árvore
@@ -202,12 +207,17 @@ export function ClientExploreSection() {
     }, [searchTerm, materiais]);
 
     const addToCart = (material: Material) => {
-        // Validar fase do material
+        // Verificar fase do material
         const validation = validateMaterialFase(material);
+        const faseAtualObra = selectedWorkData?.etapa;
 
-        if (!validation.valid) {
-            alert(validation.message);
-            return;
+        // Se não for válido (material não é da fase atual), perguntar ao usuário
+        if (!validation.valid && faseAtualObra) {
+            const confirmMessage = `⚠️ Atenção: Este material não pertence à fase atual da obra.\n\nFase atual da obra: ${faseAtualObra}\n\nDeseja adicionar mesmo assim?`;
+
+            if (!confirm(confirmMessage)) {
+                return; // Usuário cancelou, não adiciona
+            }
         }
 
         setCart([...cart, {
@@ -215,7 +225,7 @@ export function ClientExploreSection() {
             name: material.nome,
             quantity: 1,
             unit: material.unidade,
-            group: "Material", // Pode ser melhorado para buscar o grupo real
+            group: "Material",
             observation: "",
             faseNome: validation.faseNome,
             materialId: material.id
