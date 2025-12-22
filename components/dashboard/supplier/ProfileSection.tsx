@@ -24,11 +24,17 @@ export function SupplierProfileSection() {
         managerRole: "",
         email: "",
         whatsapp: "",
-        address: "",
         cep: "",
+        endereco: "",
+        numero: "",
+        bairro: "",
+        cidade: "",
+        estado: "",
+        complemento: "",
         operatingRegions: "",
         operatingCategories: ""
     });
+    const [loadingCep, setLoadingCep] = useState(false);
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -48,8 +54,13 @@ export function SupplierProfileSection() {
                             managerRole: data.managerRole || "",
                             email: data.email || user.email || "",
                             whatsapp: formatPhoneBr(data.whatsapp || ""),
-                            address: data.address || "",
                             cep: formatCepBr(data.cep || ""),
+                            endereco: data.endereco || data.address || "",
+                            numero: data.numero || "",
+                            bairro: data.bairro || "",
+                            cidade: data.cidade || "",
+                            estado: data.estado || "",
+                            complemento: data.complemento || "",
                             operatingRegions: data.operatingRegions || "",
                             operatingCategories: data.operatingCategories || ""
                         });
@@ -96,7 +107,12 @@ export function SupplierProfileSection() {
             setFormData(prev => ({
                 ...prev,
                 companyName: data.razao_social || prev.companyName,
-                address: `${data.logradouro}, ${data.numero} ${data.complemento || ''} - ${data.bairro}, ${data.municipio} - ${data.uf}`,
+                endereco: data.logradouro || "",
+                numero: data.numero || "",
+                bairro: data.bairro || "",
+                cidade: data.municipio || "",
+                estado: data.uf || "",
+                complemento: data.complemento || "",
                 phone: formatPhoneBr(data.ddd_telefone_1 || prev.phone),
                 cnpj: formatCnpjBr(cleanCNPJ),
                 cep: formatCepBr(data.cep || cleanCNPJ.slice(0, 8)),
@@ -115,6 +131,7 @@ export function SupplierProfileSection() {
         const clean = (formData.cep || "").replace(/\D/g, "");
         if (clean.length !== 8) return;
 
+        setLoadingCep(true);
         try {
             const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${clean}`);
             if (!response.ok) throw new Error("CEP não encontrado");
@@ -122,11 +139,17 @@ export function SupplierProfileSection() {
             setFormData(prev => ({
                 ...prev,
                 cep: formatCepBr(clean),
-                address: `${data.street}, ${data.neighborhood}, ${data.city} - ${data.state}`,
+                endereco: data.street || "",
+                bairro: data.neighborhood || "",
+                cidade: data.city || "",
+                estado: data.state || "",
             }));
+            alert("Endereço preenchido pelo CEP!");
         } catch (error) {
             console.error("Erro ao consultar CEP:", error);
             alert("Não foi possível buscar o CEP. Verifique o número ou tente novamente.");
+        } finally {
+            setLoadingCep(false);
         }
     };
 
@@ -208,28 +231,102 @@ export function SupplierProfileSection() {
                                 placeholder="000.000.000.000"
                             />
                         </div>
-                        <div className="grid grid-cols-1 gap-4">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Endereço da Sede</label>
-                            <input
-                                type="text"
-                                name="address"
-                                value={formData.address}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                placeholder="Rua, Número, Bairro, Cidade - UF"
-                            />
+                        <div className="space-y-4">
+                            <div className="flex gap-2">
+                                <div className="flex-1">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">CEP</label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            name="cep"
+                                            value={formData.cep || ""}
+                                            onChange={handleChange}
+                                            onBlur={handleConsultCEP}
+                                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                            placeholder="00000-000"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handleConsultCEP}
+                                            disabled={loadingCep}
+                                            className="px-3 py-2 bg-green-100 text-green-700 rounded-md hover:bg-green-200 disabled:opacity-50 transition-colors"
+                                        >
+                                            {loadingCep ? "..." : "Buscar"}
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-1">Busca automática ao sair do campo</p>
+                                </div>
+                            </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">CEP</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Endereço (Logradouro)</label>
                                 <input
                                     type="text"
-                                    name="cep"
-                                    value={formData.cep}
+                                    name="endereco"
+                                    value={formData.endereco || ""}
                                     onChange={handleChange}
-                                    onBlur={handleConsultCEP}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                    placeholder="00000-000"
+                                    placeholder="Rua, Avenida, etc"
                                 />
-                                <p className="text-xs text-gray-500 mt-1">Busca automática ao sair do campo. Finalize número e complemento.</p>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Número</label>
+                                    <input
+                                        type="text"
+                                        name="numero"
+                                        value={formData.numero || ""}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        placeholder="123"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Complemento</label>
+                                    <input
+                                        type="text"
+                                        name="complemento"
+                                        value={formData.complemento || ""}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        placeholder="Apto, Sala, Bloco..."
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Bairro</label>
+                                <input
+                                    type="text"
+                                    name="bairro"
+                                    value={formData.bairro || ""}
+                                    onChange={handleChange}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                    placeholder="Bairro"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Cidade</label>
+                                    <input
+                                        type="text"
+                                        name="cidade"
+                                        value={formData.cidade || ""}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        placeholder="Cidade"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                                    <input
+                                        type="text"
+                                        name="estado"
+                                        value={formData.estado || ""}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        placeholder="UF"
+                                        maxLength={2}
+                                    />
+                                </div>
                             </div>
                         </div>
                         <div>

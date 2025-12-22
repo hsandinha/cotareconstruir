@@ -1127,6 +1127,51 @@ export default function ConstructionManagement() {
                         </div>
 
                         {/* Specific Fields */}
+                        {editingType === 'fases' && (
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-2">Serviços Associados</label>
+                                    <div className="border border-slate-200 rounded-xl p-4 max-h-60 overflow-y-auto bg-slate-50">
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {servicos.map(s => (
+                                                <label key={s.id} className="flex items-center gap-2 p-2 hover:bg-white rounded-lg cursor-pointer transition-colors">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={(s.faseIds || []).includes(formData.id || '')}
+                                                        onChange={async () => {
+                                                            // Toggle service's association with this fase
+                                                            const currentFases = s.faseIds || [];
+                                                            const faseId = formData.id || '';
+                                                            let newFases: string[];
+                                                            if (currentFases.includes(faseId)) {
+                                                                // Remove association
+                                                                newFases = currentFases.filter(id => id !== faseId);
+                                                            } else {
+                                                                // Add association
+                                                                newFases = [...currentFases, faseId];
+                                                            }
+                                                            // Update local state immediately for UI feedback
+                                                            setServicos(prev => prev.map(srv =>
+                                                                srv.id === s.id ? { ...srv, faseIds: newFases } : srv
+                                                            ));
+                                                            // Update in database
+                                                            await updateServico(s.id, { faseIds: newFases });
+                                                        }}
+                                                        className="rounded text-blue-600 focus:ring-blue-500"
+                                                        disabled={!formData.id}
+                                                    />
+                                                    <span className="text-sm text-slate-700">{s.nome}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    {!formData.id && (
+                                        <p className="text-xs text-amber-600 mt-2">💡 Salve a fase primeiro para poder associar serviços</p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         {editingType === 'servicos' && (
                             <div className="space-y-4">
                                 <div>
@@ -1238,18 +1283,24 @@ export default function ConstructionManagement() {
                                                         <input
                                                             type="checkbox"
                                                             checked={(m.gruposInsumoIds || []).includes(formData.id || '')}
-                                                            onChange={() => {
+                                                            onChange={async () => {
                                                                 // Toggle material's association with this group
                                                                 const currentGroups = m.gruposInsumoIds || [];
                                                                 const groupId = formData.id || '';
+                                                                let newGroups: string[];
                                                                 if (currentGroups.includes(groupId)) {
                                                                     // Remove association
-                                                                    const newGroups = currentGroups.filter(id => id !== groupId);
-                                                                    updateMaterial(m.id, { ...m, gruposInsumoIds: newGroups });
+                                                                    newGroups = currentGroups.filter(id => id !== groupId);
                                                                 } else {
                                                                     // Add association
-                                                                    updateMaterial(m.id, { ...m, gruposInsumoIds: [...currentGroups, groupId] });
+                                                                    newGroups = [...currentGroups, groupId];
                                                                 }
+                                                                // Update local state immediately for UI feedback
+                                                                setMateriais(prev => prev.map(mat =>
+                                                                    mat.id === m.id ? { ...mat, gruposInsumoIds: newGroups } : mat
+                                                                ));
+                                                                // Update in database
+                                                                await updateMaterial(m.id, { gruposInsumoIds: newGroups });
                                                             }}
                                                             className="rounded text-blue-600 focus:ring-blue-500"
                                                             disabled={!formData.id}
@@ -1273,18 +1324,24 @@ export default function ConstructionManagement() {
                                                     <input
                                                         type="checkbox"
                                                         checked={(s.gruposInsumoIds || []).includes(formData.id || '')}
-                                                        onChange={() => {
+                                                        onChange={async () => {
                                                             // Toggle service's association with this group
                                                             const currentGroups = s.gruposInsumoIds || [];
                                                             const groupId = formData.id || '';
+                                                            let newGroups: string[];
                                                             if (currentGroups.includes(groupId)) {
                                                                 // Remove association
-                                                                const newGroups = currentGroups.filter(id => id !== groupId);
-                                                                updateServico(s.id, { ...s, gruposInsumoIds: newGroups });
+                                                                newGroups = currentGroups.filter(id => id !== groupId);
                                                             } else {
                                                                 // Add association
-                                                                updateServico(s.id, { ...s, gruposInsumoIds: [...currentGroups, groupId] });
+                                                                newGroups = [...currentGroups, groupId];
                                                             }
+                                                            // Update local state immediately for UI feedback
+                                                            setServicos(prev => prev.map(srv =>
+                                                                srv.id === s.id ? { ...srv, gruposInsumoIds: newGroups } : srv
+                                                            ));
+                                                            // Update in database
+                                                            await updateServico(s.id, { gruposInsumoIds: newGroups });
                                                         }}
                                                         className="rounded text-blue-600 focus:ring-blue-500"
                                                         disabled={!formData.id}

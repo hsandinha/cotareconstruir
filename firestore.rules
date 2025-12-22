@@ -138,6 +138,21 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
     
+    // Ofertas: Coleção global de ofertas ativas
+    match /ofertas/{ofertaId} {
+      // Qualquer usuário autenticado pode ler ofertas
+      allow read: if isAuthenticated();
+      
+      // Fornecedor pode criar/atualizar/deletar suas próprias ofertas
+      // ofertaId é no formato {fornecedorId}_{materialId}
+      allow write: if isAuthenticated() && (
+        // Verifica se o usuário é dono do fornecedor referenciado na oferta
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('fornecedorId', '') == ofertaId.split('_')[0]) ||
+        isAdmin()
+      );
+    }
+    
     // Fornecedores: Admins podem gerenciar fornecedores
     match /fornecedores/{fornecedorId} {
       allow read: if isAuthenticated();

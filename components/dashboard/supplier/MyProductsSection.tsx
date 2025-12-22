@@ -10,7 +10,7 @@ import {
     CurrencyDollarIcon
 } from "@heroicons/react/24/outline";
 import { auth, db } from "../../../lib/firebase";
-import { collection, getDocs, getDoc, doc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, getDoc, doc, updateDoc, setDoc, deleteDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 
 // Interfaces
@@ -171,14 +171,71 @@ export function SupplierMyProductsSection() {
         try {
             const materialRef = doc(db, "fornecedores", fornecedorId, "materiais", editingMaterial);
             const currentConfig = fornecedorMateriais.get(editingMaterial);
+            const materialBase = materiaisBase.find(m => m.id === editingMaterial);
 
+            const valorOferta = parseFloat(editValorOferta) || 0;
+            const preco = currentConfig?.preco || 0;
+            const dataAtualizacao = new Date().toISOString();
+
+            // Atualizar material do fornecedor
             await updateDoc(materialRef, {
                 ...currentConfig,
                 tipoOferta: editTipoOferta,
-                valorOferta: parseFloat(editValorOferta) || 0,
+                valorOferta,
                 quantidadeMinima: parseInt(editQtdMinima) || 0,
-                dataAtualizacao: new Date().toISOString()
+                dataAtualizacao
             });
+
+            // Gerenciar coleção global de ofertas
+            const ofertaId = `${fornecedorId}_${editingMaterial}`;
+            const ofertaRef = doc(db, "ofertas", ofertaId);
+
+            if (valorOferta > 0 && preco > 0 && materialBase) {
+                // Buscar dados do fornecedor para nome
+                const fornecedorDoc = await getDoc(doc(db, "fornecedores", fornecedorId));
+                const fornecedorData = fornecedorDoc.data();
+                const fornecedorNome = fornecedorData?.nomeFantasia || fornecedorData?.razaoSocial || "Fornecedor";
+
+                // Calcular preço final
+                let precoFinal = preco;
+                let descontoPercentual = 0;
+                if (editTipoOferta === 'percentual') {
+                    precoFinal = preco * (1 - valorOferta / 100);
+                    descontoPercentual = valorOferta;
+                } else {
+                    precoFinal = preco - valorOferta;
+                    descontoPercentual = Math.round((valorOferta / preco) * 100);
+                }
+
+                // Criar/atualizar oferta global
+                await setDoc(ofertaRef, {
+                    materialId: editingMaterial,
+                    materialNome: materialBase.nome,
+                    materialUnidade: materialBase.unidade,
+                    materialDescricao: materialBase.descricao || null,
+                    gruposInsumoIds: materialBase.gruposInsumoIds || [],
+                    fornecedorId,
+                    fornecedorNome,
+                    preco,
+                    precoFinal,
+                    tipoOferta: editTipoOferta,
+                    valorOferta,
+                    descontoPercentual,
+                    quantidadeMinima: parseInt(editQtdMinima) || 1,
+                    estoque: currentConfig?.estoque || 0,
+                    ativo: true,
+                    dataAtualizacao
+                });
+                console.log("Oferta salva na coleção global:", ofertaId);
+            } else {
+                // Remover oferta se valor for 0
+                try {
+                    await deleteDoc(ofertaRef);
+                    console.log("Oferta removida:", ofertaId);
+                } catch (e) {
+                    // Ignora se não existia
+                }
+            }
 
             // Recarregar dados
             const snapshot = await getDocs(collection(db, "fornecedores", fornecedorId, "materiais"));

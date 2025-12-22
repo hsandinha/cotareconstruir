@@ -26,11 +26,15 @@ export function ClientProfileSection() {
         cnpj: "",
         role: "",
         obras: 0,
-        address: "",
-        addressNumber: "",
-        addressComplement: "",
         cep: "",
+        endereco: "",
+        numero: "",
+        bairro: "",
+        cidade: "",
+        estado: "",
+        complemento: "",
     });
+    const [loadingCep, setLoadingCep] = useState(false);
 
     const [teamMembers, setTeamMembers] = useState<Array<{ name: string; email: string; phone: string; role: string }>>([]);
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -87,10 +91,13 @@ export function ClientProfileSection() {
                             cnpj: formatCnpjBr(data.cnpj || ""),
                             role: data.companyRole || "",
                             obras: data.obras || 0,
-                            address: data.address || "",
-                            addressNumber: data.addressNumber || "",
-                            addressComplement: data.addressComplement || "",
                             cep: formatCepBr(data.cep || ""),
+                            endereco: data.endereco || data.address || "",
+                            numero: data.numero || data.addressNumber || "",
+                            bairro: data.bairro || "",
+                            cidade: data.cidade || "",
+                            estado: data.estado || "",
+                            complemento: data.complemento || data.addressComplement || "",
                         });
                         setTeamMembers((data.teamMembers || []).map((m: any) => ({
                             name: m.name || "",
@@ -160,10 +167,13 @@ export function ClientProfileSection() {
                 cnpj: profileType === "cnpj" ? company.cnpj : "",
                 companyRole: profileType === "cnpj" ? company.role : "",
                 obras: profileType === "cnpj" ? company.obras : 0,
-                address: profileType === "cnpj" ? company.address : "",
-                addressNumber: profileType === "cnpj" ? company.addressNumber : "",
-                addressComplement: profileType === "cnpj" ? company.addressComplement : "",
                 cep: profileType === "cnpj" ? company.cep : "",
+                endereco: profileType === "cnpj" ? company.endereco : "",
+                numero: profileType === "cnpj" ? company.numero : "",
+                bairro: profileType === "cnpj" ? company.bairro : "",
+                cidade: profileType === "cnpj" ? company.cidade : "",
+                estado: profileType === "cnpj" ? company.estado : "",
+                complemento: profileType === "cnpj" ? company.complemento : "",
                 teamMembers: profileType === "cnpj" ? teamMembers : [],
             });
             showToast("success", "Perfil atualizado com sucesso!");
@@ -181,6 +191,7 @@ export function ClientProfileSection() {
         const clean = (company.cep || "").replace(/\D/g, "");
         if (clean.length !== 8) return;
 
+        setLoadingCep(true);
         try {
             const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${clean}`);
             if (!response.ok) throw new Error("CEP não encontrado");
@@ -188,11 +199,16 @@ export function ClientProfileSection() {
             setCompany(prev => ({
                 ...prev,
                 cep: formatCepBr(clean),
-                address: `${data.street}, ${data.neighborhood}, ${data.city} - ${data.state}`,
+                endereco: data.street || "",
+                bairro: data.neighborhood || "",
+                cidade: data.city || "",
+                estado: data.state || "",
             }));
             showToast("success", "Endereço preenchido pelo CEP.");
         } catch (error) {
             showToast("error", "Não foi possível buscar o CEP. Verifique o número ou tente novamente.");
+        } finally {
+            setLoadingCep(false);
         }
     };
 
@@ -219,9 +235,12 @@ export function ClientProfileSection() {
                 ...prev,
                 cnpj: formatCnpjBr(clean),
                 companyName: data.razao_social || prev.companyName,
-                address: `${data.logradouro}, ${data.bairro}, ${data.municipio} - ${data.uf}`,
-                addressNumber: data.numero || prev.addressNumber,
-                addressComplement: data.complemento || prev.addressComplement,
+                endereco: data.logradouro || "",
+                numero: data.numero || "",
+                bairro: data.bairro || "",
+                cidade: data.municipio || "",
+                estado: data.uf || "",
+                complemento: data.complemento || "",
                 cep: formatCepBr(data.cep || clean.slice(0, 8)),
             }));
         } catch (error) {
@@ -401,29 +420,40 @@ export function ClientProfileSection() {
                                 </label>
                                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     CEP
-                                    <input
-                                        value={company.cep}
-                                        onChange={(e) => setCompany({ ...company, cep: formatCepBr(e.target.value) })}
-                                        onBlur={handleCepLookup}
-                                        className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
-                                        placeholder="00000-000"
-                                    />
+                                    <div className="mt-2 flex gap-2">
+                                        <input
+                                            value={company.cep || ""}
+                                            onChange={(e) => setCompany({ ...company, cep: formatCepBr(e.target.value) })}
+                                            onBlur={handleCepLookup}
+                                            className="flex-1 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
+                                            placeholder="00000-000"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handleCepLookup}
+                                            disabled={loadingCep}
+                                            className="px-4 py-2 bg-blue-100 text-blue-700 rounded-2xl hover:bg-blue-200 disabled:opacity-50 transition-colors text-sm font-semibold"
+                                        >
+                                            {loadingCep ? "..." : "Buscar"}
+                                        </button>
+                                    </div>
+                                    <p className="mt-1 text-[11px] text-slate-500">Busca automática ao sair do campo.</p>
                                 </label>
                                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    Endereço da Sede
+                                    Endereço (Logradouro)
                                     <input
-                                        value={company.address}
-                                        onChange={(e) => setCompany({ ...company, address: e.target.value })}
+                                        value={company.endereco || ""}
+                                        onChange={(e) => setCompany({ ...company, endereco: e.target.value })}
                                         className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
-                                        placeholder="Rua, Número, Bairro, Cidade - UF"
+                                        placeholder="Rua, Avenida, etc"
                                     />
                                 </label>
                                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                         Número
                                         <input
-                                            value={company.addressNumber}
-                                            onChange={(e) => setCompany({ ...company, addressNumber: e.target.value })}
+                                            value={company.numero || ""}
+                                            onChange={(e) => setCompany({ ...company, numero: e.target.value })}
                                             className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
                                             placeholder="Ex: 123"
                                         />
@@ -431,10 +461,40 @@ export function ClientProfileSection() {
                                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                         Complemento
                                         <input
-                                            value={company.addressComplement}
-                                            onChange={(e) => setCompany({ ...company, addressComplement: e.target.value })}
+                                            value={company.complemento || ""}
+                                            onChange={(e) => setCompany({ ...company, complemento: e.target.value })}
                                             className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
                                             placeholder="Apto, sala, bloco..."
+                                        />
+                                    </label>
+                                </div>
+                                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    Bairro
+                                    <input
+                                        value={company.bairro || ""}
+                                        onChange={(e) => setCompany({ ...company, bairro: e.target.value })}
+                                        className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
+                                        placeholder="Bairro"
+                                    />
+                                </label>
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                        Cidade
+                                        <input
+                                            value={company.cidade || ""}
+                                            onChange={(e) => setCompany({ ...company, cidade: e.target.value })}
+                                            className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
+                                            placeholder="Cidade"
+                                        />
+                                    </label>
+                                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                        Estado
+                                        <input
+                                            value={company.estado || ""}
+                                            onChange={(e) => setCompany({ ...company, estado: e.target.value })}
+                                            className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
+                                            placeholder="UF"
+                                            maxLength={2}
                                         />
                                     </label>
                                 </div>
