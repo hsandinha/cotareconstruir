@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { PlusIcon, MagnifyingGlassIcon, ShoppingCartIcon, WrenchScrewdriverIcon, ChevronRightIcon, ChevronDownIcon } from "@heroicons/react/24/outline";
-import { cartCategories } from "../../../lib/clientDashboardMocks";
 import { auth, db } from "../../../lib/firebase";
 import { collection, addDoc, query, where, onSnapshot, getDocs, orderBy, getDoc, doc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
@@ -39,6 +38,7 @@ export function ClientExploreSection() {
     const [expandedFases, setExpandedFases] = useState<Set<string>>(new Set());
     const [expandedServicos, setExpandedServicos] = useState<Set<string>>(new Set());
     const [expandedGrupos, setExpandedGrupos] = useState<Set<string>>(new Set());
+    const [availableGroups, setAvailableGroups] = useState<string[]>([]);
 
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -59,6 +59,20 @@ export function ClientExploreSection() {
         });
 
         return () => unsubscribeAuth();
+    }, []);
+
+    // Carregar grupos de insumo disponíveis
+    useEffect(() => {
+        const loadGroups = async () => {
+            try {
+                const snapshot = await getDocs(collection(db, "grupos_insumo"));
+                const groups = snapshot.docs.map(doc => doc.data().nome).sort();
+                setAvailableGroups(groups);
+            } catch (error) {
+                console.error("Erro ao carregar grupos:", error);
+            }
+        };
+        loadGroups();
     }, []);
 
     // Carregar dados da estrutura sempre que uma obra for selecionada (para busca funcionar)
@@ -192,7 +206,7 @@ export function ClientExploreSection() {
     // Estado para entrada manual
     const [manualItem, setManualItem] = useState({
         name: "",
-        group: cartCategories[0] as string,
+        group: "",
         quantity: 1,
         unit: "unid",
         observation: ""
@@ -287,7 +301,7 @@ export function ClientExploreSection() {
             group: manualItem.group,
             observation: manualItem.observation
         }]);
-        setManualItem({ name: "", group: cartCategories[0], quantity: 1, unit: "unid", observation: "" });
+        setManualItem({ name: "", group: availableGroups[0] || "", quantity: 1, unit: "unid", observation: "" });
         setShowManualEntry(false);
     };
 
@@ -478,7 +492,7 @@ export function ClientExploreSection() {
                                                             onChange={(e) => setManualItem({ ...manualItem, group: e.target.value })}
                                                             className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                         >
-                                                            {cartCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                            {availableGroups.map(g => <option key={g} value={g}>{g}</option>)}
                                                         </select>
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-4">

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
+import { ChevronDownIcon, ChevronUpIcon, PlusIcon } from "@heroicons/react/24/outline";
 import { auth, db } from "../../../lib/firebase";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, collection, getDocs, query, orderBy } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { formatCepBr, formatCnpjBr, formatPhoneBr, isValidCNPJ } from "../../../lib/utils";
 import { SupplierVerificationSection } from "./VerificationSection";
@@ -13,7 +13,11 @@ export function SupplierProfileSection() {
     const [saving, setSaving] = useState(false);
     const [consultingCNPJ, setConsultingCNPJ] = useState(false);
     const [userUid, setUserUid] = useState<string | null>(null);
+    const [fornecedorId, setFornecedorId] = useState<string | null>(null);
     const [showVerification, setShowVerification] = useState(false);
+    const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; nome: string }>>([]);
+    const [supplierGroups, setSupplierGroups] = useState<string[]>([]);
+    const [savingGroups, setSavingGroups] = useState(false);
 
     const [formData, setFormData] = useState({
         companyName: "",
@@ -64,6 +68,18 @@ export function SupplierProfileSection() {
                             operatingRegions: data.operatingRegions || "",
                             operatingCategories: data.operatingCategories || ""
                         });
+
+                        // Buscar dados do fornecedor se existir fornecedorId
+                        if (data.fornecedorId) {
+                            setFornecedorId(data.fornecedorId);
+                            const fornecedorDoc = await getDoc(doc(db, "fornecedores", data.fornecedorId));
+                            if (fornecedorDoc.exists()) {
+                                const fornecedorData = fornecedorDoc.data();
+                                console.log("Dados do fornecedor:", fornecedorData);
+                                console.log("Grupos do fornecedor:", fornecedorData.grupoInsumoIds);
+                                setSupplierGroups(fornecedorData.grupoInsumoIds || []);
+                            }
+                        }
                     }
                 } catch (error) {
                     console.error("Error fetching profile:", error);
@@ -73,6 +89,24 @@ export function SupplierProfileSection() {
         });
 
         return () => unsubscribe();
+    }, []);
+
+    // Carregar grupos de insumo disponíveis
+    useEffect(() => {
+        const loadGroups = async () => {
+            try {
+                const q = query(collection(db, "grupos_insumo"), orderBy("nome"));
+                const snapshot = await getDocs(q);
+                const groups = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    nome: doc.data().nome
+                }));
+                setAvailableGroups(groups);
+            } catch (error) {
+                console.error("Erro ao carregar grupos:", error);
+            }
+        };
+        loadGroups();
     }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -174,6 +208,38 @@ export function SupplierProfileSection() {
             alert("Erro ao atualizar perfil.");
         } finally {
             setSaving(false);
+        }
+    };
+
+    const toggleGroup = (groupId: string) => {
+        setSupplierGroups(prev => {
+            if (prev.includes(groupId)) {
+                return prev.filter(id => id !== groupId);
+            } else {
+                return [...prev, groupId];
+            }
+        });
+    };
+
+    const handleSaveGroups = async () => {
+        if (!fornecedorId) {
+            alert("Fornecedor não identificado. Verifique se sua conta está vinculada a um fornecedor.");
+            return;
+        }
+
+        setSavingGroups(true);
+        try {
+            const docRef = doc(db, "fornecedores", fornecedorId);
+            await updateDoc(docRef, {
+                grupoInsumoIds: supplierGroups,
+                updatedAt: new Date().toISOString()
+            });
+            alert("Grupos de insumo atualizados com sucesso!");
+        } catch (error) {
+            console.error("Erro ao atualizar grupos:", error);
+            alert("Erro ao atualizar grupos de insumo.");
+        } finally {
+            setSavingGroups(false);
         }
     };
 
@@ -450,6 +516,123 @@ export function SupplierProfileSection() {
                 >
                     {saving ? "Salvando..." : "Salvar Alterações"}
                 </button>
+            </div>
+
+            {/* Seção de Grupos de Insumo */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <div className="flex items-center justify-between mb-4">
+                    <div>
+                        <h4 className="text-base font-medium text-gray-900">Grupos de Insumo</h4>
+                        <p className="text-sm text-gray-600 mt-1">Selecione os grupos de materiais que sua empresa fornece</p>
+                    </div>
+                    <button
+                        onClick={handleSaveGroups}
+                        disabled={savingGroups}
+                        className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 disabled:opacity-50"
+                    >
+                        {savingGroups ? "Salvando..." : "Salvar Grupos"}
+                    </button>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
+                    <p className="text-sm text-blue-800">
+                        <strong>Dica:</strong> Marque os grupos de materiais que você fornece. Isso ajudará a receber oportunidades relevantes.
+                    </p>
+                </div>
+
+                {availableGroups.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                        <p>Carregando grupos de insumo...</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Coluna Esquerda: Grupos Disponíveis */}
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between pb-2 border-b border-gray-200">
+                                <h5 className="text-sm font-semibold text-gray-700">Grupos Disponíveis</h5>
+                                <span className="text-xs text-gray-500">
+                                    {availableGroups.filter(g => !supplierGroups.includes(g.id)).length} grupos
+                                </span>
+                            </div>
+                            <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
+                                {availableGroups
+                                    .filter(group => !supplierGroups.includes(group.id))
+                                    .map(group => (
+                                        <button
+                                            key={group.id}
+                                            onClick={() => toggleGroup(group.id)}
+                                            className="w-full flex items-center justify-between p-3 rounded-lg border border-gray-200 bg-white hover:border-green-400 hover:bg-green-50 transition-all group"
+                                        >
+                                            <span className="text-sm font-medium text-gray-700 group-hover:text-green-700">
+                                                {group.nome}
+                                            </span>
+                                            <PlusIcon className="h-4 w-4 text-gray-400 group-hover:text-green-600" />
+                                        </button>
+                                    ))}
+                                {availableGroups.filter(g => !supplierGroups.includes(g.id)).length === 0 && (
+                                    <div className="text-center py-8 text-gray-400">
+                                        <p className="text-sm">Todos os grupos foram selecionados</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Coluna Direita: Grupos Selecionados */}
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between pb-3 border-b-2 border-green-500">
+                                <h5 className="text-sm font-semibold text-gray-900">Meus Grupos</h5>
+                                <span className="px-2.5 py-1 text-xs font-bold text-white bg-green-600 rounded-full">
+                                    {supplierGroups.length}
+                                </span>
+                            </div>
+                            <div className="space-y-2.5 max-h-96 overflow-y-auto pr-2">
+                                {availableGroups
+                                    .filter(group => supplierGroups.includes(group.id))
+                                    .map(group => (
+                                        <div
+                                            key={group.id}
+                                            className="group flex items-center justify-between p-3.5 rounded-lg border-2 border-green-500 bg-gradient-to-r from-green-50 to-green-100 hover:from-green-100 hover:to-green-200 transition-all shadow-sm"
+                                        >
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="w-2 h-2 rounded-full bg-green-600"></div>
+                                                <span className="text-sm font-semibold text-gray-900">
+                                                    {group.nome}
+                                                </span>
+                                            </div>
+                                            <button
+                                                onClick={() => toggleGroup(group.id)}
+                                                className="p-1.5 rounded-lg bg-white border border-red-200 hover:bg-red-50 hover:border-red-400 transition-all shadow-sm"
+                                                title="Remover grupo"
+                                            >
+                                                <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    ))}
+                                {supplierGroups.length === 0 && (
+                                    <div className="text-center py-16 px-4">
+                                        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 mb-4">
+                                            <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                            </svg>
+                                        </div>
+                                        <p className="text-base font-semibold text-gray-700 mb-1">Nenhum grupo selecionado</p>
+                                        <p className="text-sm text-gray-500">Clique nos grupos à esquerda para adicionar aos seus materiais</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {supplierGroups.length > 0 && (
+                    <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
+                        <p className="text-sm font-medium text-green-700">
+                            Total de grupos selecionados: <span className="font-bold">{supplierGroups.length}</span>
+                        </p>
+                    </div>
+                )}
             </div>
 
             {/* Seção de Verificação e Documentos */}

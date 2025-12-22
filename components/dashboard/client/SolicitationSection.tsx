@@ -2,34 +2,45 @@
 
 import { useMemo, useState, type FormEvent, useEffect } from "react";
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
-import {
-    cartCategories,
-    CartItem,
-} from "../../../lib/clientDashboardMocks";
+import { CartItem } from "../../../lib/clientDashboardMocks";
 import { auth, db } from "../../../lib/firebase";
 import { collection, addDoc, query, where, onSnapshot, serverTimestamp, getDocs } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { sendEmail } from "../../../app/actions/email";
 
-const categoryOptions = cartCategories as readonly string[];
-
 export function ClientSolicitationSection() {
-    type Category = (typeof categoryOptions)[number];
-
     const [items, setItems] = useState<CartItem[]>([]);
     const [works, setWorks] = useState<{ id: string; obra: string; city?: string }[]>([]);
     const [selectedWorkId, setSelectedWorkId] = useState<string>("");
     const [userUid, setUserUid] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
+    const [availableGroups, setAvailableGroups] = useState<string[]>([]);
 
     const [form, setForm] = useState({
         descricao: "",
-        categoria: categoryOptions[0] as Category,
+        categoria: "",
         quantidade: 1,
         unidade: "unid",
         observacao: "",
     });
+
+    useEffect(() => {
+        // Carregar grupos de insumo disponíveis
+        const loadGroups = async () => {
+            try {
+                const snapshot = await getDocs(collection(db, "grupos_insumo"));
+                const groups = snapshot.docs.map(doc => doc.data().nome).sort();
+                setAvailableGroups(groups);
+                if (groups.length > 0 && !form.categoria) {
+                    setForm(prev => ({ ...prev, categoria: groups[0] }));
+                }
+            } catch (error) {
+                console.error("Erro ao carregar grupos:", error);
+            }
+        };
+        loadGroups();
+    }, []);
 
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -59,7 +70,7 @@ export function ClientSolicitationSection() {
         setItems((prev) => [...prev, { id: Date.now(), ...form } as CartItem]);
         setForm({
             descricao: "",
-            categoria: categoryOptions[0] as Category,
+            categoria: availableGroups[0] || "",
             quantidade: 1,
             unidade: "unid",
             observacao: "",
@@ -126,11 +137,11 @@ export function ClientSolicitationSection() {
     }
 
     const grouped = useMemo(() => {
-        return categoryOptions.map((category) => ({
+        return availableGroups.map((category) => ({
             category,
             items: items.filter((item) => item.categoria === category),
         }));
-    }, [items]);
+    }, [items, availableGroups]);
 
     return (
         <div className="space-y-6">
@@ -205,10 +216,10 @@ export function ClientSolicitationSection() {
                                     Categoria
                                     <select
                                         value={form.categoria}
-                                        onChange={(e) => setForm({ ...form, categoria: e.target.value as Category })}
+                                        onChange={(e) => setForm({ ...form, categoria: e.target.value })}
                                         className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm focus:border-blue-400 focus:outline-none"
                                     >
-                                        {categoryOptions.map((cat) => (
+                                        {availableGroups.map((cat) => (
                                             <option key={cat}>{cat}</option>
                                         ))}
                                     </select>

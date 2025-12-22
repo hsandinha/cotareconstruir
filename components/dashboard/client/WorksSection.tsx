@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, type FormEvent } from "react";
-import { PlusIcon, CalendarIcon, CheckCircleIcon, ClockIcon, TrashIcon } from "@heroicons/react/24/outline";
-import { Work, WorkStage, constructionStages } from "../../../lib/clientDashboardMocks";
+import { PlusIcon, CalendarIcon, CheckCircleIcon, ClockIcon, TrashIcon, PencilIcon } from "@heroicons/react/24/outline";
+import { Work, WorkStage } from "../../../lib/clientDashboardMocks";
 import { auth, db } from "../../../lib/firebase";
 import { collection, addDoc, query, where, onSnapshot, doc, updateDoc, deleteDoc, arrayUnion, arrayRemove, getDocs, orderBy } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
@@ -25,6 +25,7 @@ export function ClientWorksSection() {
     const [selectedWork, setSelectedWork] = useState<string | number | null>(null);
     const [showStageModal, setShowStageModal] = useState(false);
     const [isWorkFormVisible, setIsWorkFormVisible] = useState(false);
+    const [editingWorkId, setEditingWorkId] = useState<string | number | null>(null);
     const [collapsedWorks, setCollapsedWorks] = useState<Record<string | number, boolean>>({});
     const [fases, setFases] = useState<Array<{ id: string; nome: string; ordem: number }>>([]);
     const [form, setForm] = useState({
@@ -160,14 +161,26 @@ export function ClientWorksSection() {
         }
 
         try {
-            await addDoc(collection(db, "works"), {
-                ...form,
-                inicioRecebimentoOferta,
-                userId: userUid,
-                stages: [],
-                deliverySchedule,
-                createdAt: new Date().toISOString(),
-            });
+            if (editingWorkId) {
+                // Atualizar obra existente
+                const workRef = doc(db, "works", String(editingWorkId));
+                await updateDoc(workRef, {
+                    ...form,
+                    inicioRecebimentoOferta,
+                    deliverySchedule,
+                    updatedAt: new Date().toISOString(),
+                });
+            } else {
+                // Criar nova obra
+                await addDoc(collection(db, "works"), {
+                    ...form,
+                    inicioRecebimentoOferta,
+                    userId: userUid,
+                    stages: [],
+                    deliverySchedule,
+                    createdAt: new Date().toISOString(),
+                });
+            }
 
             setForm({
                 obra: "",
@@ -188,11 +201,40 @@ export function ClientWorksSection() {
                 diasAntecedenciaOferta: 15,
                 horarioEntrega: "",
             });
+            setEditingWorkId(null);
             setIsWorkFormVisible(false);
         } catch (error) {
-            console.error("Erro ao cadastrar obra:", error);
-            alert("Erro ao cadastrar obra.");
+            console.error("Erro ao salvar obra:", error);
+            alert("Erro ao salvar obra.");
         }
+    }
+
+    function handleEditWork(work: Work) {
+        setForm({
+            obra: work.obra || "",
+            centroCustos: work.centroCustos || "",
+            cep: work.cep || "",
+            bairro: work.bairro || "",
+            cidade: work.cidade || "",
+            endereco: work.endereco || "",
+            numero: work.numero || "",
+            complemento: work.complemento || "",
+            restricoesEntrega: work.restricoesEntrega || "",
+            etapa: work.etapa || "",
+            tipoObra: work.tipoObra || "",
+            area: work.area || "",
+            padrao: work.padrao || "",
+            dataInicio: work.dataInicio || "",
+            previsaoTermino: work.previsaoTermino || "",
+            diasAntecedenciaOferta: work.diasAntecedenciaOferta || 15,
+            horarioEntrega: work.horarioEntrega || "",
+        });
+        if (work.deliverySchedule) {
+            setDeliverySchedule(work.deliverySchedule);
+        }
+        setEditingWorkId(work.id);
+        setIsWorkFormVisible(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     async function handleAddStage(e: FormEvent<HTMLFormElement>) {
@@ -302,12 +344,38 @@ export function ClientWorksSection() {
             <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
                 <div className="flex items-center justify-between border-b border-gray-100 pb-4">
                     <div>
-                        <h2 className="text-lg font-semibold text-gray-900">Cadastrar Nova Obra</h2>
+                        <h2 className="text-lg font-semibold text-gray-900">
+                            {editingWorkId ? "Editar Obra" : "Cadastrar Nova Obra"}
+                        </h2>
                         <p className="text-sm text-gray-500">Preencha os dados completos da obra para melhor gestão.</p>
                     </div>
                     <button
                         type="button"
-                        onClick={() => setIsWorkFormVisible((prev) => !prev)}
+                        onClick={() => {
+                            setIsWorkFormVisible((prev) => !prev);
+                            if (isWorkFormVisible) {
+                                setEditingWorkId(null);
+                                setForm({
+                                    obra: "",
+                                    centroCustos: "",
+                                    cep: "",
+                                    bairro: "",
+                                    cidade: "",
+                                    endereco: "",
+                                    numero: "",
+                                    complemento: "",
+                                    restricoesEntrega: "",
+                                    etapa: "",
+                                    tipoObra: "",
+                                    area: "",
+                                    padrao: "",
+                                    dataInicio: "",
+                                    previsaoTermino: "",
+                                    diasAntecedenciaOferta: 15,
+                                    horarioEntrega: "",
+                                });
+                            }
+                        }}
                         className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2 text-sm font-semibold text-white hover:bg-blue-700"
                     >
                         <PlusIcon className="h-5 w-5" />
@@ -599,6 +667,14 @@ export function ClientWorksSection() {
                                         className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
                                     >
                                         {collapsedWorks[work.id] ? "Mostrar detalhes" : "Ocultar detalhes"}
+                                    </button>
+                                    <button
+                                        onClick={() => handleEditWork(work)}
+                                        className="inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                                        title="Editar Obra"
+                                    >
+                                        <PencilIcon className="h-4 w-4" />
+                                        Editar
                                     </button>
                                     <button
                                         onClick={() => {
