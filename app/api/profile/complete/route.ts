@@ -17,7 +17,7 @@ function removeUndefined(obj: any): any {
 export async function POST(request: NextRequest) {
     try {
         const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-        
+
         // Verificar autenticação
         const authHeader = request.headers.get('authorization');
         const token = authHeader?.replace('Bearer ', '');
