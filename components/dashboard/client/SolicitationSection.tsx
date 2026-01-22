@@ -3,16 +3,15 @@
 import { useMemo, useState, type FormEvent, useEffect } from "react";
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { CartItem } from "../../../lib/clientDashboardMocks";
-import { auth, db } from "../../../lib/firebase";
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp, getDocs } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "@/lib/supabaseAuth";
+import { useAuth } from "@/lib/useAuth";
 import { sendEmail } from "../../../app/actions/email";
 
 export function ClientSolicitationSection() {
+    const { user, initialized } = useAuth();
     const [items, setItems] = useState<CartItem[]>([]);
     const [works, setWorks] = useState<{ id: string; obra: string; city?: string }[]>([]);
     const [selectedWorkId, setSelectedWorkId] = useState<string>("");
-    const [userUid, setUserUid] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
     const [availableGroups, setAvailableGroups] = useState<string[]>([]);
@@ -29,8 +28,14 @@ export function ClientSolicitationSection() {
         // Carregar grupos de insumo disponíveis
         const loadGroups = async () => {
             try {
-                const snapshot = await getDocs(collection(db, "grupos_insumo"));
-                const groups = snapshot.docs.map(doc => doc.data().nome).sort();
+                const { data, error } = await supabase
+                    .from('grupos_insumo')
+                    .select('nome')
+                    .order('nome', { ascending: true });
+
+                if (error) throw error;
+
+                const groups = (data || []).map(doc => doc.nome).sort();
                 setAvailableGroups(groups);
                 if (groups.length > 0 && !form.categoria) {
                     setForm(prev => ({ ...prev, categoria: groups[0] }));
@@ -43,26 +48,66 @@ export function ClientSolicitationSection() {
     }, []);
 
     useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-            if (user) {
-                setUserUid(user.uid);
-                const q = query(collection(db, "works"), where("userId", "==", user.uid));
-                const unsubscribeWorks = onSnapshot(q, (snapshot) => {
-                    const worksData = snapshot.docs.map((doc) => ({
+        if (!initialized) return;
+
+        if (!user) {
+            setWorks([]);
+            return;
+        }
+
+        // Buscar obras inicialmente
+        const fetchWorks = async () => {
+            const { data, error } = await supabase
+                .from('works')
+                .select('id, obra, cidade')
+                .eq('user_id', user.id);
+
+            if (error) {
+                console.error("Erro ao carregar obras:", error);
+                setWorks([]);
+            } else {
+                const worksData = (data || []).map((doc) => ({
+                    id: doc.id,
+                    obra: doc.obra,
+                    city: doc.cidade
+                }));
+                setWorks(worksData);
+            }
+        };
+
+        fetchWorks();
+
+        // Configurar subscription realtime para obras
+        const channel = supabase
+            .channel('works_solicitation_changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'works',
+                    filter: `user_id=eq.${user.id}`
+                },
+                async () => {
+                    const { data } = await supabase
+                        .from('works')
+                        .select('id, obra, cidade')
+                        .eq('user_id', user.id);
+
+                    const worksData = (data || []).map((doc) => ({
                         id: doc.id,
-                        obra: doc.data().obra,
-                        city: doc.data().cidade
+                        obra: doc.obra,
+                        city: doc.cidade
                     }));
                     setWorks(worksData);
-                });
-                return () => unsubscribeWorks();
-            } else {
-                setUserUid(null);
-                setWorks([]);
-            }
-        });
-        return () => unsubscribeAuth();
-    }, []);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [user, initialized]);
 
     function handleAddItem(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
@@ -82,31 +127,37 @@ export function ClientSolicitationSection() {
     }
 
     async function handleSaveQuotation() {
-        if (!userUid || !selectedWorkId || items.length === 0) return;
+        if (!user || !selectedWorkId || items.length === 0) return;
         setLoading(true);
         try {
             const work = works.find(w => w.id === selectedWorkId);
 
-            await addDoc(collection(db, "quotations"), {
-                userId: userUid,
-                workId: selectedWorkId,
-                items: items,
-                status: "pending", // pending approval/release
-                createdAt: serverTimestamp().toString(), // storing as string for now to match other parts, or let firestore handle it
-                totalItems: items.length,
-                location: {
-                    city: work?.city || "",
-                    state: "SP" // Default or fetch if available
-                }
-            });
+            const { error } = await supabase
+                .from('quotations')
+                .insert({
+                    user_id: user.id,
+                    work_id: selectedWorkId,
+                    items: items,
+                    status: "pending", // pending approval/release
+                    created_at: new Date().toISOString(),
+                    total_items: items.length,
+                    location: {
+                        city: work?.city || "",
+                        state: "SP" // Default or fetch if available
+                    }
+                });
+
+            if (error) throw error;
 
             // Notify suppliers in the region
             if (work?.city) {
                 // Note: In a real app, use a server-side query or Cloud Function to avoid fetching all users
-                const usersSnap = await getDocs(collection(db, "users"));
-                const suppliers = usersSnap.docs
-                    .map(d => d.data())
-                    .filter(u => u.operatingRegions && u.operatingRegions.includes(work.city!));
+                const { data: usersData } = await supabase
+                    .from('users')
+                    .select('*');
+
+                const suppliers = (usersData || [])
+                    .filter(u => u.operating_regions && u.operating_regions.includes(work.city!));
 
                 // Send emails in parallel
                 await Promise.all(suppliers.map(async (supplier) => {

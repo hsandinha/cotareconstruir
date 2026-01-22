@@ -9,9 +9,8 @@ import {
     ChartBarIcon,
     XMarkIcon
 } from "@heroicons/react/24/outline";
-import { auth, db } from "../../../lib/firebase";
-import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, addDoc, serverTimestamp } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "@/lib/supabaseAuth";
+import { useAuth } from "@/lib/useAuth";
 
 interface Offer {
     id: string;
@@ -26,9 +25,9 @@ interface Offer {
 }
 
 export function SupplierOffersSection() {
+    const { user, profile, initialized } = useAuth();
     const [offers, setOffers] = useState<Offer[]>([]);
     const [loading, setLoading] = useState(true);
-    const [userUid, setUserUid] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     // New Offer Form State
@@ -41,46 +40,87 @@ export function SupplierOffersSection() {
     });
 
     useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+        if (!initialized) return;
+
+        const fetchOffers = async () => {
             if (user) {
-                setUserUid(user.uid);
-                const q = query(collection(db, "users", user.uid, "offers"));
-                const unsubscribeSnapshot = onSnapshot(
-                    q,
-                    (snapshot) => {
-                        const items: Offer[] = [];
-                        snapshot.forEach((doc) => {
-                            items.push({ id: doc.id, ...doc.data() } as Offer);
-                        });
-                        setOffers(items);
-                        setLoading(false);
-                    },
-                    (error) => {
-                        // Silenciar erro de permissão - é esperado quando coleção não existe
-                        if (error.code !== 'permission-denied') {
-                            console.error("Erro ao carregar ofertas:", error);
-                        }
-                        setOffers([]);
-                        setLoading(false);
+                const { data, error } = await supabase
+                    .from('ofertas')
+                    .select('*')
+                    .eq('user_id', user.id);
+
+                if (error) {
+                    // Silenciar erro de permissão - é esperado quando coleção não existe
+                    if (error.code !== 'PGRST301') {
+                        console.error("Erro ao carregar ofertas:", error);
                     }
-                );
-                return () => unsubscribeSnapshot();
+                    setOffers([]);
+                    setLoading(false);
+                    return;
+                }
+
+                const mappedOffers: Offer[] = (data || []).map(item => ({
+                    id: item.id,
+                    material: item.material,
+                    type: item.type,
+                    value: item.value,
+                    status: item.status,
+                    reach: item.reach || 0,
+                    conversions: item.conversions || 0,
+                    startDate: item.start_date,
+                    endDate: item.end_date
+                }));
+                setOffers(mappedOffers);
+                setLoading(false);
             } else {
                 setOffers([]);
                 setLoading(false);
             }
-        });
+        };
 
-        return () => unsubscribeAuth();
-    }, []);
+        fetchOffers();
+
+        // Set up realtime subscription
+        if (user) {
+            const channel = supabase
+                .channel('ofertas-changes')
+                .on(
+                    'postgres_changes',
+                    {
+                        event: '*',
+                        schema: 'public',
+                        table: 'ofertas',
+                        filter: `user_id=eq.${user.id}`
+                    },
+                    (payload) => {
+                        // Refetch offers on any change
+                        fetchOffers();
+                    }
+                )
+                .subscribe();
+
+            return () => {
+                supabase.removeChannel(channel);
+            };
+        }
+    }, [user, initialized]);
 
     const toggleStatus = async (offer: Offer) => {
-        if (!userUid) return;
+        if (!user) return;
         const newStatus = offer.status === 'active' ? 'paused' : 'active';
         try {
-            await updateDoc(doc(db, "users", userUid, "offers", offer.id), {
-                status: newStatus
-            });
+            const { error } = await supabase
+                .from('ofertas')
+                .update({ status: newStatus })
+                .eq('id', offer.id)
+                .eq('user_id', user.id);
+
+            if (error) throw error;
+
+            // Update local state
+            setOffers(prev => prev.map(o =>
+                o.id === offer.id ? { ...o, status: newStatus } : o
+            ));
         } catch (error) {
             console.error("Error updating status:", error);
             alert("Erro ao atualizar status.");
@@ -88,10 +128,19 @@ export function SupplierOffersSection() {
     };
 
     const deleteOffer = async (id: string) => {
-        if (!userUid) return;
+        if (!user) return;
         if (confirm('Tem certeza que deseja excluir esta oferta?')) {
             try {
-                await deleteDoc(doc(db, "users", userUid, "offers", id));
+                const { error } = await supabase
+                    .from('ofertas')
+                    .delete()
+                    .eq('id', id)
+                    .eq('user_id', user.id);
+
+                if (error) throw error;
+
+                // Update local state
+                setOffers(prev => prev.filter(o => o.id !== id));
             } catch (error) {
                 console.error("Error deleting offer:", error);
                 alert("Erro ao excluir oferta.");
@@ -101,20 +150,44 @@ export function SupplierOffersSection() {
 
     const handleCreateOffer = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!userUid) return;
+        if (!user) return;
 
         try {
-            await addDoc(collection(db, "users", userUid, "offers"), {
-                material: newOffer.material,
-                type: newOffer.type,
-                value: Number(newOffer.value),
-                status: "active",
-                reach: 0,
-                conversions: 0,
-                startDate: newOffer.startDate,
-                endDate: newOffer.endDate,
-                createdAt: serverTimestamp()
-            });
+            const { data, error } = await supabase
+                .from('ofertas')
+                .insert({
+                    user_id: user.id,
+                    material: newOffer.material,
+                    type: newOffer.type,
+                    value: Number(newOffer.value),
+                    status: "active",
+                    reach: 0,
+                    conversions: 0,
+                    start_date: newOffer.startDate,
+                    end_date: newOffer.endDate,
+                    created_at: new Date().toISOString()
+                })
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            // Update local state with the new offer
+            if (data) {
+                const mappedOffer: Offer = {
+                    id: data.id,
+                    material: data.material,
+                    type: data.type,
+                    value: data.value,
+                    status: data.status,
+                    reach: data.reach || 0,
+                    conversions: data.conversions || 0,
+                    startDate: data.start_date,
+                    endDate: data.end_date
+                };
+                setOffers(prev => [...prev, mappedOffer]);
+            }
+
             setIsModalOpen(false);
             setNewOffer({
                 material: "",

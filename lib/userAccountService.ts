@@ -1,7 +1,5 @@
-import { auth } from './firebase';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { supabaseAdmin } from './supabaseAuth';
+import { supabase } from './supabase';
 
 interface CreateUserAccountParams {
     email: string;
@@ -21,32 +19,55 @@ export async function createUserAccount({
     const defaultPassword = '123456';
 
     try {
-        // 1. Criar usuário no Firebase Auth
-        const userCredential = await createUserWithEmailAndPassword(auth, email, defaultPassword);
-        const userId = userCredential.user.uid;
+        // Verificar se admin client está disponível
+        if (!supabaseAdmin) {
+            throw new Error('Admin client not available. Check SUPABASE_SERVICE_ROLE_KEY.');
+        }
 
-        // 2. Criar documento na coleção users
-        await setDoc(doc(db, 'users', userId), {
+        // 1. Criar usuário no Supabase Auth usando admin client
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email,
-            name: entityName,
-            role: entityType,
-            roles: [entityType],
-            [entityType === 'cliente' ? 'clienteId' : 'fornecedorId']: entityId,
-            mustChangePassword: true,
-            active: true,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
+            password: defaultPassword,
+            email_confirm: true, // Auto-confirm email
         });
+
+        if (authError) {
+            if (authError.message.includes('already been registered')) {
+                throw new Error('Este email já possui uma conta cadastrada');
+            }
+            throw authError;
+        }
+
+        const userId = authData.user.id;
+
+        // 2. Criar registro na tabela users
+        const { error: userError } = await supabaseAdmin
+            .from('users')
+            .insert({
+                id: userId,
+                email,
+                nome: entityName,
+                role: entityType,
+                roles: [entityType],
+                [entityType === 'cliente' ? 'cliente_id' : 'fornecedor_id']: entityId,
+                status: 'pending', // Must change password
+                is_verified: false,
+            });
+
+        if (userError) throw userError;
 
         // 3. Atualizar o documento cliente/fornecedor com o userId
-        const collectionName = entityType === 'cliente' ? 'clientes' : 'fornecedores';
-        await updateDoc(doc(db, collectionName, entityId), {
-            userId,
-            hasUserAccount: true,
-            updatedAt: new Date()
-        });
+        const tableName = entityType === 'cliente' ? 'clientes' : 'fornecedores';
+        const { error: entityError } = await supabaseAdmin
+            .from(tableName)
+            .update({
+                user_id: userId,
+            })
+            .eq('id', entityId);
 
-        // 4. Enviar credenciais (você pode integrar com serviço de email/SMS)
+        if (entityError) throw entityError;
+
+        // 4. Enviar credenciais
         await sendCredentials({
             email,
             whatsapp,
@@ -57,13 +78,7 @@ export async function createUserAccount({
         return { success: true, userId };
     } catch (error: any) {
         console.error('Erro ao criar conta:', error);
-
-        // Mensagens de erro mais amigáveis
-        if (error.code === 'auth/email-already-in-use') {
-            throw new Error('Este email já possui uma conta cadastrada');
-        }
-
-        throw new Error('Erro ao criar conta de acesso');
+        throw new Error(error.message || 'Erro ao criar conta de acesso');
     }
 }
 
@@ -78,10 +93,6 @@ async function sendCredentials({
     name: string;
     password: string;
 }) {
-    // Aqui você pode integrar com:
-    // - SendGrid/AWS SES para email
-    // - Twilio/WhatsApp Business API para SMS/WhatsApp
-
     const message = `
 Olá ${name}!
 
@@ -100,7 +111,7 @@ Equipe Cota Reconstruir
 
     console.log('📧 Enviando credenciais:', { email, whatsapp, message });
 
-    // TODO: Implementar envio real
+    // TODO: Implementar envio real via SendGrid ou outro serviço
     // await sendEmail(email, 'Suas credenciais de acesso', message);
     // if (whatsapp) await sendWhatsApp(whatsapp, message);
 }
@@ -109,32 +120,43 @@ export async function resetUserPassword(userId: string, entityType: 'cliente' | 
     const defaultPassword = '123456';
 
     try {
-        // Buscar dados do usuário
-        const userSnap = await getDoc(doc(db, 'users', userId));
+        // Verificar se admin client está disponível
+        if (!supabaseAdmin) {
+            throw new Error('Admin client not available. Check SUPABASE_SERVICE_ROLE_KEY.');
+        }
 
-        if (!userSnap.exists()) {
+        // Buscar dados do usuário
+        const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('email, nome')
+            .eq('id', userId)
+            .single();
+
+        if (userError || !userData) {
             throw new Error('Usuário não encontrado');
         }
 
-        const user = userSnap.data();
+        // Resetar senha no Supabase Auth usando admin client
+        const { error: resetError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+            password: defaultPassword,
+        });
+
+        if (resetError) throw resetError;
 
         // Marcar que deve trocar senha
-        await updateDoc(doc(db, 'users', userId), {
-            mustChangePassword: true,
-            updatedAt: serverTimestamp()
-        });
+        const { error: updateError } = await supabaseAdmin
+            .from('users')
+            .update({ status: 'pending' })
+            .eq('id', userId);
+
+        if (updateError) throw updateError;
 
         // Enviar credenciais por email
         await sendCredentials({
-            email: user.email,
-            whatsapp: user.whatsapp || undefined,
-            name: user.name || 'Usuário',
+            email: userData.email,
+            name: userData.nome || 'Usuário',
             password: defaultPassword
         });
-
-        // NOTA: Para realmente resetar a senha, seria necessário Firebase Admin SDK
-        // que só roda no servidor. Por ora, apenas marcamos mustChangePassword=true
-        // e enviamos as credenciais.
 
         return { success: true };
     } catch (error: any) {

@@ -2,32 +2,38 @@
 
 import { useEffect, useState, ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { auth, db } from "../../../lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/useAuth";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
     const router = useRouter();
+    const { user, loading: authLoading } = useAuth();
     const [loading, setLoading] = useState(true);
     const [authorized, setAuthorized] = useState(false);
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        const checkAdminStatus = async () => {
+            if (authLoading) return;
+
             if (!user) {
                 router.push("/login");
                 return;
             }
 
             try {
-                const userDoc = await getDoc(doc(db, "users", user.uid));
+                const { data: userData, error } = await supabase
+                    .from("users")
+                    .select("role, roles")
+                    .eq("id", user.id)
+                    .single();
+
                 let isAdmin = false;
 
-                if (userDoc.exists()) {
-                    const data = userDoc.data();
+                if (userData && !error) {
                     // Check legacy 'role' field
-                    if (data.role === "admin") isAdmin = true;
+                    if (userData.role === "admin") isAdmin = true;
                     // Check new 'roles' array
-                    if (data.roles && Array.isArray(data.roles) && data.roles.includes("admin")) isAdmin = true;
+                    if (userData.roles && Array.isArray(userData.roles) && userData.roles.includes("admin")) isAdmin = true;
                 }
 
                 if (!isAdmin) {
@@ -41,12 +47,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             } finally {
                 setLoading(false);
             }
-        });
+        };
 
-        return () => unsubscribe();
-    }, [router]);
+        checkAdminStatus();
+    }, [user, authLoading, router]);
 
-    if (loading) {
+    if (loading || authLoading) {
         return (
             <div className="flex min-h-screen items-center justify-center">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>

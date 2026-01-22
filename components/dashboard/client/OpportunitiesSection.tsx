@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { TagIcon, ClockIcon, ShoppingCartIcon } from "@heroicons/react/24/outline";
-import { auth, db } from "../../../lib/firebase";
-import { collection, query, where, onSnapshot, getDocs } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "@/lib/supabaseAuth";
+import { useAuth } from "@/lib/useAuth";
 
 interface Oferta {
     id: string;
@@ -50,6 +49,7 @@ interface Material {
 }
 
 export function ClientOpportunitiesSection() {
+    const { user, initialized } = useAuth();
     const [selectedWorkId, setSelectedWorkId] = useState<string>("");
     const [works, setWorks] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -65,48 +65,108 @@ export function ClientOpportunitiesSection() {
 
     // Carregar ofertas ativas (tempo real)
     useEffect(() => {
-        const q = query(collection(db, "ofertas"), where("ativo", "==", true));
+        // Buscar ofertas inicialmente
+        const fetchOfertas = async () => {
+            const { data, error } = await supabase
+                .from('ofertas')
+                .select('*')
+                .eq('ativo', true);
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const ofertasData = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            })) as Oferta[];
-
-            console.log(`Ofertas ativas carregadas: ${ofertasData.length}`);
-            setOfertas(ofertasData);
+            if (error) {
+                console.error("Erro ao carregar ofertas:", error);
+                setOfertas([]);
+            } else {
+                console.log(`Ofertas ativas carregadas: ${data?.length || 0}`);
+                setOfertas((data || []) as Oferta[]);
+            }
             setLoading(false);
-        }, (error) => {
-            console.error("Erro ao carregar ofertas:", error);
-            setOfertas([]);
-            setLoading(false);
-        });
+        };
 
-        return () => unsubscribe();
+        fetchOfertas();
+
+        // Configurar subscription realtime para ofertas
+        const channel = supabase
+            .channel('ofertas_changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'ofertas',
+                    filter: 'ativo=eq.true'
+                },
+                async () => {
+                    const { data } = await supabase
+                        .from('ofertas')
+                        .select('*')
+                        .eq('ativo', true);
+
+                    console.log(`Ofertas ativas carregadas: ${data?.length || 0}`);
+                    setOfertas((data || []) as Oferta[]);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, []);
 
     // Carregar dados auxiliares (fases, serviços, grupos, materiais) - tempo real para capturar mudanças
     useEffect(() => {
+        // Buscar serviços e materiais inicialmente
+        const fetchServicosAndMateriais = async () => {
+            const [servicosRes, materiaisRes] = await Promise.all([
+                supabase.from('servicos').select('*'),
+                supabase.from('materiais').select('*')
+            ]);
+
+            if (servicosRes.data) {
+                setServicos(servicosRes.data as Servico[]);
+            }
+            if (materiaisRes.data) {
+                setMateriais(materiaisRes.data as Material[]);
+            }
+        };
+
+        fetchServicosAndMateriais();
+
         // Listener para serviços (importante para capturar desassociações)
-        const unsubServicos = onSnapshot(collection(db, "servicos"), (snapshot) => {
-            setServicos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Servico[]);
-        });
+        const servicosChannel = supabase
+            .channel('servicos_changes')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'servicos' },
+                async () => {
+                    const { data } = await supabase.from('servicos').select('*');
+                    if (data) setServicos(data as Servico[]);
+                }
+            )
+            .subscribe();
 
         // Listener para materiais (importante para capturar mudanças de grupos)
-        const unsubMateriais = onSnapshot(collection(db, "materiais"), (snapshot) => {
-            setMateriais(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Material[]);
-        });
+        const materiaisChannel = supabase
+            .channel('materiais_changes')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'materiais' },
+                async () => {
+                    const { data } = await supabase.from('materiais').select('*');
+                    if (data) setMateriais(data as Material[]);
+                }
+            )
+            .subscribe();
 
         // Fases e grupos são mais estáticos, podem ser carregados uma vez
         const loadStaticData = async () => {
             try {
-                const [fasesSnap, gruposSnap] = await Promise.all([
-                    getDocs(collection(db, "fases")),
-                    getDocs(collection(db, "grupos_insumo"))
+                const [fasesRes, gruposRes] = await Promise.all([
+                    supabase.from('fases').select('*'),
+                    supabase.from('grupos_insumo').select('*')
                 ]);
 
-                setFases(fasesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Fase[]);
-                setGrupos(gruposSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GrupoInsumo[]);
+                if (fasesRes.data) setFases(fasesRes.data as Fase[]);
+                if (gruposRes.data) setGrupos(gruposRes.data as GrupoInsumo[]);
             } catch (error) {
                 console.error("Erro ao carregar dados auxiliares:", error);
             }
@@ -115,35 +175,77 @@ export function ClientOpportunitiesSection() {
         loadStaticData();
 
         return () => {
-            unsubServicos();
-            unsubMateriais();
+            supabase.removeChannel(servicosChannel);
+            supabase.removeChannel(materiaisChannel);
         };
     }, []);
 
     // Carregar obras do usuário
     useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-            if (user) {
-                const qWorks = query(collection(db, "works"), where("userId", "==", user.uid));
-                const unsubscribeWorks = onSnapshot(qWorks, (snapshot) => {
-                    const worksData = snapshot.docs.map(doc => ({
+        if (!initialized) return;
+
+        if (!user) {
+            setWorks([]);
+            return;
+        }
+
+        // Buscar obras inicialmente
+        const fetchWorks = async () => {
+            const { data, error } = await supabase
+                .from('works')
+                .select('*')
+                .eq('user_id', user.id);
+
+            if (error) {
+                console.error("Erro ao carregar obras:", error);
+                setWorks([]);
+            } else {
+                const worksData = (data || []).map(doc => ({
+                    id: doc.id,
+                    ...doc
+                }));
+                setWorks(worksData);
+                if (worksData.length > 0 && !selectedWorkId) {
+                    setSelectedWorkId(worksData[0].id);
+                }
+            }
+        };
+
+        fetchWorks();
+
+        // Configurar subscription realtime para obras
+        const worksChannel = supabase
+            .channel('works_opportunities_changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'works',
+                    filter: `user_id=eq.${user.id}`
+                },
+                async () => {
+                    const { data } = await supabase
+                        .from('works')
+                        .select('*')
+                        .eq('user_id', user.id);
+
+                    const worksData = (data || []).map(doc => ({
                         id: doc.id,
-                        ...doc.data()
+                        ...doc
                     }));
                     setWorks(worksData);
                     if (worksData.length > 0 && !selectedWorkId) {
                         setSelectedWorkId(worksData[0].id);
                     }
-                });
+                }
+            )
+            .subscribe();
 
-                return () => unsubscribeWorks();
-            } else {
-                setWorks([]);
-            }
-        });
-
-        return () => unsubscribeAuth();
-    }, []);
+        return () => {
+            supabase.removeChannel(worksChannel);
+        };
+    }, [user, initialized]);
 
     const selectedWork = works.find(w => w.id === selectedWorkId);
 

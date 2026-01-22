@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { auth, db } from "../../../lib/firebase";
-import { collection, query, where, onSnapshot, doc, getDoc } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "@/lib/supabaseAuth";
+import { useAuth } from "@/lib/useAuth";
 import { SupplierQuotationResponseSection } from "./QuotationResponseSection";
 
 export function SupplierQuotationInboxSection() {
+    const { user, profile, initialized } = useAuth();
     const [quotations, setQuotations] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isInactive, setIsInactive] = useState(false);
@@ -17,65 +17,92 @@ export function SupplierQuotationInboxSection() {
     });
 
     useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+        const loadUserPreferences = async () => {
+            if (!initialized) return;
+
             if (user) {
                 // Fetch user preferences
-                const userDoc = await getDoc(doc(db, "users", user.uid));
-                if (userDoc.exists()) {
-                    const data = userDoc.data();
+                const { data: userData, error } = await supabase
+                    .from('users')
+                    .select('is_active, operating_regions, operating_categories')
+                    .eq('id', user.id)
+                    .single();
 
+                if (userData) {
                     // Check if user is active
-                    if (data.isActive === false) {
+                    if (userData.is_active === false) {
                         setIsInactive(true);
                         setLoading(false);
                         return;
                     }
 
                     setFilters({
-                        regions: data.operatingRegions ? data.operatingRegions.split(',').map((s: string) => s.trim().toLowerCase()) : [],
-                        categories: data.operatingCategories ? data.operatingCategories.split(',').map((s: string) => s.trim().toLowerCase()) : []
+                        regions: userData.operating_regions ? userData.operating_regions.split(',').map((s: string) => s.trim().toLowerCase()) : [],
+                        categories: userData.operating_categories ? userData.operating_categories.split(',').map((s: string) => s.trim().toLowerCase()) : []
                     });
                 }
             }
-        });
-        return () => unsubscribeAuth();
-    }, []);
+        };
+        loadUserPreferences();
+    }, [user, initialized]);
 
     useEffect(() => {
-        // We need to check if the user is active before setting up the listener
-        // But since we don't have the user state here directly available in a synchronous way from the previous effect,
-        // we might need to refactor slightly or just accept that the UI will show empty list if we don't set filters.
-        // However, to be robust, let's add a local state for 'isInactive'.
+        // Fetch initial quotations and set up realtime subscription
+        const fetchQuotations = async () => {
+            const { data, error } = await supabase
+                .from('cotacoes')
+                .select('*')
+                .eq('status', 'pending');
 
-        const q = query(collection(db, "quotations"), where("status", "==", "pending"));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            let items = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data(),
-                clientCode: "Cliente " + (doc.data().userId ? doc.data().userId.substring(0, 5) : "Anon"),
-                locationRaw: doc.data().location || "",
-                location: "Bairro: " + (doc.data().location || "Não informado"),
-                receivedAt: doc.data().createdAt ? new Date(doc.data().createdAt).toLocaleString() : "N/A",
-                deadline: "Em 2 dias", // Placeholder
-                itemsCount: doc.data().totalItems || (doc.data().items ? doc.data().items.length : 0),
-                urgency: "Média"
-            }));
+            if (data) {
+                let items = data.map(doc => ({
+                    id: doc.id,
+                    ...doc,
+                    clientCode: "Cliente " + (doc.user_id ? doc.user_id.substring(0, 5) : "Anon"),
+                    locationRaw: doc.location || "",
+                    location: "Bairro: " + (doc.location || "Não informado"),
+                    receivedAt: doc.created_at ? new Date(doc.created_at).toLocaleString() : "N/A",
+                    deadline: "Em 2 dias", // Placeholder
+                    itemsCount: doc.total_items || (doc.items ? doc.items.length : 0),
+                    urgency: "Média"
+                }));
 
-            // Apply filters if set
-            if (filters.regions.length > 0) {
-                items = items.filter(item => {
-                    const loc = item.locationRaw.toLowerCase();
-                    return filters.regions.some(region => loc.includes(region));
-                });
+                // Apply filters if set
+                if (filters.regions.length > 0) {
+                    items = items.filter(item => {
+                        const loc = item.locationRaw.toLowerCase();
+                        return filters.regions.some(region => loc.includes(region));
+                    });
+                }
+
+                setQuotations(items);
             }
-
-            // Note: Category filtering would require structured item data or text analysis
-            // For now, we rely on location which is the primary filter for logistics
-
-            setQuotations(items);
             setLoading(false);
-        });
-        return () => unsubscribe();
+        };
+
+        fetchQuotations();
+
+        // Set up realtime subscription
+        const channel = supabase
+            .channel('cotacoes-changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'cotacoes',
+                    filter: 'status=eq.pending'
+                },
+                (payload) => {
+                    // Refetch quotations on any change
+                    fetchQuotations();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, [filters]);
 
     const getStatusColor = (status: string) => {

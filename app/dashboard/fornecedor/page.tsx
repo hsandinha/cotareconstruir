@@ -8,11 +8,9 @@ import { SupplierSalesAndQuotationsSection } from "../../../components/dashboard
 import { NotificationBell } from "../../../components/NotificationBell";
 import { ProfileSwitcher } from "../../../components/ProfileSwitcher";
 import PendingProfileModal from "../../../components/PendingProfileModal";
-import { auth, db } from "../../../lib/firebase";
-import { collection, query, where, getCountFromServer, doc, getDoc } from "firebase/firestore";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { useAuth } from "@/lib/useAuth";
+import { supabase } from "@/lib/supabaseAuth";
 import { useRouter } from "next/navigation";
-import { checkProfileLinkStatus } from "../../../lib/profileLinkService";
 
 export type SupplierTabId =
     | "perfil"
@@ -44,76 +42,66 @@ export default function FornecedorDashboard() {
         approvals: 0,
     });
 
+    const { user, profile, initialized, logout } = useAuth();
+
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                try {
-                    setUserId(user.uid);
-                    setUserEmail(user.email || "");
+        if (!initialized) return;
 
-                    // Fetch User Profile
-                    const userDocRef = doc(db, "users", user.uid);
-                    const userDoc = await getDoc(userDocRef);
-                    if (userDoc.exists()) {
-                        const userData = userDoc.data();
-                        const name = userData.name || userData.nome || userData.companyName || "Fornecedor";
-                        setUserName(name);
-                        setUserInitial(name.charAt(0).toUpperCase());
-                        setUserRoles(userData.roles || []);
+        if (!user) {
+            router.push('/login');
+            return;
+        }
 
-                        // Verificar se precisa completar cadastro de fornecedor
-                        const profileStatus = await checkProfileLinkStatus(user.uid);
-                        if (profileStatus.pendingFornecedorProfile) {
-                            setShowPendingProfileModal(true);
-                        }
+        const loadData = async () => {
+            try {
+                setUserId(user.id);
+                setUserEmail(user.email || "");
+
+                if (profile) {
+                    const name = profile.nome || user.email || "Fornecedor";
+                    setUserName(name);
+                    setUserInitial(name.charAt(0).toUpperCase());
+                    setUserRoles(profile.roles || []);
+
+                    // Verificar se tem fornecedor_id vinculado
+                    if (!profile.fornecedor_id && profile.roles?.includes('fornecedor')) {
+                        setShowPendingProfileModal(true);
                     }
-
-                    // Active Consultations (All pending quotations in the system)
-                    // In a real scenario, this might be filtered by region or category
-                    const consultationsQuery = query(
-                        collection(db, "quotations"),
-                        where("status", "==", "pending")
-                    );
-                    const consultationsSnapshot = await getCountFromServer(consultationsQuery);
-
-                    // Sent Proposals
-                    const proposalsQuery = query(
-                        collection(db, "proposals"),
-                        where("supplierId", "==", user.uid)
-                    );
-                    // Note: proposals collection might not exist yet, so this might fail or return 0. 
-                    // We'll wrap in try/catch or assume it returns 0 if collection doesn't exist (Firestore behavior is usually fine with empty collections)
-                    const proposalsSnapshot = await getCountFromServer(proposalsQuery);
-
-                    // Registered Materials
-                    const materialsQuery = query(
-                        collection(db, "materials"),
-                        where("supplierId", "==", user.uid)
-                    );
-                    const materialsSnapshot = await getCountFromServer(materialsQuery);
-
-                    // Approvals (Accepted proposals)
-                    const approvalsQuery = query(
-                        collection(db, "proposals"),
-                        where("supplierId", "==", user.uid),
-                        where("status", "==", "accepted")
-                    );
-                    const approvalsSnapshot = await getCountFromServer(approvalsQuery);
-
-                    setStats({
-                        activeConsultations: consultationsSnapshot.data().count,
-                        sentProposals: proposalsSnapshot.data().count,
-                        registeredMaterials: materialsSnapshot.data().count,
-                        approvals: approvalsSnapshot.data().count,
-                    });
-                } catch (error) {
-                    console.error("Error fetching stats:", error);
                 }
-            }
-        });
 
-        return () => unsubscribe();
-    }, []);
+                // Buscar estatísticas via Supabase
+                const fornecedorId = profile?.fornecedor_id;
+
+                const [cotacoesResult, propostasResult, materiaisResult, aceitas] = await Promise.all([
+                    // Cotações abertas (que o fornecedor pode responder)
+                    supabase.from('cotacoes').select('*', { count: 'exact', head: true }).eq('status', 'enviada'),
+                    // Propostas enviadas
+                    fornecedorId
+                        ? supabase.from('propostas').select('*', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
+                        : Promise.resolve({ count: 0 }),
+                    // Materiais cadastrados
+                    fornecedorId
+                        ? supabase.from('fornecedor_materiais').select('*', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
+                        : Promise.resolve({ count: 0 }),
+                    // Propostas aceitas
+                    fornecedorId
+                        ? supabase.from('propostas').select('*', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId).eq('status', 'aceita')
+                        : Promise.resolve({ count: 0 })
+                ]);
+
+                setStats({
+                    activeConsultations: cotacoesResult.count || 0,
+                    sentProposals: (propostasResult as any).count || 0,
+                    registeredMaterials: (materiaisResult as any).count || 0,
+                    approvals: (aceitas as any).count || 0,
+                });
+            } catch (error) {
+                console.error("Error fetching stats:", error);
+            }
+        };
+
+        loadData();
+    }, [user, profile, initialized, router]);
 
     function renderTabContent() {
         switch (tab) {

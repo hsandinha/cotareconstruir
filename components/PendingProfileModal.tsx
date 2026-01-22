@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { X, Building2, User, AlertCircle } from 'lucide-react';
-import { auth, db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/useAuth';
 import {
     completeClienteProfile,
     completeFornecedorProfile,
@@ -624,8 +624,8 @@ export default function PendingProfileModal({
                                 type="submit"
                                 disabled={loading}
                                 className={`px-6 py-2 text-sm font-medium text-white rounded-lg transition-colors ${profileType === 'cliente'
-                                        ? 'bg-blue-600 hover:bg-blue-700'
-                                        : 'bg-purple-600 hover:bg-purple-700'
+                                    ? 'bg-blue-600 hover:bg-blue-700'
+                                    : 'bg-purple-600 hover:bg-purple-700'
                                     } disabled:opacity-50 disabled:cursor-not-allowed`}
                             >
                                 {loading ? 'Salvando...' : 'Salvar Cadastro'}

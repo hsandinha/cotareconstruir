@@ -2,13 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { auth, db } from '@/lib/firebase';
-import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/useAuth';
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react';
 
 export default function ChangePasswordPage() {
     const router = useRouter();
+    const { user, profile } = useAuth();
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -21,20 +21,11 @@ export default function ChangePasswordPage() {
     const [role, setRole] = useState('');
 
     useEffect(() => {
-        loadUserData();
-    }, []);
-
-    const loadUserData = async () => {
-        const user = auth.currentUser;
-        if (user) {
-            const userDoc = await getDoc(doc(db, 'users', user.uid));
-            if (userDoc.exists()) {
-                const data = userDoc.data();
-                setUserName(data.name || data.companyName || 'Usuário');
-                setRole(data.role || data.roles?.[0] || '');
-            }
+        if (profile) {
+            setUserName(profile.name || profile.company_name || 'Usuário');
+            setRole(profile.role || '');
         }
-    };
+    }, [profile]);
 
     const validatePassword = (password: string): { valid: boolean; errors: string[] } => {
         const errors: string[] = [];
@@ -91,25 +82,36 @@ export default function ChangePasswordPage() {
 
         try {
             setLoading(true);
-            const user = auth.currentUser;
 
             if (!user || !user.email) {
                 throw new Error('Usuário não autenticado');
             }
 
             // Reautenticar com senha atual
-            const credential = EmailAuthProvider.credential(user.email, currentPassword);
-            await reauthenticateWithCredential(user, credential);
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+                email: user.email,
+                password: currentPassword
+            });
+
+            if (signInError) {
+                throw new Error('auth/wrong-password');
+            }
 
             // Atualizar senha
-            await updatePassword(user, newPassword);
-
-            // Atualizar flag no Firestore
-            await updateDoc(doc(db, 'users', user.uid), {
-                mustChangePassword: false,
-                passwordChangedAt: new Date(),
-                updatedAt: new Date()
+            const { error: updateError } = await supabase.auth.updateUser({
+                password: newPassword
             });
+
+            if (updateError) {
+                throw updateError;
+            }
+
+            // Atualizar flag no Supabase
+            await supabase.from('users').update({
+                must_change_password: false,
+                password_changed_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            }).eq('id', user.id);
 
             // Atualizar cookie
             document.cookie = 'mustChangePassword=false; path=/';
@@ -126,11 +128,11 @@ export default function ChangePasswordPage() {
                 router.push(redirectMap[role] || '/dashboard/cliente');
             }, 1500);
 
-        } catch (error: any) {
-            console.error('Erro ao alterar senha:', error);
-            if (error.code === 'auth/wrong-password') {
+        } catch (err: any) {
+            console.error('Erro ao alterar senha:', err);
+            if (err.message === 'auth/wrong-password' || err.message?.includes('Invalid login credentials')) {
                 setError('Senha atual incorreta');
-            } else if (error.code === 'auth/weak-password') {
+            } else if (err.message?.includes('weak') || err.message?.includes('Password')) {
                 setError('Senha muito fraca');
             } else {
                 setError('Erro ao alterar senha. Tente novamente.');

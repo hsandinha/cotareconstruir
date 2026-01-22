@@ -4,8 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { ChevronDown, User, Briefcase, ShieldCheck, LogOut } from "lucide-react";
-import { signOut } from "firebase/auth";
-import { auth } from "../lib/firebase";
+import { supabase } from "@/lib/supabaseAuth";
 
 interface ProfileSwitcherProps {
     currentRole: string;
@@ -51,7 +50,7 @@ export function ProfileSwitcher({ currentRole, availableRoles, userName, userIni
 
     const handleLogout = async () => {
         try {
-            await signOut(auth);
+            await supabase.auth.signOut();
             router.push("/login");
         } catch (error) {
             console.error("Error signing out:", error);
@@ -128,8 +127,8 @@ export function ProfileSwitcher({ currentRole, availableRoles, userName, userIni
                                             key={role}
                                             onClick={() => handleSwitchRole(role)}
                                             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left ${currentRole === role
-                                                    ? 'bg-blue-50 text-blue-700'
-                                                    : 'hover:bg-slate-50 text-slate-700'
+                                                ? 'bg-blue-50 text-blue-700'
+                                                : 'hover:bg-slate-50 text-slate-700'
                                                 }`}
                                         >
                                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${currentRole === role ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'

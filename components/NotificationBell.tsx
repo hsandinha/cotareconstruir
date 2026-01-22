@@ -2,9 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { BellIcon } from "@heroicons/react/24/outline";
-import { auth, db } from "../lib/firebase";
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "@/lib/supabaseAuth";
+import { useAuth } from "@/lib/useAuth";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -27,40 +26,63 @@ export function NotificationBell({ initialNotifications }: NotificationBellProps
     const [isOpen, setIsOpen] = useState(false);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const { user, initialized } = useAuth();
 
     useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-            if (user) {
-                const q = query(
-                    collection(db, "notifications"),
-                    where("userId", "==", user.uid),
-                    orderBy("createdAt", "desc")
-                );
+        if (!initialized || !user) {
+            setNotifications([]);
+            return;
+        }
 
-                const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
-                    const newNotifications: Notification[] = snapshot.docs.map(doc => {
-                        const data = doc.data();
-                        const timestamp = data.createdAt?.toDate() || new Date();
-                        return {
-                            id: doc.id,
-                            title: data.title,
-                            message: data.message,
-                            time: formatDistanceToNow(timestamp, { addSuffix: true, locale: ptBR }),
-                            read: data.read || false,
-                            type: data.type || "info",
-                            timestamp: timestamp.getTime(),
-                            createdAt: data.createdAt
-                        };
-                    });
-                    setNotifications(newNotifications);
+        // Fetch initial notifications
+        const fetchNotifications = async () => {
+            const { data, error } = await supabase
+                .from('notificacoes')
+                .select('*')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false });
+
+            if (!error && data) {
+                const newNotifications: Notification[] = data.map(item => {
+                    const timestamp = new Date(item.created_at);
+                    return {
+                        id: item.id,
+                        title: item.titulo,
+                        message: item.mensagem,
+                        time: formatDistanceToNow(timestamp, { addSuffix: true, locale: ptBR }),
+                        read: item.lida || false,
+                        type: item.tipo || "info",
+                        timestamp: timestamp.getTime(),
+                        createdAt: item.created_at
+                    };
                 });
-                return () => unsubscribeSnapshot();
-            } else {
-                setNotifications([]);
+                setNotifications(newNotifications);
             }
-        });
-        return () => unsubscribeAuth();
-    }, []);
+        };
+
+        fetchNotifications();
+
+        // Subscribe to real-time updates
+        const channel = supabase
+            .channel('notificacoes_changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'notificacoes',
+                    filter: `user_id=eq.${user.id}`
+                },
+                () => {
+                    fetchNotifications();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [user, initialized]);
 
     const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -76,8 +98,10 @@ export function NotificationBell({ initialNotifications }: NotificationBellProps
 
     const markAsRead = async (id: string) => {
         try {
-            const notifRef = doc(db, "notifications", id);
-            await updateDoc(notifRef, { read: true });
+            await supabase
+                .from('notificacoes')
+                .update({ lida: true })
+                .eq('id', id);
         } catch (error) {
             console.error("Error marking notification as read:", error);
         }

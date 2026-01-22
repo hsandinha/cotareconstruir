@@ -14,15 +14,14 @@ import {
     removeGrupoFromMaterial,
 } from '@/lib/constructionServices';
 import type { Fase, Servico, GrupoInsumo, Material } from '@/lib/constructionData';
-import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 
 type ViewMode = 'fase' | 'servico' | 'grupo' | 'fornecedor';
 
 interface Fornecedor {
     id: string;
     razaoSocial: string;
-    grupoInsumos: string;
+    grupoInsumos: string | null;
     grupoInsumoIds?: string[];
 }
 
@@ -68,13 +67,38 @@ export default function RelationshipManager() {
             setGrupos(gruposData);
             setMateriais(materiaisData);
 
-            // Carregar fornecedores
-            const fornecedoresSnap = await getDocs(collection(db, 'fornecedores'));
-            const fornecedoresData = fornecedoresSnap.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            })) as Fornecedor[];
-            setFornecedores(fornecedoresData);
+            // Carregar fornecedores do Supabase
+            const { data: fornecedoresData, error: fornecedoresError } = await supabase
+                .from('fornecedores')
+                .select('id, razao_social');
+
+            if (fornecedoresError) {
+                console.error('Erro ao carregar fornecedores:', fornecedoresError);
+                return;
+            }
+
+            // Carregar relacionamentos fornecedor_grupo
+            const { data: fornecedorGrupoData, error: fgError } = await supabase
+                .from('fornecedor_grupo')
+                .select('fornecedor_id, grupo_id');
+
+            if (fgError) {
+                console.error('Erro ao carregar relacionamentos fornecedor_grupo:', fgError);
+            }
+
+            // Mapear grupos para cada fornecedor
+            const fornecedoresComGrupos = (fornecedoresData || []).map(f => {
+                const grupoIds = (fornecedorGrupoData || [])
+                    .filter(fg => fg.fornecedor_id === f.id)
+                    .map(fg => fg.grupo_id);
+                return {
+                    id: f.id,
+                    razaoSocial: f.razao_social,
+                    grupoInsumos: null,
+                    grupoInsumoIds: grupoIds,
+                };
+            }) as Fornecedor[];
+            setFornecedores(fornecedoresComGrupos);
         } catch (error) {
             console.error('Erro ao carregar dados:', error);
         } finally {
@@ -244,11 +268,17 @@ export default function RelationshipManager() {
         if (!selectedFornecedor || !selectedGrupoToAdd) return;
         try {
             setSaving(true);
-            const fornecedorRef = doc(db, 'fornecedores', selectedFornecedor);
-            await updateDoc(fornecedorRef, {
-                grupoInsumoIds: arrayUnion(selectedGrupoToAdd),
-                updatedAt: new Date(),
-            });
+            const { error } = await supabase
+                .from('fornecedor_grupo')
+                .insert({
+                    fornecedor_id: selectedFornecedor,
+                    grupo_id: selectedGrupoToAdd,
+                });
+
+            if (error) {
+                throw error;
+            }
+
             await loadData();
             setSelectedGrupoToAdd('');
         } catch (error) {
@@ -262,11 +292,16 @@ export default function RelationshipManager() {
         if (!selectedFornecedor) return;
         try {
             setSaving(true);
-            const fornecedorRef = doc(db, 'fornecedores', selectedFornecedor);
-            await updateDoc(fornecedorRef, {
-                grupoInsumoIds: arrayRemove(grupoId),
-                updatedAt: new Date(),
-            });
+            const { error } = await supabase
+                .from('fornecedor_grupo')
+                .delete()
+                .eq('fornecedor_id', selectedFornecedor)
+                .eq('grupo_id', grupoId);
+
+            if (error) {
+                throw error;
+            }
+
             await loadData();
         } catch (error) {
             console.error('Erro ao remover grupo do fornecedor:', error);

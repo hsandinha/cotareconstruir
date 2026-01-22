@@ -1,18 +1,4 @@
-import {
-    collection,
-    doc,
-    getDoc,
-    getDocs,
-    addDoc,
-    updateDoc,
-    deleteDoc,
-    query,
-    where,
-    orderBy,
-    Timestamp,
-    writeBatch
-} from 'firebase/firestore';
-import { db } from './firebase';
+import { supabase } from './supabase';
 import {
     Fase,
     Servico,
@@ -20,23 +6,28 @@ import {
     Material,
 } from './constructionData';
 
-
-
-// ========== COLLECTIONS ==========
-const COLLECTIONS = {
+// ========== TABLES ==========
+const TABLES = {
     FASES: 'fases',
     SERVICOS: 'servicos',
     GRUPOS_INSUMO: 'grupos_insumo',
     MATERIAIS: 'materiais',
+    SERVICO_FASE: 'servico_fase',
+    SERVICO_GRUPO: 'servico_grupo',
+    MATERIAL_GRUPO: 'material_grupo',
 } as const;
 
 // ========== FASES ==========
 
 export async function getFases(): Promise<Fase[]> {
     try {
-        const q = query(collection(db, COLLECTIONS.FASES), orderBy('cronologia', 'asc'));
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Fase));
+        const { data, error } = await supabase
+            .from(TABLES.FASES)
+            .select('*')
+            .order('cronologia', { ascending: true });
+
+        if (error) throw error;
+        return data as Fase[];
     } catch (error) {
         console.error('Erro ao buscar fases:', error);
         throw error;
@@ -45,12 +36,17 @@ export async function getFases(): Promise<Fase[]> {
 
 export async function getFaseById(id: string): Promise<Fase | null> {
     try {
-        const docRef = doc(db, COLLECTIONS.FASES, id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-            return { id: docSnap.id, ...docSnap.data() } as Fase;
+        const { data, error } = await supabase
+            .from(TABLES.FASES)
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') return null; // Not found
+            throw error;
         }
-        return null;
+        return data as Fase;
     } catch (error) {
         console.error('Erro ao buscar fase:', error);
         throw error;
@@ -59,8 +55,14 @@ export async function getFaseById(id: string): Promise<Fase | null> {
 
 export async function createFase(data: Omit<Fase, 'id'>): Promise<string> {
     try {
-        const docRef = await addDoc(collection(db, COLLECTIONS.FASES), data);
-        return docRef.id;
+        const { data: inserted, error } = await supabase
+            .from(TABLES.FASES)
+            .insert(data)
+            .select('id')
+            .single();
+
+        if (error) throw error;
+        return inserted.id;
     } catch (error) {
         console.error('Erro ao criar fase:', error);
         throw error;
@@ -69,8 +71,12 @@ export async function createFase(data: Omit<Fase, 'id'>): Promise<string> {
 
 export async function updateFase(id: string, data: Partial<Fase>): Promise<void> {
     try {
-        const docRef = doc(db, COLLECTIONS.FASES, id);
-        await updateDoc(docRef, data);
+        const { error } = await supabase
+            .from(TABLES.FASES)
+            .update(data)
+            .eq('id', id);
+
+        if (error) throw error;
     } catch (error) {
         console.error('Erro ao atualizar fase:', error);
         throw error;
@@ -79,8 +85,15 @@ export async function updateFase(id: string, data: Partial<Fase>): Promise<void>
 
 export async function deleteFase(id: string): Promise<void> {
     try {
-        const docRef = doc(db, COLLECTIONS.FASES, id);
-        await deleteDoc(docRef);
+        // Primeiro remove relacionamentos na tabela de junção
+        await supabase.from(TABLES.SERVICO_FASE).delete().eq('fase_id', id);
+
+        const { error } = await supabase
+            .from(TABLES.FASES)
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
     } catch (error) {
         console.error('Erro ao deletar fase:', error);
         throw error;
@@ -91,8 +104,29 @@ export async function deleteFase(id: string): Promise<void> {
 
 export async function getServicos(): Promise<Servico[]> {
     try {
-        const snapshot = await getDocs(collection(db, COLLECTIONS.SERVICOS));
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Servico));
+        // Busca serviços
+        const { data: servicos, error } = await supabase
+            .from(TABLES.SERVICOS)
+            .select('*');
+
+        if (error) throw error;
+
+        // Busca relacionamentos de fases
+        const { data: servicoFases } = await supabase
+            .from(TABLES.SERVICO_FASE)
+            .select('servico_id, fase_id');
+
+        // Busca relacionamentos de grupos
+        const { data: servicoGrupos } = await supabase
+            .from(TABLES.SERVICO_GRUPO)
+            .select('servico_id, grupo_id');
+
+        // Monta os objetos com os arrays de IDs
+        return servicos.map(servico => ({
+            ...servico,
+            faseIds: servicoFases?.filter(sf => sf.servico_id === servico.id).map(sf => sf.fase_id) || [],
+            gruposInsumoIds: servicoGrupos?.filter(sg => sg.servico_id === servico.id).map(sg => sg.grupo_id) || [],
+        })) as Servico[];
     } catch (error) {
         console.error('Erro ao buscar serviços:', error);
         throw error;
@@ -101,12 +135,34 @@ export async function getServicos(): Promise<Servico[]> {
 
 export async function getServicoById(id: string): Promise<Servico | null> {
     try {
-        const docRef = doc(db, COLLECTIONS.SERVICOS, id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-            return { id: docSnap.id, ...docSnap.data() } as Servico;
+        const { data: servico, error } = await supabase
+            .from(TABLES.SERVICOS)
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') return null;
+            throw error;
         }
-        return null;
+
+        // Busca relacionamentos de fases
+        const { data: servicoFases } = await supabase
+            .from(TABLES.SERVICO_FASE)
+            .select('fase_id')
+            .eq('servico_id', id);
+
+        // Busca relacionamentos de grupos
+        const { data: servicoGrupos } = await supabase
+            .from(TABLES.SERVICO_GRUPO)
+            .select('grupo_id')
+            .eq('servico_id', id);
+
+        return {
+            ...servico,
+            faseIds: servicoFases?.map(sf => sf.fase_id) || [],
+            gruposInsumoIds: servicoGrupos?.map(sg => sg.grupo_id) || [],
+        } as Servico;
     } catch (error) {
         console.error('Erro ao buscar serviço:', error);
         throw error;
@@ -115,13 +171,42 @@ export async function getServicoById(id: string): Promise<Servico | null> {
 
 export async function getServicosByFaseId(faseId: string): Promise<Servico[]> {
     try {
-        const q = query(
-            collection(db, COLLECTIONS.SERVICOS),
-            where('faseIds', 'array-contains', faseId),
-            orderBy('ordem', 'asc')
-        );
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Servico));
+        // Busca serviços relacionados à fase pela tabela de junção
+        const { data: servicoFases, error: junctionError } = await supabase
+            .from(TABLES.SERVICO_FASE)
+            .select('servico_id')
+            .eq('fase_id', faseId);
+
+        if (junctionError) throw junctionError;
+
+        if (!servicoFases || servicoFases.length === 0) return [];
+
+        const servicoIds = servicoFases.map(sf => sf.servico_id);
+
+        const { data: servicos, error } = await supabase
+            .from(TABLES.SERVICOS)
+            .select('*')
+            .in('id', servicoIds)
+            .order('ordem', { ascending: true });
+
+        if (error) throw error;
+
+        // Busca todos os relacionamentos para esses serviços
+        const { data: allServicoFases } = await supabase
+            .from(TABLES.SERVICO_FASE)
+            .select('servico_id, fase_id')
+            .in('servico_id', servicoIds);
+
+        const { data: allServicoGrupos } = await supabase
+            .from(TABLES.SERVICO_GRUPO)
+            .select('servico_id, grupo_id')
+            .in('servico_id', servicoIds);
+
+        return servicos.map(servico => ({
+            ...servico,
+            faseIds: allServicoFases?.filter(sf => sf.servico_id === servico.id).map(sf => sf.fase_id) || [],
+            gruposInsumoIds: allServicoGrupos?.filter(sg => sg.servico_id === servico.id).map(sg => sg.grupo_id) || [],
+        })) as Servico[];
     } catch (error) {
         console.error('Erro ao buscar serviços por fase:', error);
         throw error;
@@ -130,8 +215,38 @@ export async function getServicosByFaseId(faseId: string): Promise<Servico[]> {
 
 export async function createServico(data: Omit<Servico, 'id'>): Promise<string> {
     try {
-        const docRef = await addDoc(collection(db, COLLECTIONS.SERVICOS), data);
-        return docRef.id;
+        const { faseIds, gruposInsumoIds, ...servicoData } = data;
+
+        // Insere o serviço
+        const { data: inserted, error } = await supabase
+            .from(TABLES.SERVICOS)
+            .insert(servicoData)
+            .select('id')
+            .single();
+
+        if (error) throw error;
+
+        const servicoId = inserted.id;
+
+        // Insere relacionamentos com fases
+        if (faseIds && faseIds.length > 0) {
+            const faseRelations = faseIds.map(faseId => ({
+                servico_id: servicoId,
+                fase_id: faseId,
+            }));
+            await supabase.from(TABLES.SERVICO_FASE).insert(faseRelations);
+        }
+
+        // Insere relacionamentos com grupos
+        if (gruposInsumoIds && gruposInsumoIds.length > 0) {
+            const grupoRelations = gruposInsumoIds.map(grupoId => ({
+                servico_id: servicoId,
+                grupo_id: grupoId,
+            }));
+            await supabase.from(TABLES.SERVICO_GRUPO).insert(grupoRelations);
+        }
+
+        return servicoId;
     } catch (error) {
         console.error('Erro ao criar serviço:', error);
         throw error;
@@ -140,8 +255,47 @@ export async function createServico(data: Omit<Servico, 'id'>): Promise<string> 
 
 export async function updateServico(id: string, data: Partial<Servico>): Promise<void> {
     try {
-        const docRef = doc(db, COLLECTIONS.SERVICOS, id);
-        await updateDoc(docRef, data);
+        const { faseIds, gruposInsumoIds, ...servicoData } = data;
+
+        // Atualiza dados do serviço (se houver)
+        if (Object.keys(servicoData).length > 0) {
+            const { error } = await supabase
+                .from(TABLES.SERVICOS)
+                .update(servicoData)
+                .eq('id', id);
+
+            if (error) throw error;
+        }
+
+        // Atualiza relacionamentos com fases (se fornecido)
+        if (faseIds !== undefined) {
+            // Remove relacionamentos antigos
+            await supabase.from(TABLES.SERVICO_FASE).delete().eq('servico_id', id);
+
+            // Insere novos relacionamentos
+            if (faseIds.length > 0) {
+                const faseRelations = faseIds.map(faseId => ({
+                    servico_id: id,
+                    fase_id: faseId,
+                }));
+                await supabase.from(TABLES.SERVICO_FASE).insert(faseRelations);
+            }
+        }
+
+        // Atualiza relacionamentos com grupos (se fornecido)
+        if (gruposInsumoIds !== undefined) {
+            // Remove relacionamentos antigos
+            await supabase.from(TABLES.SERVICO_GRUPO).delete().eq('servico_id', id);
+
+            // Insere novos relacionamentos
+            if (gruposInsumoIds.length > 0) {
+                const grupoRelations = gruposInsumoIds.map(grupoId => ({
+                    servico_id: id,
+                    grupo_id: grupoId,
+                }));
+                await supabase.from(TABLES.SERVICO_GRUPO).insert(grupoRelations);
+            }
+        }
     } catch (error) {
         console.error('Erro ao atualizar serviço:', error);
         throw error;
@@ -150,8 +304,16 @@ export async function updateServico(id: string, data: Partial<Servico>): Promise
 
 export async function deleteServico(id: string): Promise<void> {
     try {
-        const docRef = doc(db, COLLECTIONS.SERVICOS, id);
-        await deleteDoc(docRef);
+        // Remove relacionamentos nas tabelas de junção
+        await supabase.from(TABLES.SERVICO_FASE).delete().eq('servico_id', id);
+        await supabase.from(TABLES.SERVICO_GRUPO).delete().eq('servico_id', id);
+
+        const { error } = await supabase
+            .from(TABLES.SERVICOS)
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
     } catch (error) {
         console.error('Erro ao deletar serviço:', error);
         throw error;
@@ -162,8 +324,12 @@ export async function deleteServico(id: string): Promise<void> {
 
 export async function getGruposInsumo(): Promise<GrupoInsumo[]> {
     try {
-        const snapshot = await getDocs(collection(db, COLLECTIONS.GRUPOS_INSUMO));
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GrupoInsumo));
+        const { data, error } = await supabase
+            .from(TABLES.GRUPOS_INSUMO)
+            .select('*');
+
+        if (error) throw error;
+        return data as GrupoInsumo[];
     } catch (error) {
         console.error('Erro ao buscar grupos de insumo:', error);
         throw error;
@@ -172,12 +338,17 @@ export async function getGruposInsumo(): Promise<GrupoInsumo[]> {
 
 export async function getGrupoInsumoById(id: string): Promise<GrupoInsumo | null> {
     try {
-        const docRef = doc(db, COLLECTIONS.GRUPOS_INSUMO, id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-            return { id: docSnap.id, ...docSnap.data() } as GrupoInsumo;
+        const { data, error } = await supabase
+            .from(TABLES.GRUPOS_INSUMO)
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') return null;
+            throw error;
         }
-        return null;
+        return data as GrupoInsumo;
     } catch (error) {
         console.error('Erro ao buscar grupo de insumo:', error);
         throw error;
@@ -186,8 +357,14 @@ export async function getGrupoInsumoById(id: string): Promise<GrupoInsumo | null
 
 export async function createGrupoInsumo(data: Omit<GrupoInsumo, 'id'>): Promise<string> {
     try {
-        const docRef = await addDoc(collection(db, COLLECTIONS.GRUPOS_INSUMO), data);
-        return docRef.id;
+        const { data: inserted, error } = await supabase
+            .from(TABLES.GRUPOS_INSUMO)
+            .insert(data)
+            .select('id')
+            .single();
+
+        if (error) throw error;
+        return inserted.id;
     } catch (error) {
         console.error('Erro ao criar grupo de insumo:', error);
         throw error;
@@ -196,8 +373,12 @@ export async function createGrupoInsumo(data: Omit<GrupoInsumo, 'id'>): Promise<
 
 export async function updateGrupoInsumo(id: string, data: Partial<GrupoInsumo>): Promise<void> {
     try {
-        const docRef = doc(db, COLLECTIONS.GRUPOS_INSUMO, id);
-        await updateDoc(docRef, data);
+        const { error } = await supabase
+            .from(TABLES.GRUPOS_INSUMO)
+            .update(data)
+            .eq('id', id);
+
+        if (error) throw error;
     } catch (error) {
         console.error('Erro ao atualizar grupo de insumo:', error);
         throw error;
@@ -206,8 +387,16 @@ export async function updateGrupoInsumo(id: string, data: Partial<GrupoInsumo>):
 
 export async function deleteGrupoInsumo(id: string): Promise<void> {
     try {
-        const docRef = doc(db, COLLECTIONS.GRUPOS_INSUMO, id);
-        await deleteDoc(docRef);
+        // Remove relacionamentos nas tabelas de junção
+        await supabase.from(TABLES.SERVICO_GRUPO).delete().eq('grupo_id', id);
+        await supabase.from(TABLES.MATERIAL_GRUPO).delete().eq('grupo_id', id);
+
+        const { error } = await supabase
+            .from(TABLES.GRUPOS_INSUMO)
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
     } catch (error) {
         console.error('Erro ao deletar grupo de insumo:', error);
         throw error;
@@ -218,8 +407,23 @@ export async function deleteGrupoInsumo(id: string): Promise<void> {
 
 export async function getMateriais(): Promise<Material[]> {
     try {
-        const snapshot = await getDocs(collection(db, COLLECTIONS.MATERIAIS));
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Material));
+        // Busca materiais
+        const { data: materiais, error } = await supabase
+            .from(TABLES.MATERIAIS)
+            .select('*');
+
+        if (error) throw error;
+
+        // Busca relacionamentos de grupos
+        const { data: materialGrupos } = await supabase
+            .from(TABLES.MATERIAL_GRUPO)
+            .select('material_id, grupo_id');
+
+        // Monta os objetos com os arrays de IDs
+        return materiais.map(material => ({
+            ...material,
+            gruposInsumoIds: materialGrupos?.filter(mg => mg.material_id === material.id).map(mg => mg.grupo_id) || [],
+        })) as Material[];
     } catch (error) {
         console.error('Erro ao buscar materiais:', error);
         throw error;
@@ -228,12 +432,27 @@ export async function getMateriais(): Promise<Material[]> {
 
 export async function getMaterialById(id: string): Promise<Material | null> {
     try {
-        const docRef = doc(db, COLLECTIONS.MATERIAIS, id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-            return { id: docSnap.id, ...docSnap.data() } as Material;
+        const { data: material, error } = await supabase
+            .from(TABLES.MATERIAIS)
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') return null;
+            throw error;
         }
-        return null;
+
+        // Busca relacionamentos de grupos
+        const { data: materialGrupos } = await supabase
+            .from(TABLES.MATERIAL_GRUPO)
+            .select('grupo_id')
+            .eq('material_id', id);
+
+        return {
+            ...material,
+            gruposInsumoIds: materialGrupos?.map(mg => mg.grupo_id) || [],
+        } as Material;
     } catch (error) {
         console.error('Erro ao buscar material:', error);
         throw error;
@@ -242,12 +461,35 @@ export async function getMaterialById(id: string): Promise<Material | null> {
 
 export async function getMateriaisByGrupoId(grupoId: string): Promise<Material[]> {
     try {
-        const q = query(
-            collection(db, COLLECTIONS.MATERIAIS),
-            where('gruposInsumoIds', 'array-contains', grupoId)
-        );
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Material));
+        // Busca materiais relacionados ao grupo pela tabela de junção
+        const { data: materialGrupos, error: junctionError } = await supabase
+            .from(TABLES.MATERIAL_GRUPO)
+            .select('material_id')
+            .eq('grupo_id', grupoId);
+
+        if (junctionError) throw junctionError;
+
+        if (!materialGrupos || materialGrupos.length === 0) return [];
+
+        const materialIds = materialGrupos.map(mg => mg.material_id);
+
+        const { data: materiais, error } = await supabase
+            .from(TABLES.MATERIAIS)
+            .select('*')
+            .in('id', materialIds);
+
+        if (error) throw error;
+
+        // Busca todos os relacionamentos para esses materiais
+        const { data: allMaterialGrupos } = await supabase
+            .from(TABLES.MATERIAL_GRUPO)
+            .select('material_id, grupo_id')
+            .in('material_id', materialIds);
+
+        return materiais.map(material => ({
+            ...material,
+            gruposInsumoIds: allMaterialGrupos?.filter(mg => mg.material_id === material.id).map(mg => mg.grupo_id) || [],
+        })) as Material[];
     } catch (error) {
         console.error('Erro ao buscar materiais por grupo:', error);
         throw error;
@@ -256,8 +498,29 @@ export async function getMateriaisByGrupoId(grupoId: string): Promise<Material[]
 
 export async function createMaterial(data: Omit<Material, 'id'>): Promise<string> {
     try {
-        const docRef = await addDoc(collection(db, COLLECTIONS.MATERIAIS), data);
-        return docRef.id;
+        const { gruposInsumoIds, ...materialData } = data;
+
+        // Insere o material
+        const { data: inserted, error } = await supabase
+            .from(TABLES.MATERIAIS)
+            .insert(materialData)
+            .select('id')
+            .single();
+
+        if (error) throw error;
+
+        const materialId = inserted.id;
+
+        // Insere relacionamentos com grupos
+        if (gruposInsumoIds && gruposInsumoIds.length > 0) {
+            const grupoRelations = gruposInsumoIds.map(grupoId => ({
+                material_id: materialId,
+                grupo_id: grupoId,
+            }));
+            await supabase.from(TABLES.MATERIAL_GRUPO).insert(grupoRelations);
+        }
+
+        return materialId;
     } catch (error) {
         console.error('Erro ao criar material:', error);
         throw error;
@@ -266,8 +529,32 @@ export async function createMaterial(data: Omit<Material, 'id'>): Promise<string
 
 export async function updateMaterial(id: string, data: Partial<Material>): Promise<void> {
     try {
-        const docRef = doc(db, COLLECTIONS.MATERIAIS, id);
-        await updateDoc(docRef, data);
+        const { gruposInsumoIds, ...materialData } = data;
+
+        // Atualiza dados do material (se houver)
+        if (Object.keys(materialData).length > 0) {
+            const { error } = await supabase
+                .from(TABLES.MATERIAIS)
+                .update(materialData)
+                .eq('id', id);
+
+            if (error) throw error;
+        }
+
+        // Atualiza relacionamentos com grupos (se fornecido)
+        if (gruposInsumoIds !== undefined) {
+            // Remove relacionamentos antigos
+            await supabase.from(TABLES.MATERIAL_GRUPO).delete().eq('material_id', id);
+
+            // Insere novos relacionamentos
+            if (gruposInsumoIds.length > 0) {
+                const grupoRelations = gruposInsumoIds.map(grupoId => ({
+                    material_id: id,
+                    grupo_id: grupoId,
+                }));
+                await supabase.from(TABLES.MATERIAL_GRUPO).insert(grupoRelations);
+            }
+        }
     } catch (error) {
         console.error('Erro ao atualizar material:', error);
         throw error;
@@ -276,8 +563,15 @@ export async function updateMaterial(id: string, data: Partial<Material>): Promi
 
 export async function deleteMaterial(id: string): Promise<void> {
     try {
-        const docRef = doc(db, COLLECTIONS.MATERIAIS, id);
-        await deleteDoc(docRef);
+        // Remove relacionamentos na tabela de junção
+        await supabase.from(TABLES.MATERIAL_GRUPO).delete().eq('material_id', id);
+
+        const { error } = await supabase
+            .from(TABLES.MATERIAIS)
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
     } catch (error) {
         console.error('Erro ao deletar material:', error);
         throw error;
@@ -291,12 +585,41 @@ export async function deleteMaterial(id: string): Promise<void> {
  */
 export async function getServicosByGrupoInsumoId(grupoId: string): Promise<Servico[]> {
     try {
-        const q = query(
-            collection(db, COLLECTIONS.SERVICOS),
-            where('gruposInsumoIds', 'array-contains', grupoId)
-        );
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Servico));
+        // Busca serviços relacionados ao grupo pela tabela de junção
+        const { data: servicoGrupos, error: junctionError } = await supabase
+            .from(TABLES.SERVICO_GRUPO)
+            .select('servico_id')
+            .eq('grupo_id', grupoId);
+
+        if (junctionError) throw junctionError;
+
+        if (!servicoGrupos || servicoGrupos.length === 0) return [];
+
+        const servicoIds = servicoGrupos.map(sg => sg.servico_id);
+
+        const { data: servicos, error } = await supabase
+            .from(TABLES.SERVICOS)
+            .select('*')
+            .in('id', servicoIds);
+
+        if (error) throw error;
+
+        // Busca todos os relacionamentos para esses serviços
+        const { data: allServicoFases } = await supabase
+            .from(TABLES.SERVICO_FASE)
+            .select('servico_id, fase_id')
+            .in('servico_id', servicoIds);
+
+        const { data: allServicoGrupos } = await supabase
+            .from(TABLES.SERVICO_GRUPO)
+            .select('servico_id, grupo_id')
+            .in('servico_id', servicoIds);
+
+        return servicos.map(servico => ({
+            ...servico,
+            faseIds: allServicoFases?.filter(sf => sf.servico_id === servico.id).map(sf => sf.fase_id) || [],
+            gruposInsumoIds: allServicoGrupos?.filter(sg => sg.servico_id === servico.id).map(sg => sg.grupo_id) || [],
+        })) as Servico[];
     } catch (error) {
         console.error('Erro ao buscar serviços por grupo:', error);
         throw error;
@@ -339,20 +662,25 @@ export async function getFasesByGrupoInsumoId(grupoId: string): Promise<Fase[]> 
  */
 export async function addFaseToServico(servicoId: string, faseId: string): Promise<void> {
     try {
-        const servico = await getServicoById(servicoId);
-        if (!servico) {
-            throw new Error('Serviço não encontrado');
-        }
+        // Verifica se já existe o relacionamento
+        const { data: existing } = await supabase
+            .from(TABLES.SERVICO_FASE)
+            .select('*')
+            .eq('servico_id', servicoId)
+            .eq('fase_id', faseId)
+            .single();
 
-        // Verifica se a fase já está associada
-        if (servico.faseIds.includes(faseId)) {
+        if (existing) {
             console.log('Fase já está associada ao serviço');
             return;
         }
 
-        // Adiciona a nova fase
-        const novasFases = [...servico.faseIds, faseId];
-        await updateServico(servicoId, { faseIds: novasFases });
+        // Adiciona o relacionamento
+        const { error } = await supabase
+            .from(TABLES.SERVICO_FASE)
+            .insert({ servico_id: servicoId, fase_id: faseId });
+
+        if (error) throw error;
     } catch (error) {
         console.error('Erro ao adicionar fase ao serviço:', error);
         throw error;
@@ -364,14 +692,13 @@ export async function addFaseToServico(servicoId: string, faseId: string): Promi
  */
 export async function removeFaseFromServico(servicoId: string, faseId: string): Promise<void> {
     try {
-        const servico = await getServicoById(servicoId);
-        if (!servico) {
-            throw new Error('Serviço não encontrado');
-        }
+        const { error } = await supabase
+            .from(TABLES.SERVICO_FASE)
+            .delete()
+            .eq('servico_id', servicoId)
+            .eq('fase_id', faseId);
 
-        // Remove a fase
-        const novasFases = servico.faseIds.filter(id => id !== faseId);
-        await updateServico(servicoId, { faseIds: novasFases });
+        if (error) throw error;
     } catch (error) {
         console.error('Erro ao remover fase do serviço:', error);
         throw error;
@@ -383,20 +710,25 @@ export async function removeFaseFromServico(servicoId: string, faseId: string): 
  */
 export async function addGrupoToServico(servicoId: string, grupoId: string): Promise<void> {
     try {
-        const servico = await getServicoById(servicoId);
-        if (!servico) {
-            throw new Error('Serviço não encontrado');
-        }
+        // Verifica se já existe o relacionamento
+        const { data: existing } = await supabase
+            .from(TABLES.SERVICO_GRUPO)
+            .select('*')
+            .eq('servico_id', servicoId)
+            .eq('grupo_id', grupoId)
+            .single();
 
-        // Verifica se o grupo já está associado
-        if (servico.gruposInsumoIds.includes(grupoId)) {
+        if (existing) {
             console.log('Grupo já está associado ao serviço');
             return;
         }
 
-        // Adiciona o novo grupo
-        const novosGrupos = [...servico.gruposInsumoIds, grupoId];
-        await updateServico(servicoId, { gruposInsumoIds: novosGrupos });
+        // Adiciona o relacionamento
+        const { error } = await supabase
+            .from(TABLES.SERVICO_GRUPO)
+            .insert({ servico_id: servicoId, grupo_id: grupoId });
+
+        if (error) throw error;
     } catch (error) {
         console.error('Erro ao adicionar grupo ao serviço:', error);
         throw error;
@@ -408,14 +740,13 @@ export async function addGrupoToServico(servicoId: string, grupoId: string): Pro
  */
 export async function removeGrupoFromServico(servicoId: string, grupoId: string): Promise<void> {
     try {
-        const servico = await getServicoById(servicoId);
-        if (!servico) {
-            throw new Error('Serviço não encontrado');
-        }
+        const { error } = await supabase
+            .from(TABLES.SERVICO_GRUPO)
+            .delete()
+            .eq('servico_id', servicoId)
+            .eq('grupo_id', grupoId);
 
-        // Remove o grupo
-        const novosGrupos = servico.gruposInsumoIds.filter(id => id !== grupoId);
-        await updateServico(servicoId, { gruposInsumoIds: novosGrupos });
+        if (error) throw error;
     } catch (error) {
         console.error('Erro ao remover grupo do serviço:', error);
         throw error;
@@ -427,20 +758,25 @@ export async function removeGrupoFromServico(servicoId: string, grupoId: string)
  */
 export async function addGrupoToMaterial(materialId: string, grupoId: string): Promise<void> {
     try {
-        const material = await getMaterialById(materialId);
-        if (!material) {
-            throw new Error('Material não encontrado');
-        }
+        // Verifica se já existe o relacionamento
+        const { data: existing } = await supabase
+            .from(TABLES.MATERIAL_GRUPO)
+            .select('*')
+            .eq('material_id', materialId)
+            .eq('grupo_id', grupoId)
+            .single();
 
-        // Verifica se o grupo já está associado
-        if (material.gruposInsumoIds.includes(grupoId)) {
+        if (existing) {
             console.log('Grupo já está associado ao material');
             return;
         }
 
-        // Adiciona o novo grupo
-        const novosGrupos = [...material.gruposInsumoIds, grupoId];
-        await updateMaterial(materialId, { gruposInsumoIds: novosGrupos });
+        // Adiciona o relacionamento
+        const { error } = await supabase
+            .from(TABLES.MATERIAL_GRUPO)
+            .insert({ material_id: materialId, grupo_id: grupoId });
+
+        if (error) throw error;
     } catch (error) {
         console.error('Erro ao adicionar grupo ao material:', error);
         throw error;
@@ -452,14 +788,13 @@ export async function addGrupoToMaterial(materialId: string, grupoId: string): P
  */
 export async function removeGrupoFromMaterial(materialId: string, grupoId: string): Promise<void> {
     try {
-        const material = await getMaterialById(materialId);
-        if (!material) {
-            throw new Error('Material não encontrado');
-        }
+        const { error } = await supabase
+            .from(TABLES.MATERIAL_GRUPO)
+            .delete()
+            .eq('material_id', materialId)
+            .eq('grupo_id', grupoId);
 
-        // Remove o grupo
-        const novosGrupos = material.gruposInsumoIds.filter(id => id !== grupoId);
-        await updateMaterial(materialId, { gruposInsumoIds: novosGrupos });
+        if (error) throw error;
     } catch (error) {
         console.error('Erro ao remover grupo do material:', error);
         throw error;
@@ -473,10 +808,16 @@ export async function removeGrupoFromMaterial(materialId: string, grupoId: strin
  */
 export async function isDatabaseInitialized(): Promise<boolean> {
     try {
-        const fasesSnapshot = await getDocs(collection(db, COLLECTIONS.FASES));
-        return !fasesSnapshot.empty;
+        const { data, error } = await supabase
+            .from(TABLES.FASES)
+            .select('id')
+            .limit(1);
+
+        if (error) throw error;
+        return data && data.length > 0;
     } catch (error) {
         console.error('Erro ao verificar se banco está inicializado:', error);
         return false;
     }
 }
+

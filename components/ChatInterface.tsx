@@ -2,18 +2,16 @@
 
 import { useState, useEffect, useRef } from "react";
 import { XMarkIcon, PaperAirplaneIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
-import { auth, db } from "../lib/firebase";
+import { supabase } from "../lib/supabase";
+import { useAuth } from "../lib/useAuth";
 import { createReport } from "../lib/services";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, where, getDoc, doc } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
 import { sendEmail } from "../app/actions/email";
 
 interface Message {
     id: string;
     senderId: string;
     text: string;
-    timestamp: any; // Firestore Timestamp
-    createdAt: any;
+    createdAt: string;
 }
 
 interface ChatInterfaceProps {
@@ -29,7 +27,7 @@ interface ChatInterfaceProps {
 export function ChatInterface({ recipientName, recipientId, onClose, isOpen, initialMessage, orderId, orderTitle }: ChatInterfaceProps) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState("");
-    const [currentUser, setCurrentUser] = useState<any>(null);
+    const { user: currentUser } = useAuth();
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const scrollToBottom = () => {
@@ -41,7 +39,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
         const reason = prompt("Por favor, descreva o motivo da denúncia:");
         if (reason) {
             try {
-                await createReport(currentUser.uid, recipientId, "chat", "Comportamento no Chat", reason);
+                await createReport(currentUser.id, recipientId, "chat", "Comportamento no Chat", reason);
                 alert("Denúncia enviada. Nossa equipe irá analisar.");
             } catch (error) {
                 alert("Erro ao enviar denúncia.");
@@ -50,32 +48,54 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
     };
 
     useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-            setCurrentUser(user);
-        });
-        return () => unsubscribeAuth();
-    }, []);
-
-    useEffect(() => {
         if (!isOpen || !orderId) return;
 
-        // Query messages for this order
-        // Assuming structure: chats/{orderId}/messages
-        const q = query(
-            collection(db, "chats", orderId, "messages"),
-            orderBy("createdAt", "asc")
-        );
+        // Fetch initial messages
+        const fetchMessages = async () => {
+            const { data, error } = await supabase
+                .from('mensagens')
+                .select('*')
+                .eq('chat_id', orderId)
+                .order('created_at', { ascending: true });
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const msgs: Message[] = [];
-            snapshot.forEach((doc) => {
-                msgs.push({ id: doc.id, ...doc.data() } as Message);
-            });
-            setMessages(msgs);
-            scrollToBottom();
-        });
+            if (!error && data) {
+                const msgs: Message[] = data.map((msg) => ({
+                    id: msg.id,
+                    senderId: msg.sender_id,
+                    text: msg.conteudo,
+                    createdAt: msg.created_at
+                }));
+                setMessages(msgs);
+                scrollToBottom();
+            }
+        };
 
-        return () => unsubscribe();
+        fetchMessages();
+
+        // Subscribe to realtime updates for new messages
+        const channel = supabase
+            .channel(`chat-${orderId}`)
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'mensagens',
+                filter: `chat_id=eq.${orderId}`
+            }, (payload) => {
+                const newMsg = payload.new as any;
+                const msg: Message = {
+                    id: newMsg.id,
+                    senderId: newMsg.sender_id,
+                    text: newMsg.conteudo,
+                    createdAt: newMsg.created_at
+                };
+                setMessages(prev => [...prev, msg]);
+                scrollToBottom();
+            })
+            .subscribe();
+
+        return () => {
+            channel.unsubscribe();
+        };
     }, [isOpen, orderId]);
 
     useEffect(() => {
@@ -104,29 +124,34 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
         }
 
         try {
-            await addDoc(collection(db, "chats", orderId, "messages"), {
-                senderId: currentUser.uid,
-                text: newMessage,
-                createdAt: serverTimestamp(),
-                timestamp: serverTimestamp() // Keep for compatibility if needed
+            const { error } = await supabase.from('mensagens').insert({
+                chat_id: orderId,
+                sender_id: currentUser.id,
+                conteudo: newMessage,
+                tipo: 'texto'
             });
+
+            if (error) throw error;
 
             // Notify recipient
             if (recipientId) {
-                getDoc(doc(db, "users", recipientId)).then(async (recipientDoc) => {
-                    const recipientData = recipientDoc.data();
-                    if (recipientData?.email) {
-                        await sendEmail({
-                            to: recipientData.email,
-                            subject: `Nova mensagem de ${currentUser.displayName || currentUser.email || "Usuário"} - Cota Reconstruir`,
-                            html: `
-                                <p>Você recebeu uma nova mensagem no chat sobre o pedido <strong>${orderTitle || orderId}</strong>.</p>
-                                <p>Mensagem: "${newMessage}"</p>
-                                <p>Acesse a plataforma para responder.</p>
-                            `
-                        });
-                    }
-                }).catch(err => console.error("Error sending notification:", err));
+                const { data: recipientData } = await supabase
+                    .from('users')
+                    .select('email')
+                    .eq('id', recipientId)
+                    .single();
+
+                if (recipientData?.email) {
+                    await sendEmail({
+                        to: recipientData.email,
+                        subject: `Nova mensagem de ${currentUser.user_metadata?.name || currentUser.email || "Usuário"} - Cota Reconstruir`,
+                        html: `
+                            <p>Você recebeu uma nova mensagem no chat sobre o pedido <strong>${orderTitle || orderId}</strong>.</p>
+                            <p>Mensagem: "${newMessage}"</p>
+                            <p>Acesse a plataforma para responder.</p>
+                        `
+                    });
+                }
             }
 
             setNewMessage("");
@@ -186,7 +211,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
                 )}
 
                 {messages.map((msg) => {
-                    const isMe = msg.senderId === currentUser?.uid;
+                    const isMe = msg.senderId === currentUser?.id;
                     return (
                         <div
                             key={msg.id}
@@ -200,7 +225,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
                             >
                                 <p>{msg.text}</p>
                                 <p className={`text-[10px] mt-1 ${isMe ? "text-blue-100" : "text-slate-400"}`}>
-                                    {msg.createdAt?.toDate ? msg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                                    {msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                                 </p>
                             </div>
                         </div>

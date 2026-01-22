@@ -3,14 +3,10 @@
 import { useEffect, useState, useRef, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { auth, db } from "../../../lib/firebase";
-import { collection, getCountFromServer, query, where, getDocs, orderBy, limit, doc, updateDoc, deleteDoc, getDoc, startAfter, DocumentSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
-import { onAuthStateChanged, getAuth, createUserWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential, signOut } from "firebase/auth";
-import { initializeApp, deleteApp } from "firebase/app";
+import { supabase, supabaseAdmin, createUserAdmin, updateUserPasswordAdmin, updateUserRoles } from "@/lib/supabaseAuth";
+import { useAuth } from "@/lib/useAuth";
 import { NotificationBell } from "../../../components/NotificationBell";
 import { ProfileSwitcher } from "@/components/ProfileSwitcher";
-import { logAction } from "../../../lib/services";
-import { handleRolesUpdate } from "../../../lib/profileLinkService";
 import { useToast } from "@/components/ToastProvider";
 import ConstructionManagement from "@/components/dashboard/admin/ConstructionManagement";
 import ClientesManagement from "@/components/dashboard/admin/ClientesManagement";
@@ -133,7 +129,7 @@ export default function AdminDashboard() {
     const [usersPage, setUsersPage] = useState<any[]>([]);
     const [usersLoading, setUsersLoading] = useState(false);
     const [usersPageIndex, setUsersPageIndex] = useState(0);
-    const [userCursors, setUserCursors] = useState<DocumentSnapshot[]>([]);
+    const [userCursors, setUserCursors] = useState<any[]>([]);
     const [usersHasNext, setUsersHasNext] = useState(false);
     const [usersHasPrev, setUsersHasPrev] = useState(false);
     const [roleFilter, setRoleFilter] = useState<"all" | "cliente" | "fornecedor" | "admin">("all");
@@ -145,7 +141,7 @@ export default function AdminDashboard() {
     const [auditPage, setAuditPage] = useState<any[]>([]);
     const [auditLoading, setAuditLoading] = useState(false);
     const [auditPageIndex, setAuditPageIndex] = useState(0);
-    const [auditCursors, setAuditCursors] = useState<DocumentSnapshot[]>([]);
+    const [auditCursors, setAuditCursors] = useState<any[]>([]);
     const [auditHasNext, setAuditHasNext] = useState(false);
     const [auditHasPrev, setAuditHasPrev] = useState(false);
     const [auditSortDir, setAuditSortDir] = useState<"asc" | "desc">("desc");
@@ -156,7 +152,7 @@ export default function AdminDashboard() {
     const [reportsPage, setReportsPage] = useState<any[]>([]);
     const [reportsLoading, setReportsLoading] = useState(false);
     const [reportsPageIndex, setReportsPageIndex] = useState(0);
-    const [reportsCursors, setReportsCursors] = useState<DocumentSnapshot[]>([]);
+    const [reportsCursors, setReportsCursors] = useState<any[]>([]);
     const [reportsHasNext, setReportsHasNext] = useState(false);
     const [reportsHasPrev, setReportsHasPrev] = useState(false);
     const [reportsSortDir, setReportsSortDir] = useState<"asc" | "desc">("desc");
@@ -198,46 +194,40 @@ export default function AdminDashboard() {
         { id: "profile", label: "Meu Perfil" },
     ];
 
+    const { user, profile, isAdmin: userIsAdmin, initialized } = useAuth();
+
     const fetchOverview = async () => {
         try {
-            const usersColl = collection(db, "users");
-            const suppliersQuery = query(usersColl, where("role", "==", "fornecedor"));
-            const quotationsColl = collection(db, "quotations");
-
-            const [usersSnap, suppliersSnap, quotationsSnap] = await Promise.all([
-                getCountFromServer(usersColl),
-                getCountFromServer(suppliersQuery),
-                getCountFromServer(quotationsColl)
+            // Buscar contagens usando Supabase
+            const [usersResult, suppliersResult, cotacoesResult] = await Promise.all([
+                supabase.from('users').select('*', { count: 'exact', head: true }),
+                supabase.from('fornecedores').select('*', { count: 'exact', head: true }),
+                supabase.from('cotacoes').select('*', { count: 'exact', head: true })
             ]);
 
             setStats({
-                users: usersSnap.data().count,
-                suppliers: suppliersSnap.data().count,
-                quotations: quotationsSnap.data().count
+                users: usersResult.count || 0,
+                suppliers: suppliersResult.count || 0,
+                quotations: cotacoesResult.count || 0
             });
 
-            try {
-                const recentUsersQuery = query(usersColl, orderBy("createdAt", "desc"), limit(5));
-                const recentUsersSnap = await getDocs(recentUsersQuery);
-                setRecentUsers(recentUsersSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-            } catch (e) {
-                console.warn("Error fetching recent users (likely missing index):", e);
-                const fallbackQuery = query(usersColl, limit(5));
-                const fallbackSnap = await getDocs(fallbackQuery);
-                setRecentUsers(fallbackSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-            }
+            // Buscar usuários recentes
+            const { data: recentUsersData } = await supabase
+                .from('users')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(5);
 
-            try {
-                const quotationsColl = collection(db, "quotations");
-                const recentQuotationsQuery = query(quotationsColl, orderBy("createdAt", "desc"), limit(5));
-                const recentQuotationsSnap = await getDocs(recentQuotationsQuery);
-                setRecentQuotations(recentQuotationsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-            } catch (e) {
-                console.warn("Error fetching recent quotations (likely missing index):", e);
-                const fallbackQuery = query(quotationsColl, limit(5));
-                const fallbackSnap = await getDocs(fallbackQuery);
-                setRecentQuotations(fallbackSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-            }
+            setRecentUsers(recentUsersData || []);
+
+            // Buscar cotações recentes
+            const { data: recentCotacoesData } = await supabase
+                .from('cotacoes')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(5);
+
+            setRecentQuotations(recentCotacoesData || []);
         } catch (error) {
             console.error("Error fetching admin data:", error);
         } finally {
@@ -246,99 +236,58 @@ export default function AdminDashboard() {
     };
 
     useEffect(() => {
-        const unsubAuth = onAuthStateChanged(auth, async (user) => {
-            if (!user) return;
+        if (!initialized) return;
 
-            try {
-                const userDocRef = doc(db, "users", user.uid);
-                const userDoc = await getDoc(userDocRef);
-                const data = userDoc.exists() ? userDoc.data() : {};
-                const role = data.role || "cliente";
+        if (!user) {
+            router.push('/login');
+            return;
+        }
 
-                // Fetch all roles
-                let roles: string[] = ["cliente"];
-                if (data.roles && Array.isArray(data.roles) && data.roles.length > 0) {
-                    roles = data.roles;
-                } else if (data.role) {
-                    roles = [data.role];
-                }
-                setUserRoles(roles);
-
-                const name = data.companyName || data.name || user.displayName || user.email || "Admin";
-                console.log("Admin Check - User:", user.uid, "Role:", role, "Data:", data); // Debug log
-                setUserName(name);
-                setProfileName(name); // Initialize profile name
-                setUserInitial(name.charAt(0).toUpperCase());
-
-                setIsAdmin(true);
-                setAuthLoading(false);
-                await fetchOverview();
-            } catch (e) {
-                console.error("Erro ao carregar dados do admin:", e);
-                setAuthLoading(false);
-            }
-        });
-
-        return () => {
-            unsubAuth();
-        };
-    }, [router]);
+        if (profile) {
+            const name = profile.nome || user.email || "Admin";
+            setUserName(name);
+            setProfileName(name);
+            setUserInitial(name.charAt(0).toUpperCase());
+            setUserRoles(profile.roles || [profile.role || 'cliente']);
+            setIsAdmin(userIsAdmin || false);
+            setAuthLoading(false);
+            fetchOverview();
+        }
+    }, [user, profile, initialized, userIsAdmin, router]);
 
     const pageSize = 10;
 
     const fetchUsersPage = async (targetPage = 0) => {
         setUsersLoading(true);
         try {
-            const usersColl = collection(db, "users");
+            let query = supabase
+                .from('users')
+                .select('*', { count: 'exact' });
 
-            const applyBaseFilters = () => {
-                const base: any[] = [];
-                if (roleFilter !== "all") base.push(where("role", "==", roleFilter));
-                if (statusFilter !== "all") base.push(where("isActive", "==", statusFilter === "active"));
-                return base;
-            };
-
-            let snap;
-
+            // Aplicar filtros
+            if (roleFilter !== "all") {
+                query = query.contains('roles', [roleFilter]);
+            }
+            if (statusFilter !== "all") {
+                query = query.eq('status', statusFilter === 'active' ? 'active' : 'suspended');
+            }
             if (searchTerm.trim()) {
-                const term = searchTerm.trim().toLowerCase();
-                snap = await getDocs(query(usersColl, where("email", "==", term), limit(pageSize)));
-            } else {
-                const startCursor = targetPage > 0 ? userCursors[targetPage - 1] : null;
-                const constraints = [...applyBaseFilters(), orderBy("createdAt", userSortDir), limit(pageSize + 1)];
-                if (startCursor) constraints.push(startAfter(startCursor));
-
-                try {
-                    snap = await getDocs(query(usersColl, ...constraints));
-                } catch (err) {
-                    // fallback ordering if createdAt missing
-                    const fallbackConstraints = [...applyBaseFilters(), orderBy("email"), limit(pageSize + 1)];
-                    if (startCursor) fallbackConstraints.push(startAfter(startCursor));
-                    snap = await getDocs(query(usersColl, ...fallbackConstraints));
-                }
+                query = query.or(`email.ilike.%${searchTerm}%,nome.ilike.%${searchTerm}%`);
             }
 
-            const docs = snap.docs.slice(0, pageSize).map(d => ({ id: d.id, ...d.data() }));
-            setUsersPage(docs);
+            // Ordenação e paginação
+            query = query
+                .order('created_at', { ascending: userSortDir === 'asc' })
+                .range(targetPage * pageSize, (targetPage + 1) * pageSize - 1);
 
-            if (!searchTerm.trim()) {
-                const hasNext = snap.docs.length > pageSize;
-                setUsersHasNext(hasNext);
-                setUsersHasPrev(targetPage > 0);
-                const lastDoc = snap.docs.length ? snap.docs[Math.min(pageSize - 1, snap.docs.length - 1)] : undefined;
-                if (lastDoc) {
-                    setUserCursors((prev) => {
-                        const next = [...prev];
-                        next[targetPage] = lastDoc;
-                        return next;
-                    });
-                }
-                setUsersPageIndex(targetPage);
-            } else {
-                setUsersHasNext(false);
-                setUsersHasPrev(false);
-                setUsersPageIndex(0);
-            }
+            const { data, count, error } = await query;
+
+            if (error) throw error;
+
+            setUsersPage(data || []);
+            setUsersHasNext((count || 0) > (targetPage + 1) * pageSize);
+            setUsersHasPrev(targetPage > 0);
+            setUsersPageIndex(targetPage);
         } catch (error) {
             console.error("Error fetching users page:", error);
             showToast("error", "Erro ao carregar usuários. Tente novamente.");
@@ -350,30 +299,28 @@ export default function AdminDashboard() {
     const fetchAuditPage = async (targetPage = 0) => {
         setAuditLoading(true);
         try {
-            const auditColl = collection(db, "audit_logs");
-            const startCursor = targetPage > 0 ? auditCursors[targetPage - 1] : null;
-            const constraints: any[] = [];
-            if (auditSearchTerm.trim()) constraints.push(where("userId", "==", auditSearchTerm.trim()));
-            if (auditActionFilter !== "all") constraints.push(where("action", "==", auditActionFilter));
-            constraints.push(orderBy("timestamp", auditSortDir));
-            constraints.push(limit(pageSize + 1));
-            if (startCursor) constraints.push(startAfter(startCursor));
+            let query = supabase
+                .from('audit_logs')
+                .select('*', { count: 'exact' });
 
-            const snap = await getDocs(query(auditColl, ...constraints));
-            const docs = snap.docs.slice(0, pageSize).map(d => ({ id: d.id, ...d.data() }));
-            setAuditPage(docs);
-
-            const hasNext = snap.docs.length > pageSize;
-            setAuditHasNext(hasNext);
-            setAuditHasPrev(targetPage > 0);
-            const lastDoc = snap.docs.length ? snap.docs[Math.min(pageSize - 1, snap.docs.length - 1)] : undefined;
-            if (lastDoc) {
-                setAuditCursors((prev) => {
-                    const next = [...prev];
-                    next[targetPage] = lastDoc;
-                    return next;
-                });
+            if (auditSearchTerm.trim()) {
+                query = query.eq('user_id', auditSearchTerm.trim());
             }
+            if (auditActionFilter !== "all") {
+                query = query.eq('action', auditActionFilter);
+            }
+
+            query = query
+                .order('created_at', { ascending: auditSortDir === 'asc' })
+                .range(targetPage * pageSize, (targetPage + 1) * pageSize - 1);
+
+            const { data, count, error } = await query;
+
+            if (error) throw error;
+
+            setAuditPage(data || []);
+            setAuditHasNext((count || 0) > (targetPage + 1) * pageSize);
+            setAuditHasPrev(targetPage > 0);
             setAuditPageIndex(targetPage);
         } catch (e) {
             console.error("Error fetching audit logs:", e);
@@ -386,30 +333,10 @@ export default function AdminDashboard() {
     const fetchReportsPage = async (targetPage = 0) => {
         setReportsLoading(true);
         try {
-            const reportsColl = collection(db, "reports");
-            const startCursor = targetPage > 0 ? reportsCursors[targetPage - 1] : null;
-            const constraints: any[] = [];
-            if (reportStatusFilter !== "all") constraints.push(where("status", "==", reportStatusFilter));
-            if (reportTypeFilter !== "all") constraints.push(where("type", "==", reportTypeFilter));
-            constraints.push(orderBy("timestamp", reportsSortDir));
-            constraints.push(limit(pageSize + 1));
-            if (startCursor) constraints.push(startAfter(startCursor));
-
-            const snap = await getDocs(query(reportsColl, ...constraints));
-            const docs = snap.docs.slice(0, pageSize).map(d => ({ id: d.id, ...d.data() }));
-            setReportsPage(docs);
-
-            const hasNext = snap.docs.length > pageSize;
-            setReportsHasNext(hasNext);
-            setReportsHasPrev(targetPage > 0);
-            const lastDoc = snap.docs.length ? snap.docs[Math.min(pageSize - 1, snap.docs.length - 1)] : undefined;
-            if (lastDoc) {
-                setReportsCursors((prev) => {
-                    const next = [...prev];
-                    next[targetPage] = lastDoc;
-                    return next;
-                });
-            }
+            // Reports não tem tabela ainda, vamos criar uma query vazia
+            setReportsPage([]);
+            setReportsHasNext(false);
+            setReportsHasPrev(false);
             setReportsPageIndex(targetPage);
         } catch (e) {
             console.error("Error fetching reports:", e);
@@ -422,17 +349,14 @@ export default function AdminDashboard() {
     useEffect(() => {
         if (!isAdmin) return;
         if (activeTab === "users") {
-            setUserCursors([]);
             setUsersPageIndex(0);
             fetchUsersPage(0);
         }
         if (activeTab === "audit") {
-            setAuditCursors([]);
             setAuditPageIndex(0);
             fetchAuditPage(0);
         }
         if (activeTab === "reports") {
-            setReportsCursors([]);
             setReportsPageIndex(0);
             fetchReportsPage(0);
         }
@@ -441,10 +365,8 @@ export default function AdminDashboard() {
     const handleResolveReport = async (reportId: string) => {
         if (!confirm("Marcar denúncia como resolvida?")) return;
         try {
-            await updateDoc(doc(db, "reports", reportId), { status: "resolved" });
-            showToast("success", "Denúncia resolvida!");
-            fetchReportsPage(reportsPageIndex);
-            logAction("ADMIN", "RESOLVE_REPORT", `Resolved report ${reportId}`);
+            // TODO: Implementar tabela de reports no Supabase se necessário
+            showToast("info", "Funcionalidade em desenvolvimento.");
         } catch (error) {
             console.error("Error resolving report:", error);
             showToast("error", "Erro ao resolver denúncia.");
@@ -453,44 +375,41 @@ export default function AdminDashboard() {
 
     const handleUpdateRoles = async (userId: string, newRoles: string[]) => {
         try {
-            // Buscar dados do usuário para obter os roles anteriores e email
-            const userDoc = await getDoc(doc(db, "users", userId));
-            if (!userDoc.exists()) {
+            // Buscar dados do usuário
+            const { data: userData, error: fetchError } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', userId)
+                .single();
+
+            if (fetchError || !userData) {
                 showToast("error", "Usuário não encontrado.");
                 return;
             }
 
-            const userData = userDoc.data();
             const previousRoles = userData.roles || (userData.role ? [userData.role] : []);
             const userEmail = userData.email;
-            const userName = userData.name || userData.companyName;
+            const userName = userData.nome;
 
-            // Ensure at least one role is selected or handle empty state if allowed
-            // For backward compatibility, we update 'role' to be the first role in the list or 'cliente'
-            const primaryRole = newRoles.length > 0 ? newRoles[0] : 'cliente';
+            // Ensure at least one role is selected
+            const primaryRole = newRoles.length > 0
+                ? (newRoles.includes('admin') ? 'admin' : newRoles.includes('fornecedor') ? 'fornecedor' : 'cliente')
+                : 'cliente';
 
-            await updateDoc(doc(db, "users", userId), {
-                roles: newRoles,
-                role: primaryRole
-            });
+            // Atualizar via Supabase
+            const { error: updateError } = await supabase
+                .from('users')
+                .update({
+                    roles: newRoles,
+                    role: primaryRole
+                })
+                .eq('id', userId);
 
-            // Gerenciar vínculos com clientes/fornecedores
-            const linkResult = await handleRolesUpdate(
-                userId,
-                previousRoles,
-                newRoles,
-                userEmail,
-                userName
-            );
-
-            if (linkResult.pendingProfiles.length > 0) {
-                showToast("success", linkResult.message || "Perfis atualizados! Usuário precisa completar cadastro.");
-            } else {
-                showToast("success", "Perfis atualizados com sucesso!");
+            if (updateError) {
+                throw updateError;
             }
 
-            // Log action
-            await logAction(auth.currentUser?.uid || "ADMIN", "UPDATE_ROLES", `Updated roles for ${userId}: ${newRoles.join(', ')}`);
+            showToast("success", "Perfis atualizados com sucesso!");
 
             // Optimistic update
             setUsersPage(prev => prev.map(u => u.id === userId ? { ...u, roles: newRoles, role: primaryRole } : u));
@@ -504,15 +423,20 @@ export default function AdminDashboard() {
         }
     };
 
-    const handleToggleStatus = async (userId: string, currentStatus: boolean) => {
-        const newStatus = !currentStatus;
-        const action = newStatus ? "ativar" : "inativar";
+    const handleToggleStatus = async (userId: string, currentStatus: string) => {
+        const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+        const action = newStatus === 'active' ? "ativar" : "inativar";
         if (!confirm(`Tem certeza que deseja ${action} este usuário?`)) return;
         try {
-            await updateDoc(doc(db, "users", userId), { isActive: newStatus });
+            const { error } = await supabase
+                .from('users')
+                .update({ status: newStatus })
+                .eq('id', userId);
+
+            if (error) throw error;
+
             showToast("success", `Usuário ${action === "ativar" ? "ativado" : "inativado"}.`);
             fetchUsersPage(usersPageIndex);
-            logAction("ADMIN", "TOGGLE_STATUS", `${action.toUpperCase()} user ${userId}`);
         } catch (error) {
             console.error("Error updating status:", error);
             showToast("error", "Erro ao atualizar status.");
@@ -522,7 +446,13 @@ export default function AdminDashboard() {
     const handleDeleteUser = async (userId: string) => {
         if (!confirm("Tem certeza que deseja excluir este usuário? Esta ação não pode ser desfeita.")) return;
         try {
-            await deleteDoc(doc(db, "users", userId));
+            const { error } = await supabase
+                .from('users')
+                .delete()
+                .eq('id', userId);
+
+            if (error) throw error;
+
             showToast("success", "Usuário excluído com sucesso!");
             fetchUsersPage(usersPageIndex);
         } catch (error) {
@@ -539,24 +469,24 @@ export default function AdminDashboard() {
         }
 
         setIsCreatingUser(true);
-        let secondaryApp;
         try {
-            // Initialize a secondary app to create user without logging out admin
-            secondaryApp = initializeApp(auth.app.options, "Secondary");
-            const secondaryAuth = getAuth(secondaryApp);
-
-            const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPassword);
-            const uid = userCredential.user.uid;
-
-            await setDoc(doc(db, "users", uid), {
-                email: newUserEmail,
-                name: newUserName,
-                role: newUserRole,
-                isActive: true,
-                createdAt: serverTimestamp(),
-                mustChangePassword: true, // Force password change on first login
-                companyName: newUserName // Default to name for now
+            // Criar usuário via API (usa supabaseAdmin no servidor)
+            const response = await fetch('/api/admin/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: newUserEmail,
+                    password: newUserPassword,
+                    nome: newUserName,
+                    role: newUserRole,
+                }),
             });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Erro ao criar usuário');
+            }
 
             showToast("success", "Usuário criado com sucesso!");
             setIsCreateUserModalOpen(false);
@@ -565,18 +495,12 @@ export default function AdminDashboard() {
             setNewUserName("");
             setNewUserRole("cliente");
             fetchUsersPage(0); // Refresh list
-            logAction("ADMIN", "CREATE_USER", `Created user ${uid} (${newUserRole})`);
 
         } catch (error: any) {
             console.error("Error creating user:", error);
-            let msg = "Erro ao criar usuário.";
-            if (error.code === 'auth/email-already-in-use') msg = "Email já está em uso.";
-            if (error.code === 'auth/weak-password') msg = "Senha muito fraca.";
+            let msg = error.message || "Erro ao criar usuário.";
             showToast("error", msg);
         } finally {
-            if (secondaryApp) {
-                await deleteApp(secondaryApp);
-            }
             setIsCreatingUser(false);
         }
     };
@@ -585,15 +509,17 @@ export default function AdminDashboard() {
         e.preventDefault();
         setIsUpdatingProfile(true);
         try {
-            const user = auth.currentUser;
             if (!user) return;
 
             // Update Name
             if (profileName !== userName) {
-                await updateDoc(doc(db, "users", user.uid), {
-                    name: profileName,
-                    companyName: profileName
-                });
+                const { error } = await supabase
+                    .from('users')
+                    .update({ nome: profileName })
+                    .eq('id', user.id);
+
+                if (error) throw error;
+
                 setUserName(profileName);
                 showToast("success", "Nome atualizado com sucesso!");
             }
@@ -611,10 +537,13 @@ export default function AdminDashboard() {
                     return;
                 }
 
-                // Re-authenticate
-                const credential = EmailAuthProvider.credential(user.email!, currentPassword);
-                await reauthenticateWithCredential(user, credential);
-                await updatePassword(user, newProfilePassword);
+                // Atualizar senha via Supabase
+                const { error: passwordError } = await supabase.auth.updateUser({
+                    password: newProfilePassword
+                });
+
+                if (passwordError) throw passwordError;
+
                 showToast("success", "Senha atualizada com sucesso!");
                 setCurrentPassword("");
                 setNewProfilePassword("");
@@ -622,24 +551,16 @@ export default function AdminDashboard() {
             }
         } catch (error: any) {
             console.error("Error updating profile:", error);
-            if (error.code === 'auth/wrong-password') {
-                showToast("error", "Senha atual incorreta.");
-            } else {
-                showToast("error", "Erro ao atualizar perfil.");
-            }
+            showToast("error", error.message || "Erro ao atualizar perfil.");
         } finally {
             setIsUpdatingProfile(false);
         }
     };
 
+    const { logout } = useAuth();
+
     const handleLogout = async () => {
-        try {
-            await signOut(auth);
-            router.push("/login");
-        } catch (error) {
-            console.error("Error logging out:", error);
-            showToast("error", "Erro ao sair.");
-        }
+        await logout();
     };
 
     if (authLoading) return <div className="p-8 text-center">Carregando dashboard...</div>;
@@ -908,10 +829,10 @@ export default function AdminDashboard() {
                                                 </td>
                                                 <td className="px-4 py-3 align-top">
                                                     <button
-                                                        onClick={() => handleToggleStatus(user.id, user.isActive !== false)}
-                                                        className={`rounded-full px-2 py-1 text-[11px] font-semibold ${user.isActive !== false ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}
+                                                        onClick={() => handleToggleStatus(user.id, user.status || 'active')}
+                                                        className={`rounded-full px-2 py-1 text-[11px] font-semibold ${(user.status || 'active') === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}
                                                     >
-                                                        {user.isActive !== false ? 'Ativo' : 'Inativo'}
+                                                        {(user.status || 'active') === 'active' ? 'Ativo' : 'Inativo'}
                                                     </button>
                                                 </td>
                                                 <td className="px-4 py-3 align-top text-sm text-slate-600">
@@ -960,10 +881,10 @@ export default function AdminDashboard() {
                                                 <div className="text-xs text-slate-500">{user.email}</div>
                                             </div>
                                             <button
-                                                onClick={() => handleToggleStatus(user.id, user.isActive !== false)}
-                                                className={`rounded-full px-2 py-1 text-[10px] font-semibold ${user.isActive !== false ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}
+                                                onClick={() => handleToggleStatus(user.id, user.status || 'active')}
+                                                className={`rounded-full px-2 py-1 text-[10px] font-semibold ${(user.status || 'active') === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}
                                             >
-                                                {user.isActive !== false ? 'Ativo' : 'Inativo'}
+                                                {(user.status || 'active') === 'active' ? 'Ativo' : 'Inativo'}
                                             </button>
                                         </div>
 
@@ -1362,7 +1283,7 @@ export default function AdminDashboard() {
                                     <label className="block text-xs font-semibold text-slate-700">Email</label>
                                     <input
                                         type="email"
-                                        value={auth.currentUser?.email || ""}
+                                        value={user?.email || ""}
                                         disabled
                                         className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500"
                                     />
@@ -1427,13 +1348,13 @@ export default function AdminDashboard() {
                                 <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 p-4">
                                     <div>
                                         <p className="text-sm font-semibold text-slate-900">ID do Usuário</p>
-                                        <p className="text-xs font-mono text-slate-500">{auth.currentUser?.uid}</p>
+                                        <p className="text-xs font-mono text-slate-500">{user?.id}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 p-4">
                                     <div>
                                         <p className="text-sm font-semibold text-slate-900">Último Login</p>
-                                        <p className="text-xs text-slate-500">{auth.currentUser?.metadata.lastSignInTime}</p>
+                                        <p className="text-xs text-slate-500">{user?.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString('pt-BR') : 'N/A'}</p>
                                     </div>
                                 </div>
                                 <div className="pt-4">

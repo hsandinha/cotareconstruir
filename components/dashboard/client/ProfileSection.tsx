@@ -2,16 +2,15 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/components/ToastProvider";
-import { auth, db } from "../../../lib/firebase";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "../../../lib/supabase";
+import { useAuth } from "../../../lib/useAuth";
 import { formatCepBr, formatCnpjBr, formatCpfBr, formatPhoneBr, isValidCNPJ, isValidCPF } from "../../../lib/utils";
 
 export function ClientProfileSection() {
+    const { user, loading: authLoading } = useAuth();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [profileType, setProfileType] = useState<"cpf" | "cnpj">("cpf");
-    const [userUid, setUserUid] = useState<string | null>(null);
 
     const [person, setPerson] = useState({
         name: "",
@@ -69,37 +68,43 @@ export function ClientProfileSection() {
     };
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        const fetchProfile = async () => {
+            if (authLoading) return;
+
             if (user) {
-                setUserUid(user.uid);
                 try {
-                    const docRef = doc(db, "users", user.uid);
-                    const docSnap = await getDoc(docRef);
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        const detectedProfile = data.profileType || (data.cnpj ? "cnpj" : "cpf");
+                    const { data, error } = await supabase
+                        .from('users')
+                        .select('*')
+                        .eq('id', user.id)
+                        .single();
+
+                    if (error) throw error;
+
+                    if (data) {
+                        const detectedProfile = data.profile_type || (data.cnpj ? "cnpj" : "cpf");
                         setProfileType(detectedProfile);
                         setPerson({
-                            name: data.name || user.displayName || "",
-                            cpf: formatCpfBr(data.cpf || ""),
+                            name: data.nome || user.user_metadata?.full_name || "",
+                            cpf: formatCpfBr(data.cpf_cnpj || ""),
                             email: data.email || user.email || "",
-                            phone: formatPhoneBr(data.phone || ""),
-                            role: data.personRole || "",
+                            phone: formatPhoneBr(data.telefone || ""),
+                            role: data.person_role || "",
                         });
                         setCompany({
-                            companyName: data.companyName || "",
+                            companyName: data.company_name || "",
                             cnpj: formatCnpjBr(data.cnpj || ""),
-                            role: data.companyRole || "",
+                            role: data.company_role || "",
                             obras: data.obras || 0,
                             cep: formatCepBr(data.cep || ""),
                             endereco: data.endereco || data.address || "",
-                            numero: data.numero || data.addressNumber || "",
+                            numero: data.numero || data.address_number || "",
                             bairro: data.bairro || "",
                             cidade: data.cidade || "",
                             estado: data.estado || "",
-                            complemento: data.complemento || data.addressComplement || "",
+                            complemento: data.complemento || data.address_complement || "",
                         });
-                        setTeamMembers((data.teamMembers || []).map((m: any) => ({
+                        setTeamMembers((data.team_members || []).map((m: any) => ({
                             name: m.name || "",
                             email: m.email || "",
                             phone: formatPhoneBr(m.phone || ""),
@@ -111,10 +116,10 @@ export function ClientProfileSection() {
                 }
             }
             setLoading(false);
-        });
+        };
 
-        return () => unsubscribe();
-    }, []);
+        fetchProfile();
+    }, [user, authLoading]);
 
     const sortedMembers = useMemo(() => {
         const withIndex = teamMembers.map((member, originalIndex) => ({ member, originalIndex }));
@@ -129,7 +134,7 @@ export function ClientProfileSection() {
     }, [teamMembers, sortBy, sortDir]);
 
     const handleSave = async () => {
-        if (!userUid) return;
+        if (!user?.id) return;
 
         if (profileType === "cpf" && person.cpf && !isValidCPF(person.cpf)) {
             showToast("error", "CPF inválido. Por favor, verifique o número digitado.");
@@ -156,26 +161,31 @@ export function ClientProfileSection() {
 
         setSaving(true);
         try {
-            const docRef = doc(db, "users", userUid);
-            await updateDoc(docRef, {
-                profileType,
-                name: person.name,
-                cpf: person.cpf,
-                phone: person.phone,
-                personRole: person.role,
-                companyName: profileType === "cnpj" ? company.companyName : "",
-                cnpj: profileType === "cnpj" ? company.cnpj : "",
-                companyRole: profileType === "cnpj" ? company.role : "",
-                obras: profileType === "cnpj" ? company.obras : 0,
-                cep: profileType === "cnpj" ? company.cep : "",
-                endereco: profileType === "cnpj" ? company.endereco : "",
-                numero: profileType === "cnpj" ? company.numero : "",
-                bairro: profileType === "cnpj" ? company.bairro : "",
-                cidade: profileType === "cnpj" ? company.cidade : "",
-                estado: profileType === "cnpj" ? company.estado : "",
-                complemento: profileType === "cnpj" ? company.complemento : "",
-                teamMembers: profileType === "cnpj" ? teamMembers : [],
-            });
+            const { error } = await supabase
+                .from('users')
+                .update({
+                    profile_type: profileType,
+                    nome: person.name,
+                    cpf_cnpj: profileType === "cpf" ? person.cpf : (profileType === "cnpj" ? company.cnpj : ""),
+                    telefone: person.phone,
+                    person_role: person.role,
+                    company_name: profileType === "cnpj" ? company.companyName : "",
+                    cnpj: profileType === "cnpj" ? company.cnpj : "",
+                    company_role: profileType === "cnpj" ? company.role : "",
+                    obras: profileType === "cnpj" ? company.obras : 0,
+                    cep: profileType === "cnpj" ? company.cep : "",
+                    endereco: profileType === "cnpj" ? company.endereco : "",
+                    numero: profileType === "cnpj" ? company.numero : "",
+                    bairro: profileType === "cnpj" ? company.bairro : "",
+                    cidade: profileType === "cnpj" ? company.cidade : "",
+                    estado: profileType === "cnpj" ? company.estado : "",
+                    complemento: profileType === "cnpj" ? company.complemento : "",
+                    team_members: profileType === "cnpj" ? teamMembers : [],
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', user.id);
+
+            if (error) throw error;
             showToast("success", "Perfil atualizado com sucesso!");
         } catch (error) {
             console.error("Erro ao salvar perfil:", error);
@@ -204,7 +214,6 @@ export function ClientProfileSection() {
                 cidade: data.city || "",
                 estado: data.state || "",
             }));
-            showToast("success", "Endereço preenchido pelo CEP.");
         } catch (error) {
             showToast("error", "Não foi possível buscar o CEP. Verifique o número ou tente novamente.");
         } finally {
@@ -420,30 +429,22 @@ export function ClientProfileSection() {
                                 </label>
                                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     CEP
-                                    <div className="mt-2 flex gap-2">
-                                        <input
-                                            value={company.cep || ""}
-                                            onChange={(e) => setCompany({ ...company, cep: formatCepBr(e.target.value) })}
-                                            onBlur={handleCepLookup}
-                                            className="flex-1 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
-                                            placeholder="00000-000"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={handleCepLookup}
-                                            disabled={loadingCep}
-                                            className="px-4 py-2 bg-blue-100 text-blue-700 rounded-2xl hover:bg-blue-200 disabled:opacity-50 transition-colors text-sm font-semibold"
-                                        >
-                                            {loadingCep ? "..." : "Buscar"}
-                                        </button>
-                                    </div>
-                                    <p className="mt-1 text-[11px] text-slate-500">Busca automática ao sair do campo.</p>
+                                    <input
+                                        value={company.cep || ""}
+                                        onChange={(e) => setCompany({ ...company, cep: formatCepBr(e.target.value) })}
+                                        onBlur={handleCepLookup}
+                                        disabled={loadingCep}
+                                        className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none disabled:bg-slate-100"
+                                        placeholder="00000-000"
+                                    />
+                                    <p className="mt-1 text-[11px] text-slate-500">{loadingCep ? "Buscando..." : "Busca automática ao sair do campo."}</p>
                                 </label>
                                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     Endereço (Logradouro)
                                     <input
                                         value={company.endereco || ""}
                                         onChange={(e) => setCompany({ ...company, endereco: e.target.value })}
+                                        readOnly
                                         className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
                                         placeholder="Rua, Avenida, etc"
                                     />
@@ -473,6 +474,7 @@ export function ClientProfileSection() {
                                     <input
                                         value={company.bairro || ""}
                                         onChange={(e) => setCompany({ ...company, bairro: e.target.value })}
+                                        readOnly
                                         className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
                                         placeholder="Bairro"
                                     />
@@ -483,6 +485,7 @@ export function ClientProfileSection() {
                                         <input
                                             value={company.cidade || ""}
                                             onChange={(e) => setCompany({ ...company, cidade: e.target.value })}
+                                            readOnly
                                             className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
                                             placeholder="Cidade"
                                         />
@@ -492,6 +495,7 @@ export function ClientProfileSection() {
                                         <input
                                             value={company.estado || ""}
                                             onChange={(e) => setCompany({ ...company, estado: e.target.value })}
+                                            readOnly
                                             className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
                                             placeholder="UF"
                                             maxLength={2}

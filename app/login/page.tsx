@@ -2,9 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { auth, googleProvider, db } from "../../lib/firebase";
-import { signInWithPopup, signInWithEmailAndPassword } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { supabase } from "@/lib/supabaseAuth";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -13,55 +11,55 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const getFriendlyErrorMessage = (errorCode: string) => {
-        switch (errorCode) {
-            case "auth/invalid-credential":
-                return "Email ou senha incorretos.";
-            case "auth/user-not-found":
-                return "Usuário não encontrado.";
-            case "auth/wrong-password":
-                return "Senha incorreta.";
-            case "auth/invalid-email":
-                return "Email inválido.";
-            case "auth/user-disabled":
-                return "Esta conta foi desativada.";
-            case "auth/too-many-requests":
-                return "Muitas tentativas falhas. Tente novamente mais tarde.";
-            case "auth/email-already-in-use":
-                return "Este email já está em uso.";
-            case "auth/popup-closed-by-user":
-                return "Login cancelado pelo usuário.";
-            case "auth/network-request-failed":
-                return "Erro de conexão. Verifique sua internet.";
-            default:
-                return "Ocorreu um erro ao fazer login. Tente novamente.";
+    const getFriendlyErrorMessage = (errorMessage: string) => {
+        if (errorMessage.includes("Invalid login credentials")) {
+            return "Email ou senha incorretos.";
         }
+        if (errorMessage.includes("Email not confirmed")) {
+            return "Por favor, confirme seu email antes de fazer login.";
+        }
+        if (errorMessage.includes("User not found")) {
+            return "Usuário não encontrado.";
+        }
+        if (errorMessage.includes("Invalid email")) {
+            return "Email inválido.";
+        }
+        if (errorMessage.includes("disabled")) {
+            return "Esta conta foi desativada.";
+        }
+        if (errorMessage.includes("rate limit") || errorMessage.includes("too many")) {
+            return "Muitas tentativas falhas. Tente novamente mais tarde.";
+        }
+        return "Ocorreu um erro ao fazer login. Tente novamente.";
     };
 
     async function handleUserAuth(user: any) {
-        const userRef = doc(db, "users", user.uid);
-        const userSnap = await getDoc(userRef);
+        // Buscar perfil do usuário
+        const { data: profile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', user.id)
+            .single();
 
         let userRoles: string[] = ["cliente"];
         let primaryRole = "cliente";
 
-        if (userSnap.exists()) {
-            const userData = userSnap.data();
+        if (profile) {
             // Support both legacy 'role' and new 'roles' array
-            if (userData.roles && Array.isArray(userData.roles) && userData.roles.length > 0) {
-                userRoles = userData.roles;
-            } else if (userData.role) {
-                userRoles = [userData.role];
+            if (profile.roles && Array.isArray(profile.roles) && profile.roles.length > 0) {
+                userRoles = profile.roles;
+            } else if (profile.role) {
+                userRoles = [profile.role];
             }
         } else {
-            // Create new user document if it doesn't exist
-            await setDoc(userRef, {
+            // Create new user profile if it doesn't exist
+            await supabase.from('users').insert({
+                id: user.id,
                 email: user.email,
                 roles: ["cliente"],
-                role: "cliente", // Legacy support
-                name: user.displayName || "",
-                photoURL: user.photoURL || "",
-                createdAt: new Date().toISOString(),
+                nome: user.user_metadata?.full_name || user.user_metadata?.name || "",
+                avatar_url: user.user_metadata?.avatar_url || "",
+                created_at: new Date().toISOString(),
             });
         }
 
@@ -74,16 +72,21 @@ export default function LoginPage() {
             primaryRole = "cliente";
         }
 
-        const token = await user.getIdToken();
+        // Get session token
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || "";
 
         // Save to localStorage for persistence
         localStorage.setItem("token", token);
-        localStorage.setItem("role", primaryRole); // Current active role
-        localStorage.setItem("uid", user.uid);
+        localStorage.setItem("role", primaryRole);
+        localStorage.setItem("uid", user.id);
 
-        // Set cookies for Middleware
-        document.cookie = `token=${token}; path=/; max-age=86400; SameSite=Strict`;
-        document.cookie = `role=${primaryRole}; path=/; max-age=86400; SameSite=Strict`;
+        // Set cookies for Middleware with security flags
+        const isProduction = window.location.protocol === 'https:';
+        const secureFlag = isProduction ? '; Secure' : '';
+
+        document.cookie = `token=${token}; path=/; max-age=86400; SameSite=Strict${secureFlag}`;
+        document.cookie = `role=${primaryRole}; path=/; max-age=86400; SameSite=Strict${secureFlag}`;
 
         // Redirect based on priority role
         if (primaryRole === "admin") router.push("/dashboard/admin");
@@ -95,11 +98,17 @@ export default function LoginPage() {
         setLoading(true);
         setError(null);
         try {
-            const result = await signInWithPopup(auth, googleProvider);
-            await handleUserAuth(result.user);
+            const { data, error } = await supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: `${window.location.origin}/auth/callback`
+                }
+            });
+            if (error) throw error;
+            // OAuth redirects, so this code won't run immediately
         } catch (err: any) {
             console.error(err);
-            setError(getFriendlyErrorMessage(err.code));
+            setError(getFriendlyErrorMessage(err.message));
             setLoading(false);
         }
     }
@@ -110,11 +119,19 @@ export default function LoginPage() {
         setError(null);
 
         try {
-            const result = await signInWithEmailAndPassword(auth, email, password);
-            await handleUserAuth(result.user);
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
+
+            if (error) throw error;
+
+            if (data.user) {
+                await handleUserAuth(data.user);
+            }
         } catch (err: any) {
             console.error(err);
-            setError(getFriendlyErrorMessage(err.code));
+            setError(getFriendlyErrorMessage(err.message));
             setLoading(false);
         }
     }
@@ -138,7 +155,15 @@ export default function LoginPage() {
                     </div>
 
                     <div>
-                        <label className="mb-2 block text-sm font-medium text-slate-200">Senha</label>
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="block text-sm font-medium text-slate-200">Senha</label>
+                            <a
+                                href="/forgot-password"
+                                className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                            >
+                                Esqueci minha senha
+                            </a>
+                        </div>
                         <input
                             type="password"
                             required

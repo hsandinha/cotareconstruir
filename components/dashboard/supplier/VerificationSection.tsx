@@ -2,21 +2,22 @@
 
 import { useState } from "react";
 import { submitDocument } from "../../../lib/services";
-import { auth } from "../../../lib/firebase";
+import { useAuth } from "../../../lib/useAuth";
 
 export function SupplierVerificationSection() {
+    const { user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [docType, setDocType] = useState("cnpj");
     const [fileUrl, setFileUrl] = useState(""); // In a real app, this would be a file upload returning a URL
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!auth.currentUser) return;
+        if (!user) return;
 
         setLoading(true);
         try {
             // Mock file upload by just taking the string input as URL for now
-            await submitDocument(auth.currentUser.uid, docType, fileUrl);
+            await submitDocument(user.id, docType, fileUrl);
             alert("Documento enviado para análise!");
             setFileUrl("");
         } catch (error) {

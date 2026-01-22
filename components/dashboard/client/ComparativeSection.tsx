@@ -4,15 +4,13 @@ import { useState, useEffect } from "react";
 import { ArrowDownOnSquareIcon, ChatBubbleLeftRightIcon, StarIcon } from "@heroicons/react/24/outline";
 import { ChatInterface } from "../../ChatInterface";
 import { ReviewModal } from "../../ReviewModal";
-import { auth, db } from "../../../lib/firebase";
-import { doc, collection, onSnapshot, query, orderBy, writeBatch, serverTimestamp, where, getDocs, getDoc } from "firebase/firestore";
+import { supabase } from "../../../lib/supabase";
+import { sendEmail } from "../../../app/actions/email";
 
 interface ClientComparativeSectionProps {
     orderId?: string;
     status?: string;
 }
-
-import { sendEmail } from "../../../app/actions/email";
 
 export function ClientComparativeSection({ orderId, status }: ClientComparativeSectionProps) {
     const [quotation, setQuotation] = useState<any>(null);
@@ -42,43 +40,311 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
         setLoading(true);
 
-        // 1. Listen to Quotation
-        const unsubQuotation = onSnapshot(doc(db, "quotations", orderId), (doc) => {
-            if (doc.exists()) {
-                setQuotation({ id: doc.id, ...doc.data() });
+        // Fetch initial data
+        const fetchData = async () => {
+            try {
+                // 1. Fetch Quotation
+                const { data: quotationData, error: quotationError } = await supabase
+                    .from('cotacoes')
+                    .select(`
+                        *,
+                        cotacao_itens (*)
+                    `)
+                    .eq('id', orderId)
+                    .single();
+
+                if (quotationError) throw quotationError;
+
+                if (quotationData) {
+                    // Map to expected format
+                    setQuotation({
+                        id: quotationData.id,
+                        status: quotationData.status,
+                        clientCode: quotationData.codigo_cliente,
+                        location: quotationData.localizacao,
+                        items: quotationData.cotacao_itens?.map((item: any) => ({
+                            id: item.id,
+                            descricao: item.descricao,
+                            quantidade: item.quantidade,
+                            unidade: item.unidade,
+                            observacao: item.observacao
+                        })) || []
+                    });
+                }
+
+                // 2. Fetch Proposals
+                const { data: proposalsData, error: proposalsError } = await supabase
+                    .from('propostas')
+                    .select(`
+                        *,
+                        proposta_itens (*),
+                        fornecedor:users!propostas_fornecedor_id_fkey (
+                            id,
+                            nome,
+                            empresa,
+                            email
+                        )
+                    `)
+                    .eq('cotacao_id', orderId)
+                    .order('valor_total', { ascending: true });
+
+                if (proposalsError) throw proposalsError;
+
+                const mappedProposals = proposalsData?.map((p: any) => ({
+                    id: p.id,
+                    supplierId: p.fornecedor_id,
+                    supplierName: p.fornecedor?.empresa || p.fornecedor?.nome || 'Fornecedor',
+                    totalValue: p.valor_total || 0,
+                    freightPrice: p.valor_frete || 0,
+                    validity: p.validade,
+                    paymentMethod: p.condicoes_pagamento,
+                    items: p.proposta_itens?.map((item: any) => ({
+                        itemId: item.cotacao_item_id,
+                        price: item.preco_unitario,
+                        quantity: item.quantidade
+                    })) || []
+                })) || [];
+
+                setProposals(mappedProposals);
+
+                // 3. Fetch Orders if finished
+                if (status === "finished") {
+                    const { data: ordersData, error: ordersError } = await supabase
+                        .from('pedidos')
+                        .select(`
+                            *,
+                            pedido_itens (*),
+                            fornecedor:users!pedidos_fornecedor_id_fkey (
+                                id,
+                                nome,
+                                empresa,
+                                email,
+                                telefone,
+                                endereco,
+                                cnpj
+                            )
+                        `)
+                        .eq('cotacao_id', orderId);
+
+                    if (ordersError) throw ordersError;
+
+                    const mappedOrders = ordersData?.map((order: any) => ({
+                        id: order.id,
+                        supplierId: order.fornecedor_id,
+                        supplierName: order.fornecedor?.empresa || order.fornecedor?.nome || 'Fornecedor',
+                        supplierDetails: {
+                            name: order.fornecedor?.empresa || order.fornecedor?.nome,
+                            document: order.fornecedor?.cnpj,
+                            email: order.fornecedor?.email,
+                            phone: order.fornecedor?.telefone,
+                            address: order.fornecedor?.endereco
+                        },
+                        items: order.pedido_itens?.map((item: any) => ({
+                            id: item.id,
+                            name: item.descricao,
+                            descricao: item.descricao,
+                            quantity: item.quantidade,
+                            quantidade: item.quantidade,
+                            unitPrice: item.preco_unitario,
+                            total: item.subtotal
+                        })) || [],
+                        freight: order.valor_frete || 0,
+                        subtotal: order.valor_subtotal || 0,
+                        total: order.valor_total || 0,
+                        status: order.status
+                    })) || [];
+
+                    setOrders(mappedOrders);
+                }
+
+                setLoading(false);
+            } catch (error) {
+                console.error("Error fetching data:", error);
+                setLoading(false);
             }
-        });
+        };
 
-        // 2. Listen to Proposals
-        const qProposals = query(collection(db, "quotations", orderId, "proposals"), orderBy("totalValue", "asc"));
-        const unsubProposals = onSnapshot(qProposals, (snapshot) => {
-            const props = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            setProposals(props);
-            setLoading(false);
-        });
+        fetchData();
 
-        // 3. Listen to Orders (if finished)
-        let unsubOrders = () => { };
+        // Set up realtime subscriptions
+        const quotationChannel = supabase
+            .channel(`quotation-${orderId}`)
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'cotacoes', filter: `id=eq.${orderId}` },
+                async () => {
+                    // Refetch quotation on changes
+                    const { data } = await supabase
+                        .from('cotacoes')
+                        .select('*, cotacao_itens (*)')
+                        .eq('id', orderId)
+                        .single();
+
+                    if (data) {
+                        setQuotation({
+                            id: data.id,
+                            status: data.status,
+                            clientCode: data.codigo_cliente,
+                            location: data.localizacao,
+                            items: data.cotacao_itens?.map((item: any) => ({
+                                id: item.id,
+                                descricao: item.descricao,
+                                quantidade: item.quantidade,
+                                unidade: item.unidade,
+                                observacao: item.observacao
+                            })) || []
+                        });
+                    }
+                }
+            )
+            .subscribe();
+
+        const proposalsChannel = supabase
+            .channel(`proposals-${orderId}`)
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'propostas', filter: `cotacao_id=eq.${orderId}` },
+                async () => {
+                    // Refetch proposals on changes
+                    const { data } = await supabase
+                        .from('propostas')
+                        .select(`
+                            *,
+                            proposta_itens (*),
+                            fornecedor:users!propostas_fornecedor_id_fkey (id, nome, empresa, email)
+                        `)
+                        .eq('cotacao_id', orderId)
+                        .order('valor_total', { ascending: true });
+
+                    if (data) {
+                        const mappedProposals = data.map((p: any) => ({
+                            id: p.id,
+                            supplierId: p.fornecedor_id,
+                            supplierName: p.fornecedor?.empresa || p.fornecedor?.nome || 'Fornecedor',
+                            totalValue: p.valor_total || 0,
+                            freightPrice: p.valor_frete || 0,
+                            validity: p.validade,
+                            paymentMethod: p.condicoes_pagamento,
+                            items: p.proposta_itens?.map((item: any) => ({
+                                itemId: item.cotacao_item_id,
+                                price: item.preco_unitario,
+                                quantity: item.quantidade
+                            })) || []
+                        }));
+                        setProposals(mappedProposals);
+                    }
+                }
+            )
+            .subscribe();
+
+        let ordersChannel: ReturnType<typeof supabase.channel> | null = null;
         if (status === "finished") {
-            const qOrders = query(collection(db, "orders"), where("quotationId", "==", orderId));
-            unsubOrders = onSnapshot(qOrders, (snapshot) => {
-                setOrders(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-            });
+            ordersChannel = supabase
+                .channel(`orders-${orderId}`)
+                .on('postgres_changes',
+                    { event: '*', schema: 'public', table: 'pedidos', filter: `cotacao_id=eq.${orderId}` },
+                    async () => {
+                        const { data } = await supabase
+                            .from('pedidos')
+                            .select(`
+                                *,
+                                pedido_itens (*),
+                                fornecedor:users!pedidos_fornecedor_id_fkey (id, nome, empresa, email, telefone, endereco, cnpj)
+                            `)
+                            .eq('cotacao_id', orderId);
+
+                        if (data) {
+                            const mappedOrders = data.map((order: any) => ({
+                                id: order.id,
+                                supplierId: order.fornecedor_id,
+                                supplierName: order.fornecedor?.empresa || order.fornecedor?.nome || 'Fornecedor',
+                                supplierDetails: {
+                                    name: order.fornecedor?.empresa || order.fornecedor?.nome,
+                                    document: order.fornecedor?.cnpj,
+                                    email: order.fornecedor?.email,
+                                    phone: order.fornecedor?.telefone,
+                                    address: order.fornecedor?.endereco
+                                },
+                                items: order.pedido_itens?.map((item: any) => ({
+                                    id: item.id,
+                                    name: item.descricao,
+                                    descricao: item.descricao,
+                                    quantity: item.quantidade,
+                                    quantidade: item.quantidade,
+                                    unitPrice: item.preco_unitario,
+                                    total: item.subtotal
+                                })) || [],
+                                freight: order.valor_frete || 0,
+                                subtotal: order.valor_subtotal || 0,
+                                total: order.valor_total || 0,
+                                status: order.status
+                            }));
+                            setOrders(mappedOrders);
+                        }
+                    }
+                )
+                .subscribe();
         }
 
         return () => {
-            unsubQuotation();
-            unsubProposals();
-            unsubOrders();
+            quotationChannel.unsubscribe();
+            proposalsChannel.unsubscribe();
+            if (ordersChannel) {
+                ordersChannel.unsubscribe();
+            }
         };
     }, [orderId, status]);
 
     useEffect(() => {
         if (quotation?.status === 'finished' && orderId) {
             const fetchOrders = async () => {
-                const q = query(collection(db, "orders"), where("quotationId", "==", orderId));
-                const snapshot = await getDocs(q);
-                setOrders(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+                const { data, error } = await supabase
+                    .from('pedidos')
+                    .select(`
+                        *,
+                        pedido_itens (*),
+                        fornecedor:users!pedidos_fornecedor_id_fkey (
+                            id,
+                            nome,
+                            empresa,
+                            email,
+                            telefone,
+                            endereco,
+                            cnpj
+                        )
+                    `)
+                    .eq('cotacao_id', orderId);
+
+                if (error) {
+                    console.error("Error fetching orders:", error);
+                    return;
+                }
+
+                const mappedOrders = data?.map((order: any) => ({
+                    id: order.id,
+                    supplierId: order.fornecedor_id,
+                    supplierName: order.fornecedor?.empresa || order.fornecedor?.nome || 'Fornecedor',
+                    supplierDetails: {
+                        name: order.fornecedor?.empresa || order.fornecedor?.nome,
+                        document: order.fornecedor?.cnpj,
+                        email: order.fornecedor?.email,
+                        phone: order.fornecedor?.telefone,
+                        address: order.fornecedor?.endereco
+                    },
+                    items: order.pedido_itens?.map((item: any) => ({
+                        id: item.id,
+                        name: item.descricao,
+                        descricao: item.descricao,
+                        quantity: item.quantidade,
+                        quantidade: item.quantidade,
+                        unitPrice: item.preco_unitario,
+                        total: item.subtotal
+                    })) || [],
+                    freight: order.valor_frete || 0,
+                    subtotal: order.valor_subtotal || 0,
+                    total: order.valor_total || 0,
+                    status: order.status
+                })) || [];
+
+                setOrders(mappedOrders);
             };
             fetchOrders();
         }
@@ -263,7 +529,12 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         if (!quotation || !orderId) return;
 
         try {
-            const batch = writeBatch(db);
+            // Get current user
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                alert("Usuário não autenticado.");
+                return;
+            }
 
             // Group items by supplier
             const itemsBySupplier: { [key: string]: any[] } = {};
@@ -292,78 +563,118 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
             });
 
             // Fetch client details
-            const clientDoc = await getDoc(doc(db, "users", auth.currentUser!.uid));
-            const clientData = clientDoc.data();
+            const { data: clientData, error: clientError } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', user.id)
+                .single();
+
+            if (clientError) throw clientError;
+
             const clientDetails = {
-                name: clientData?.name || clientData?.companyName || "Cliente",
+                name: clientData?.nome || clientData?.empresa || "Cliente",
                 document: clientData?.cnpj || clientData?.cpf || "",
                 email: clientData?.email || "",
-                phone: clientData?.phone || "",
-                address: clientData?.address || ""
+                phone: clientData?.telefone || "",
+                address: clientData?.endereco || ""
             };
 
-            // Create orders and update proposals
-            await Promise.all(Object.entries(itemsBySupplier).map(async ([supplierId, items]) => {
+            // Create orders and update proposals for each supplier
+            for (const [supplierId, items] of Object.entries(itemsBySupplier)) {
                 const proposal = proposals.find(p => p.supplierId === supplierId);
 
                 // Fetch supplier details
-                const supplierDoc = await getDoc(doc(db, "users", supplierId));
-                const supplierData = supplierDoc.data();
+                const { data: supplierData, error: supplierError } = await supabase
+                    .from('users')
+                    .select('*')
+                    .eq('id', supplierId)
+                    .single();
+
+                if (supplierError) {
+                    console.error("Error fetching supplier:", supplierError);
+                    continue;
+                }
+
                 const supplierDetails = {
-                    name: supplierData?.companyName || supplierData?.name || "Fornecedor",
+                    name: supplierData?.empresa || supplierData?.nome || "Fornecedor",
                     document: supplierData?.cnpj || "",
                     email: supplierData?.email || "",
-                    phone: supplierData?.phone || supplierData?.whatsapp || "",
-                    address: supplierData?.address || ""
+                    phone: supplierData?.telefone || supplierData?.whatsapp || "",
+                    address: supplierData?.endereco || ""
                 };
 
                 const supplierTotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
                 const freight = proposal?.freightPrice || 0;
                 const finalTotal = supplierTotal + freight;
 
-                const orderRef = doc(collection(db, "orders"));
-                batch.set(orderRef, {
-                    quotationId: orderId,
-                    clientId: auth.currentUser?.uid,
-                    clientCode: quotation.clientCode || "Cliente",
-                    clientDetails: clientDetails,
-                    supplierDetails: supplierDetails,
-                    location: quotation.location || {},
-                    supplierId: supplierId,
-                    supplierName: proposal?.supplierName || "Fornecedor",
-                    items: items,
-                    subtotal: supplierTotal,
-                    freight: freight,
-                    total: finalTotal,
-                    status: "pending",
-                    createdAt: serverTimestamp(),
-                    updatedAt: serverTimestamp()
-                });
+                // Create order
+                const { data: orderData, error: orderError } = await supabase
+                    .from('pedidos')
+                    .insert({
+                        cotacao_id: orderId,
+                        proposta_id: proposal?.id,
+                        user_id: user.id,
+                        fornecedor_id: supplierId,
+                        obra_id: quotation.obra_id,
+                        valor_subtotal: supplierTotal,
+                        valor_frete: freight,
+                        valor_total: finalTotal,
+                        status: 'pending',
+                        dados_cliente: clientDetails,
+                        dados_fornecedor: supplierDetails,
+                        localizacao: quotation.location || {}
+                    })
+                    .select()
+                    .single();
 
+                if (orderError) {
+                    console.error("Error creating order:", orderError);
+                    continue;
+                }
+
+                // Create order items
+                const orderItems = items.map((item: any) => ({
+                    pedido_id: orderData.id,
+                    cotacao_item_id: item.id,
+                    descricao: item.name,
+                    quantidade: item.quantity,
+                    unidade: item.unit,
+                    preco_unitario: item.unitPrice,
+                    subtotal: item.total,
+                    observacao: item.observation
+                }));
+
+                const { error: itemsError } = await supabase
+                    .from('pedido_itens')
+                    .insert(orderItems);
+
+                if (itemsError) {
+                    console.error("Error creating order items:", itemsError);
+                }
+
+                // Update proposal status
                 if (proposal?.id) {
-                    const proposalRef = doc(db, "quotations", orderId, "proposals", proposal.id);
-                    batch.update(proposalRef, { status: "accepted" });
-
-                    const rootProposalRef = doc(db, "proposals", proposal.id);
-                    batch.update(rootProposalRef, { status: "accepted" });
+                    await supabase
+                        .from('propostas')
+                        .update({ status: 'accepted' })
+                        .eq('id', proposal.id);
                 }
 
                 // Create notification for the supplier
-                const notificationRef = doc(collection(db, "notifications"));
-                batch.set(notificationRef, {
-                    userId: supplierId,
-                    title: "Novo Pedido Recebido!",
-                    message: `Você recebeu um novo pedido de compra.`,
-                    type: "success",
-                    read: false,
-                    createdAt: serverTimestamp(),
-                    relatedId: orderRef.id,
-                    relatedType: "order"
-                });
+                await supabase
+                    .from('notifications')
+                    .insert({
+                        user_id: supplierId,
+                        titulo: "Novo Pedido Recebido!",
+                        mensagem: "Você recebeu um novo pedido de compra.",
+                        tipo: "success",
+                        lida: false,
+                        relacionado_id: orderData.id,
+                        relacionado_tipo: "order"
+                    });
 
                 // Send email notification
                 if (supplierDetails.email) {
-                    // Fire and forget or await - awaiting to ensure it's sent
                     await sendEmail({
                         to: supplierDetails.email,
                         subject: "Sua proposta foi aceita! - Cota Reconstruir",
@@ -375,12 +686,19 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         `
                     });
                 }
-            }));
+            }
 
-            const quotationRef = doc(db, "quotations", orderId);
-            batch.update(quotationRef, { status: "finished" });
+            // Update quotation status to finished
+            const { error: quotationError } = await supabase
+                .from('cotacoes')
+                .update({ status: 'finished' })
+                .eq('id', orderId);
 
-            await batch.commit();
+            if (quotationError) {
+                console.error("Error updating quotation:", quotationError);
+                throw quotationError;
+            }
+
             alert("Pedidos gerados com sucesso!");
             window.location.reload();
 

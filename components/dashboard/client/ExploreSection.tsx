@@ -2,10 +2,35 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { PlusIcon, MagnifyingGlassIcon, ShoppingCartIcon, WrenchScrewdriverIcon, ChevronRightIcon, ChevronDownIcon } from "@heroicons/react/24/outline";
-import { auth, db } from "../../../lib/firebase";
-import { collection, addDoc, query, where, onSnapshot, getDocs, orderBy, getDoc, doc } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
-import { Fase, Servico, GrupoInsumo, Material } from "../../../lib/constructionData";
+import { supabase } from "../../../lib/supabase";
+import { useAuth } from "../../../lib/useAuth";
+
+// Interfaces for Supabase data
+interface Fase {
+    id: string;
+    cronologia: number;
+    nome: string;
+}
+
+interface Servico {
+    id: string;
+    nome: string;
+    ordem?: number;
+    faseIds: string[];
+    gruposInsumoIds: string[];
+}
+
+interface GrupoInsumo {
+    id: string;
+    nome: string;
+}
+
+interface Material {
+    id: string;
+    nome: string;
+    unidade: string;
+    gruposInsumoIds: string[];
+}
 
 interface CartItem {
     id: string;
@@ -20,13 +45,13 @@ interface CartItem {
 }
 
 export function ClientExploreSection() {
+    const { user } = useAuth();
     const [currentView, setCurrentView] = useState<"search" | "analysis" | "success">("search");
     const [searchTerm, setSearchTerm] = useState("");
     const [cart, setCart] = useState<CartItem[]>([]);
     const [selectedWork, setSelectedWork] = useState("");
     const [showManualEntry, setShowManualEntry] = useState(false);
     const [works, setWorks] = useState<any[]>([]);
-    const [userUid, setUserUid] = useState<string | null>(null);
     const [selectedWorkData, setSelectedWorkData] = useState<any>(null);
     const [quotationMode, setQuotationMode] = useState<"search" | "tree">("search");
 
@@ -40,33 +65,41 @@ export function ClientExploreSection() {
     const [expandedGrupos, setExpandedGrupos] = useState<Set<string>>(new Set());
     const [availableGroups, setAvailableGroups] = useState<string[]>([]);
 
+    // Load user's works
     useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-            if (user) {
-                setUserUid(user.uid);
-                const q = query(collection(db, "works"), where("userId", "==", user.uid));
-                const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
-                    const worksData = snapshot.docs.map(doc => ({
-                        id: doc.id,
-                        ...doc.data()
-                    }));
-                    setWorks(worksData);
-                });
-                return () => unsubscribeSnapshot();
-            } else {
+        const loadWorks = async () => {
+            if (!user?.id) {
                 setWorks([]);
+                return;
             }
-        });
 
-        return () => unsubscribeAuth();
-    }, []);
+            const { data, error } = await supabase
+                .from("obras")
+                .select("*")
+                .eq("user_id", user.id);
+
+            if (error) {
+                console.error("Erro ao carregar obras:", error);
+                return;
+            }
+
+            setWorks(data || []);
+        };
+
+        loadWorks();
+    }, [user?.id]);
 
     // Carregar grupos de insumo disponíveis
     useEffect(() => {
         const loadGroups = async () => {
             try {
-                const snapshot = await getDocs(collection(db, "grupos_insumo"));
-                const groups = snapshot.docs.map(doc => doc.data().nome).sort();
+                const { data, error } = await supabase
+                    .from("grupos_insumo")
+                    .select("nome")
+                    .order("nome");
+
+                if (error) throw error;
+                const groups = (data || []).map(g => g.nome);
                 setAvailableGroups(groups);
             } catch (error) {
                 console.error("Erro ao carregar grupos:", error);
@@ -87,10 +120,14 @@ export function ClientExploreSection() {
         if (selectedWork) {
             const loadWorkData = async () => {
                 try {
-                    const workDoc = await getDoc(doc(db, "works", selectedWork));
-                    if (workDoc.exists()) {
-                        setSelectedWorkData({ id: workDoc.id, ...workDoc.data() });
-                    }
+                    const { data, error } = await supabase
+                        .from("obras")
+                        .select("*")
+                        .eq("id", selectedWork)
+                        .single();
+
+                    if (error) throw error;
+                    setSelectedWorkData(data);
                 } catch (error) {
                     console.error("Erro ao carregar dados da obra:", error);
                 }
@@ -103,17 +140,70 @@ export function ClientExploreSection() {
 
     const loadConstructionData = async () => {
         try {
-            const [fasesSnap, servicosSnap, gruposSnap, materiaisSnap] = await Promise.all([
-                getDocs(query(collection(db, "fases"), orderBy("cronologia", "asc"))),
-                getDocs(collection(db, "servicos")),
-                getDocs(collection(db, "grupos_insumo")),
-                getDocs(collection(db, "materiais"))
+            // Load all data in parallel
+            const [fasesResult, servicosResult, gruposResult, materiaisResult, servicoFaseResult, servicoGrupoResult, materialGrupoResult] = await Promise.all([
+                supabase.from("fases").select("*").order("cronologia", { ascending: true }),
+                supabase.from("servicos").select("*").order("ordem", { ascending: true }),
+                supabase.from("grupos_insumo").select("*"),
+                supabase.from("materiais").select("*"),
+                supabase.from("servico_fase").select("*"),
+                supabase.from("servico_grupo").select("*"),
+                supabase.from("material_grupo").select("*")
             ]);
 
-            setFases(fasesSnap.docs.map(d => ({ id: d.id, ...d.data() } as Fase)));
-            setServicos(servicosSnap.docs.map(d => ({ id: d.id, ...d.data() } as Servico)));
-            setGrupos(gruposSnap.docs.map(d => ({ id: d.id, ...d.data() } as GrupoInsumo)));
-            setMateriais(materiaisSnap.docs.map(d => ({ id: d.id, ...d.data() } as Material)));
+            if (fasesResult.error) throw fasesResult.error;
+            if (servicosResult.error) throw servicosResult.error;
+            if (gruposResult.error) throw gruposResult.error;
+            if (materiaisResult.error) throw materiaisResult.error;
+            if (servicoFaseResult.error) throw servicoFaseResult.error;
+            if (servicoGrupoResult.error) throw servicoGrupoResult.error;
+            if (materialGrupoResult.error) throw materialGrupoResult.error;
+
+            // Build lookup maps for relationships
+            const servicoFaseMap: Record<string, string[]> = {};
+            (servicoFaseResult.data || []).forEach(sf => {
+                if (!servicoFaseMap[sf.servico_id]) servicoFaseMap[sf.servico_id] = [];
+                servicoFaseMap[sf.servico_id].push(sf.fase_id);
+            });
+
+            const servicoGrupoMap: Record<string, string[]> = {};
+            (servicoGrupoResult.data || []).forEach(sg => {
+                if (!servicoGrupoMap[sg.servico_id]) servicoGrupoMap[sg.servico_id] = [];
+                servicoGrupoMap[sg.servico_id].push(sg.grupo_id);
+            });
+
+            const materialGrupoMap: Record<string, string[]> = {};
+            (materialGrupoResult.data || []).forEach(mg => {
+                if (!materialGrupoMap[mg.material_id]) materialGrupoMap[mg.material_id] = [];
+                materialGrupoMap[mg.material_id].push(mg.grupo_id);
+            });
+
+            // Transform data with relationships
+            setFases((fasesResult.data || []).map(f => ({
+                id: f.id,
+                cronologia: f.cronologia,
+                nome: f.nome
+            })));
+
+            setServicos((servicosResult.data || []).map(s => ({
+                id: s.id,
+                nome: s.nome,
+                ordem: s.ordem,
+                faseIds: servicoFaseMap[s.id] || [],
+                gruposInsumoIds: servicoGrupoMap[s.id] || []
+            })));
+
+            setGrupos((gruposResult.data || []).map(g => ({
+                id: g.id,
+                nome: g.nome
+            })));
+
+            setMateriais((materiaisResult.data || []).map(m => ({
+                id: m.id,
+                nome: m.nome,
+                unidade: m.unidade,
+                gruposInsumoIds: materialGrupoMap[m.id] || []
+            })));
         } catch (error) {
             console.error("Erro ao carregar dados da estrutura:", error);
         }
@@ -127,8 +217,8 @@ export function ClientExploreSection() {
         hoje.setHours(0, 0, 0, 0); // Zera as horas para comparar apenas a data
 
         // Verifica se é a fase atual da obra e se já está na data de recebimento
-        if (faseNome === selectedWorkData.etapa && selectedWorkData.inicioRecebimentoOferta) {
-            const inicioOferta = new Date(selectedWorkData.inicioRecebimentoOferta);
+        if (faseNome === selectedWorkData.etapa && selectedWorkData.inicio_recebimento_oferta) {
+            const inicioOferta = new Date(selectedWorkData.inicio_recebimento_oferta);
             inicioOferta.setHours(0, 0, 0, 0);
             if (hoje >= inicioOferta) {
                 return true;
@@ -331,21 +421,46 @@ export function ClientExploreSection() {
             alert("Adicione itens ao carrinho antes de enviar.");
             return;
         }
-        if (!userUid) {
+        if (!user?.id) {
             alert("Usuário não autenticado.");
             return;
         }
 
         try {
-            await addDoc(collection(db, "quotations"), {
-                userId: userUid,
-                workId: selectedWork,
-                items: cart,
-                status: "pending", // pending, approved, rejected, etc.
-                createdAt: new Date().toISOString(),
-                totalItems: cart.length,
-                estimatedSavings: "15-25%", // Placeholder logic
-            });
+            // Insert cotacao
+            const { data: cotacao, error: cotacaoError } = await supabase
+                .from("cotacoes")
+                .insert({
+                    user_id: user.id,
+                    obra_id: selectedWork,
+                    status: "pending",
+                    total_itens: cart.length,
+                    economia_estimada: "15-25%",
+                })
+                .select()
+                .single();
+
+            if (cotacaoError) throw cotacaoError;
+
+            // Insert cotacao_itens
+            const itens = cart.map(item => ({
+                cotacao_id: cotacao.id,
+                material_id: item.materialId || null,
+                nome: item.name,
+                quantidade: item.quantity,
+                unidade: item.unit,
+                grupo: item.group,
+                observacao: item.observation || null,
+                fase_nome: item.faseNome || null,
+                servico_nome: item.servicoNome || null,
+            }));
+
+            const { error: itensError } = await supabase
+                .from("cotacao_itens")
+                .insert(itens);
+
+            if (itensError) throw itensError;
+
             setCurrentView("success");
             setCart([]); // Clear cart after success
             setSelectedWork("");
@@ -379,7 +494,7 @@ export function ClientExploreSection() {
                             <option value="">Selecione...</option>
                             {works.map((work) => (
                                 <option key={work.id} value={work.id}>
-                                    {work.obra}
+                                    {work.nome}
                                 </option>
                             ))}
                         </select>
@@ -417,9 +532,9 @@ export function ClientExploreSection() {
                             {selectedWorkData && (
                                 <div className="mt-3 text-sm text-slate-600">
                                     <span className="font-medium">Fase Atual:</span> {selectedWorkData.etapa || "Não definida"}
-                                    {selectedWorkData.inicioRecebimentoOferta && (
+                                    {selectedWorkData.inicio_recebimento_oferta && (
                                         <span className="ml-4">
-                                            <span className="font-medium">Recebe ofertas desde:</span> {new Date(selectedWorkData.inicioRecebimentoOferta).toLocaleDateString()}
+                                            <span className="font-medium">Recebe ofertas desde:</span> {new Date(selectedWorkData.inicio_recebimento_oferta).toLocaleDateString()}
                                         </span>
                                     )}
                                 </div>
@@ -778,7 +893,7 @@ export function ClientExploreSection() {
                                         <div className="flex justify-between">
                                             <span>Obra</span>
                                             <span className="font-semibold truncate max-w-[150px]">
-                                                {selectedWork ? works.find(w => w.id === selectedWork)?.obra : "Não selecionada"}
+                                                {selectedWork ? works.find(w => w.id === selectedWork)?.nome : "Não selecionada"}
                                             </span>
                                         </div>
                                     </div>

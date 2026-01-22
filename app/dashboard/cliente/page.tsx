@@ -9,11 +9,9 @@ import { ClientOpportunitiesSection } from "../../../components/dashboard/client
 import { NotificationBell } from "../../../components/NotificationBell";
 import { ProfileSwitcher } from "../../../components/ProfileSwitcher";
 import PendingProfileModal from "../../../components/PendingProfileModal";
-import { auth, db } from "../../../lib/firebase";
-import { collection, query, where, getCountFromServer, doc, getDoc } from "firebase/firestore";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { useAuth } from "@/lib/useAuth";
+import { supabase } from "@/lib/supabaseAuth";
 import { useRouter } from "next/navigation";
-import { checkProfileLinkStatus } from "../../../lib/profileLinkService";
 
 export type TabId =
     | "perfil"
@@ -45,72 +43,52 @@ export default function ClienteDashboard() {
         orders: 0,
     });
 
+    const { user, profile, initialized, logout } = useAuth();
+
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                try {
-                    setUserId(user.uid);
-                    setUserEmail(user.email || "");
+        if (!initialized) return;
 
-                    // Fetch User Profile
-                    const userDocRef = doc(db, "users", user.uid);
-                    const userDoc = await getDoc(userDocRef);
-                    if (userDoc.exists()) {
-                        const userData = userDoc.data();
-                        const name = userData.companyName
-                            || userData.name
-                            || userData.nome
-                            || user.displayName
-                            || user.email
-                            || "Cliente";
-                        setUserName(name);
-                        setUserInitial(name.charAt(0).toUpperCase());
-                        setUserRoles(userData.roles || []);
+        if (!user) {
+            router.push('/login');
+            return;
+        }
 
-                        // Verificar se precisa completar cadastro de cliente
-                        const profileStatus = await checkProfileLinkStatus(user.uid);
-                        if (profileStatus.pendingClienteProfile) {
-                            setShowPendingProfileModal(true);
-                        }
+        const loadData = async () => {
+            try {
+                setUserId(user.id);
+                setUserEmail(user.email || "");
+
+                if (profile) {
+                    const name = profile.nome || user.email || "Cliente";
+                    setUserName(name);
+                    setUserInitial(name.charAt(0).toUpperCase());
+                    setUserRoles(profile.roles || []);
+
+                    // Verificar se tem cliente_id vinculado
+                    if (!profile.cliente_id && profile.roles?.includes('cliente')) {
+                        setShowPendingProfileModal(true);
                     }
-
-                    // Works Count
-                    const worksQuery = query(collection(db, "works"), where("userId", "==", user.uid));
-                    const worksSnapshot = await getCountFromServer(worksQuery);
-
-                    // Active Quotations Count (pending or received)
-                    const quotationsQuery = query(
-                        collection(db, "quotations"),
-                        where("userId", "==", user.uid),
-                        where("status", "in", ["pending", "received"])
-                    );
-                    const quotationsSnapshot = await getCountFromServer(quotationsQuery);
-
-                    // Finished Orders Count (finished)
-                    const ordersQuery = query(
-                        collection(db, "quotations"),
-                        where("userId", "==", user.uid),
-                        where("status", "==", "finished")
-                    );
-                    const ordersSnapshot = await getCountFromServer(ordersQuery);
-
-                    setStats({
-                        works: worksSnapshot.data().count,
-                        quotations: quotationsSnapshot.data().count,
-                        orders: ordersSnapshot.data().count,
-                    });
-                } catch (error) {
-                    console.error("Error fetching stats:", error);
                 }
-            } else {
-                setUserName("Cliente");
-                setUserInitial("C");
-                router.push("/login");
-            }
-        });
 
-        return () => unsubscribe();
-    }, []);
+                // Buscar estatísticas via Supabase
+                const [obrasResult, cotacoesResult, pedidosResult] = await Promise.all([
+                    supabase.from('obras').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
+                    supabase.from('cotacoes').select('*', { count: 'exact', head: true }).eq('user_id', user.id).in('status', ['rascunho', 'enviada', 'respondida']),
+                    supabase.from('pedidos').select('*', { count: 'exact', head: true }).eq('user_id', user.id)
+                ]);
+
+                setStats({
+                    works: obrasResult.count || 0,
+                    quotations: cotacoesResult.count || 0,
+                    orders: pedidosResult.count || 0,
+                });
+            } catch (error) {
+                console.error("Error fetching stats:", error);
+            }
+        };
+
+        loadData();
+    }, [user, profile, initialized, router]);
 
     function renderTabContent() {
         switch (tab) {

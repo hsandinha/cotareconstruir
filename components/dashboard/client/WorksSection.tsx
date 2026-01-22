@@ -3,9 +3,8 @@
 import { useState, useEffect, type FormEvent } from "react";
 import { PlusIcon, CalendarIcon, CheckCircleIcon, ClockIcon, TrashIcon, PencilIcon } from "@heroicons/react/24/outline";
 import { Work, WorkStage } from "../../../lib/clientDashboardMocks";
-import { auth, db } from "../../../lib/firebase";
-import { collection, addDoc, query, where, onSnapshot, doc, updateDoc, deleteDoc, arrayUnion, arrayRemove, getDocs, orderBy } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "@/lib/supabaseAuth";
+import { useAuth } from "@/lib/useAuth";
 import { formatCepBr } from "../../../lib/utils";
 
 type DaySchedule = {
@@ -19,9 +18,9 @@ type WeekSchedule = {
 };
 
 export function ClientWorksSection() {
+    const { user, initialized } = useAuth();
     const [works, setWorks] = useState<Work[]>([]);
     const [loading, setLoading] = useState(true);
-    const [userUid, setUserUid] = useState<string | null>(null);
     const [selectedWork, setSelectedWork] = useState<string | number | null>(null);
     const [showStageModal, setShowStageModal] = useState(false);
     const [isWorkFormVisible, setIsWorkFormVisible] = useState(false);
@@ -64,15 +63,20 @@ export function ClientWorksSection() {
     });
 
     useEffect(() => {
-        // Carregar fases do Firestore
+        // Carregar fases do Supabase
         const loadFases = async () => {
             try {
-                const qFases = query(collection(db, "fases"), orderBy("cronologia", "asc"));
-                const snapshot = await getDocs(qFases);
-                const fasesData = snapshot.docs.map(doc => ({
+                const { data, error } = await supabase
+                    .from('fases')
+                    .select('id, nome, cronologia')
+                    .order('cronologia', { ascending: true });
+
+                if (error) throw error;
+
+                const fasesData = (data || []).map(doc => ({
                     id: doc.id,
-                    nome: doc.data().nome,
-                    ordem: doc.data().cronologia || 0
+                    nome: doc.nome,
+                    ordem: doc.cronologia || 0
                 }));
                 setFases(fasesData);
             } catch (error) {
@@ -81,28 +85,71 @@ export function ClientWorksSection() {
         };
 
         loadFases();
+    }, []);
 
-        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-            if (user) {
-                setUserUid(user.uid);
-                const q = query(collection(db, "works"), where("userId", "==", user.uid));
-                const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
-                    const worksData = snapshot.docs.map(doc => ({
-                        id: doc.id, // Use Firestore ID
-                        ...doc.data()
+    // Carregar obras do usuário com realtime
+    useEffect(() => {
+        if (!initialized) return;
+
+        if (!user) {
+            setWorks([]);
+            setLoading(false);
+            return;
+        }
+
+        // Buscar obras inicialmente
+        const fetchWorks = async () => {
+            const { data, error } = await supabase
+                .from('works')
+                .select('*')
+                .eq('user_id', user.id);
+
+            if (error) {
+                console.error("Erro ao carregar obras:", error);
+                setWorks([]);
+            } else {
+                const worksData = (data || []).map(doc => ({
+                    id: doc.id,
+                    ...doc
+                })) as unknown as Work[];
+                setWorks(worksData);
+            }
+            setLoading(false);
+        };
+
+        fetchWorks();
+
+        // Configurar subscription realtime
+        const channel = supabase
+            .channel('works_changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'works',
+                    filter: `user_id=eq.${user.id}`
+                },
+                async () => {
+                    // Recarregar dados quando houver mudanças
+                    const { data } = await supabase
+                        .from('works')
+                        .select('*')
+                        .eq('user_id', user.id);
+
+                    const worksData = (data || []).map(doc => ({
+                        id: doc.id,
+                        ...doc
                     })) as unknown as Work[];
                     setWorks(worksData);
-                    setLoading(false);
-                });
-                return () => unsubscribeSnapshot();
-            } else {
-                setWorks([]);
-                setLoading(false);
-            }
-        });
+                }
+            )
+            .subscribe();
 
-        return () => unsubscribeAuth();
-    }, []);
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [user, initialized]);
 
     const dayNames: { [key: string]: string } = {
         monday: "Segunda",
@@ -150,7 +197,7 @@ export function ClientWorksSection() {
 
     async function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
-        if (!form.obra || !form.bairro || !userUid) return;
+        if (!form.obra || !form.bairro || !user) return;
 
         // Calcular data de início de recebimento de oferta
         let inicioRecebimentoOferta = "";
@@ -163,23 +210,31 @@ export function ClientWorksSection() {
         try {
             if (editingWorkId) {
                 // Atualizar obra existente
-                const workRef = doc(db, "works", String(editingWorkId));
-                await updateDoc(workRef, {
-                    ...form,
-                    inicioRecebimentoOferta,
-                    deliverySchedule,
-                    updatedAt: new Date().toISOString(),
-                });
+                const { error } = await supabase
+                    .from('works')
+                    .update({
+                        ...form,
+                        inicio_recebimento_oferta: inicioRecebimentoOferta,
+                        delivery_schedule: deliverySchedule,
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', String(editingWorkId));
+
+                if (error) throw error;
             } else {
                 // Criar nova obra
-                await addDoc(collection(db, "works"), {
-                    ...form,
-                    inicioRecebimentoOferta,
-                    userId: userUid,
-                    stages: [],
-                    deliverySchedule,
-                    createdAt: new Date().toISOString(),
-                });
+                const { error } = await supabase
+                    .from('works')
+                    .insert({
+                        ...form,
+                        inicio_recebimento_oferta: inicioRecebimentoOferta,
+                        user_id: user.id,
+                        stages: [],
+                        delivery_schedule: deliverySchedule,
+                        created_at: new Date().toISOString(),
+                    });
+
+                if (error) throw error;
             }
 
             setForm({
@@ -254,10 +309,24 @@ export function ClientWorksSection() {
         };
 
         try {
-            const workRef = doc(db, "works", String(selectedWork));
-            await updateDoc(workRef, {
-                stages: arrayUnion(newStage)
-            });
+            // Buscar obra atual para adicionar ao array de stages
+            const { data: workData, error: fetchError } = await supabase
+                .from('works')
+                .select('stages')
+                .eq('id', String(selectedWork))
+                .single();
+
+            if (fetchError) throw fetchError;
+
+            const currentStages = workData?.stages || [];
+            const updatedStages = [...currentStages, newStage];
+
+            const { error } = await supabase
+                .from('works')
+                .update({ stages: updatedStages })
+                .eq('id', String(selectedWork));
+
+            if (error) throw error;
 
             setStageForm({ stageId: "", predictedDate: "", endDate: "", quotationAdvanceDays: 15 });
             setShowStageModal(false);
@@ -282,10 +351,12 @@ export function ClientWorksSection() {
         );
 
         try {
-            const workRef = doc(db, "works", String(workId));
-            await updateDoc(workRef, {
-                stages: updatedStages
-            });
+            const { error } = await supabase
+                .from('works')
+                .update({ stages: updatedStages })
+                .eq('id', String(workId));
+
+            if (error) throw error;
         } catch (error) {
             console.error("Erro ao atualizar etapa:", error);
         }
@@ -294,7 +365,12 @@ export function ClientWorksSection() {
     async function handleDeleteWork(workId: string | number) {
         if (!confirm("Tem certeza que deseja excluir esta obra?")) return;
         try {
-            await deleteDoc(doc(db, "works", String(workId)));
+            const { error } = await supabase
+                .from('works')
+                .delete()
+                .eq('id', String(workId));
+
+            if (error) throw error;
         } catch (error) {
             console.error("Erro ao excluir obra:", error);
             alert("Erro ao excluir obra.");

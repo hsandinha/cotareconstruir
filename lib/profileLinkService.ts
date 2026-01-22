@@ -1,15 +1,4 @@
-import { db } from './firebase';
-import {
-    doc,
-    getDoc,
-    setDoc,
-    updateDoc,
-    collection,
-    query,
-    where,
-    getDocs,
-    serverTimestamp
-} from 'firebase/firestore';
+import { supabase } from './supabase';
 
 /**
  * Serviço para gerenciar vínculos entre usuários (users), clientes e fornecedores.
@@ -69,34 +58,44 @@ export async function checkProfileLinkStatus(userId: string): Promise<ProfileLin
 
     try {
         // Buscar dados do usuário
-        const userDoc = await getDoc(doc(db, 'users', userId));
-        if (!userDoc.exists()) return result;
+        const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', userId)
+            .single();
 
-        const userData = userDoc.data();
+        if (userError || !userData) return result;
+
         const roles = userData.roles || (userData.role ? [userData.role] : []);
 
         // Verificar se tem role de cliente
         if (roles.includes('cliente')) {
             // Verificar se já tem clienteId vinculado
-            if (userData.clienteId) {
-                const clienteDoc = await getDoc(doc(db, 'clientes', userData.clienteId));
-                result.hasClienteProfile = clienteDoc.exists();
-                result.clienteId = userData.clienteId;
+            if (userData.cliente_id) {
+                const { data: clienteData } = await supabase
+                    .from('clientes')
+                    .select('id')
+                    .eq('id', userData.cliente_id)
+                    .single();
+
+                result.hasClienteProfile = !!clienteData;
+                result.clienteId = userData.cliente_id;
             } else {
                 // Buscar por email na tabela clientes
-                const clienteQuery = query(
-                    collection(db, 'clientes'),
-                    where('email', '==', userData.email)
-                );
-                const clienteSnap = await getDocs(clienteQuery);
+                const { data: clienteData } = await supabase
+                    .from('clientes')
+                    .select('id')
+                    .eq('email', userData.email)
+                    .limit(1);
 
-                if (!clienteSnap.empty) {
+                if (clienteData && clienteData.length > 0) {
                     result.hasClienteProfile = true;
-                    result.clienteId = clienteSnap.docs[0].id;
+                    result.clienteId = clienteData[0].id;
                     // Atualizar o vínculo no usuário
-                    await updateDoc(doc(db, 'users', userId), {
-                        clienteId: clienteSnap.docs[0].id
-                    });
+                    await supabase
+                        .from('users')
+                        .update({ cliente_id: clienteData[0].id })
+                        .eq('id', userId);
                 } else {
                     result.pendingClienteProfile = true;
                 }
@@ -106,25 +105,31 @@ export async function checkProfileLinkStatus(userId: string): Promise<ProfileLin
         // Verificar se tem role de fornecedor
         if (roles.includes('fornecedor')) {
             // Verificar se já tem fornecedorId vinculado
-            if (userData.fornecedorId) {
-                const fornecedorDoc = await getDoc(doc(db, 'fornecedores', userData.fornecedorId));
-                result.hasFornecedorProfile = fornecedorDoc.exists();
-                result.fornecedorId = userData.fornecedorId;
+            if (userData.fornecedor_id) {
+                const { data: fornecedorData } = await supabase
+                    .from('fornecedores')
+                    .select('id')
+                    .eq('id', userData.fornecedor_id)
+                    .single();
+
+                result.hasFornecedorProfile = !!fornecedorData;
+                result.fornecedorId = userData.fornecedor_id;
             } else {
                 // Buscar por email na tabela fornecedores
-                const fornecedorQuery = query(
-                    collection(db, 'fornecedores'),
-                    where('email', '==', userData.email)
-                );
-                const fornecedorSnap = await getDocs(fornecedorQuery);
+                const { data: fornecedorData } = await supabase
+                    .from('fornecedores')
+                    .select('id')
+                    .eq('email', userData.email)
+                    .limit(1);
 
-                if (!fornecedorSnap.empty) {
+                if (fornecedorData && fornecedorData.length > 0) {
                     result.hasFornecedorProfile = true;
-                    result.fornecedorId = fornecedorSnap.docs[0].id;
+                    result.fornecedorId = fornecedorData[0].id;
                     // Atualizar o vínculo no usuário
-                    await updateDoc(doc(db, 'users', userId), {
-                        fornecedorId: fornecedorSnap.docs[0].id
-                    });
+                    await supabase
+                        .from('users')
+                        .update({ fornecedor_id: fornecedorData[0].id })
+                        .eq('id', userId);
                 } else {
                     result.pendingFornecedorProfile = true;
                 }
@@ -144,38 +149,47 @@ export async function checkProfileLinkStatus(userId: string): Promise<ProfileLin
 export async function ensureClienteLink(userId: string, userEmail: string, userName?: string): Promise<{ success: boolean; clienteId?: string; needsCompletion: boolean }> {
     try {
         // Verificar se já existe um cliente com esse email
-        const clienteQuery = query(
-            collection(db, 'clientes'),
-            where('email', '==', userEmail)
-        );
-        const clienteSnap = await getDocs(clienteQuery);
+        const { data: clienteData } = await supabase
+            .from('clientes')
+            .select('id')
+            .eq('email', userEmail)
+            .limit(1);
 
-        if (!clienteSnap.empty) {
+        if (clienteData && clienteData.length > 0) {
             // Vincular cliente existente ao usuário
-            const clienteId = clienteSnap.docs[0].id;
-            await updateDoc(doc(db, 'users', userId), {
-                clienteId,
-                pendingClienteProfile: false
-            });
+            const clienteId = clienteData[0].id;
+            await supabase
+                .from('users')
+                .update({
+                    cliente_id: clienteId,
+                    pending_cliente_profile: false
+                })
+                .eq('id', userId);
 
             // Atualizar o cliente com o userId
-            await updateDoc(doc(db, 'clientes', clienteId), {
-                userId,
-                hasUserAccount: true,
-                updatedAt: serverTimestamp()
-            });
+            await supabase
+                .from('clientes')
+                .update({
+                    user_id: userId,
+                    has_user_account: true,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', clienteId);
 
             return { success: true, clienteId, needsCompletion: false };
         }
 
         // Marcar como pendente de cadastro
-        await updateDoc(doc(db, 'users', userId), {
-            pendingClienteProfile: true,
-            clientePreData: {
-                nome: userName || '',
-                email: userEmail
-            }
-        });
+        await supabase
+            .from('users')
+            .update({
+                pending_cliente_profile: true,
+                cliente_pre_data: {
+                    nome: userName || '',
+                    email: userEmail
+                }
+            })
+            .eq('id', userId);
 
         return { success: true, needsCompletion: true };
     } catch (error) {
@@ -190,38 +204,47 @@ export async function ensureClienteLink(userId: string, userEmail: string, userN
 export async function ensureFornecedorLink(userId: string, userEmail: string, userName?: string): Promise<{ success: boolean; fornecedorId?: string; needsCompletion: boolean }> {
     try {
         // Verificar se já existe um fornecedor com esse email
-        const fornecedorQuery = query(
-            collection(db, 'fornecedores'),
-            where('email', '==', userEmail)
-        );
-        const fornecedorSnap = await getDocs(fornecedorQuery);
+        const { data: fornecedorData } = await supabase
+            .from('fornecedores')
+            .select('id')
+            .eq('email', userEmail)
+            .limit(1);
 
-        if (!fornecedorSnap.empty) {
+        if (fornecedorData && fornecedorData.length > 0) {
             // Vincular fornecedor existente ao usuário
-            const fornecedorId = fornecedorSnap.docs[0].id;
-            await updateDoc(doc(db, 'users', userId), {
-                fornecedorId,
-                pendingFornecedorProfile: false
-            });
+            const fornecedorId = fornecedorData[0].id;
+            await supabase
+                .from('users')
+                .update({
+                    fornecedor_id: fornecedorId,
+                    pending_fornecedor_profile: false
+                })
+                .eq('id', userId);
 
             // Atualizar o fornecedor com o userId
-            await updateDoc(doc(db, 'fornecedores', fornecedorId), {
-                userId,
-                hasUserAccount: true,
-                updatedAt: serverTimestamp()
-            });
+            await supabase
+                .from('fornecedores')
+                .update({
+                    user_id: userId,
+                    has_user_account: true,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', fornecedorId);
 
             return { success: true, fornecedorId, needsCompletion: false };
         }
 
         // Marcar como pendente de cadastro
-        await updateDoc(doc(db, 'users', userId), {
-            pendingFornecedorProfile: true,
-            fornecedorPreData: {
-                razaoSocial: userName || '',
-                email: userEmail
-            }
-        });
+        await supabase
+            .from('users')
+            .update({
+                pending_fornecedor_profile: true,
+                fornecedor_pre_data: {
+                    razao_social: userName || '',
+                    email: userEmail
+                }
+            })
+            .eq('id', userId);
 
         return { success: true, needsCompletion: true };
     } catch (error) {
@@ -235,19 +258,23 @@ export async function ensureFornecedorLink(userId: string, userEmail: string, us
  */
 export async function removeProfileLink(userId: string, profileType: 'cliente' | 'fornecedor'): Promise<{ success: boolean }> {
     try {
-        const updateData: any = {};
+        const updateData: Record<string, any> = {};
 
         if (profileType === 'cliente') {
-            updateData.clienteId = null;
-            updateData.pendingClienteProfile = false;
-            updateData.clientePreData = null;
+            updateData.cliente_id = null;
+            updateData.pending_cliente_profile = false;
+            updateData.cliente_pre_data = null;
         } else {
-            updateData.fornecedorId = null;
-            updateData.pendingFornecedorProfile = false;
-            updateData.fornecedorPreData = null;
+            updateData.fornecedor_id = null;
+            updateData.pending_fornecedor_profile = false;
+            updateData.fornecedor_pre_data = null;
         }
 
-        await updateDoc(doc(db, 'users', userId), updateData);
+        await supabase
+            .from('users')
+            .update(updateData)
+            .eq('id', userId);
+
         return { success: true };
     } catch (error) {
         console.error('Erro ao remover vínculo:', error);
@@ -256,7 +283,7 @@ export async function removeProfileLink(userId: string, profileType: 'cliente' |
 }
 
 /**
- * Remove campos undefined de um objeto (Firebase não aceita undefined)
+ * Remove campos undefined de um objeto (Supabase não aceita undefined)
  */
 function removeUndefined<T extends object>(obj: T): Partial<T> {
     return Object.fromEntries(
@@ -273,50 +300,66 @@ export async function completeClienteProfile(
 ): Promise<{ success: boolean; clienteId?: string; error?: string }> {
     try {
         // Verificar se email já está em uso
-        const existingQuery = query(
-            collection(db, 'clientes'),
-            where('email', '==', data.email)
-        );
-        const existingSnap = await getDocs(existingQuery);
+        const { data: existingClientes } = await supabase
+            .from('clientes')
+            .select('id')
+            .eq('email', data.email)
+            .limit(1);
 
-        if (!existingSnap.empty) {
+        if (existingClientes && existingClientes.length > 0) {
             // Vincular ao existente
-            const clienteId = existingSnap.docs[0].id;
-            await updateDoc(doc(db, 'users', userId), {
-                clienteId,
-                pendingClienteProfile: false,
-                clientePreData: null
-            });
-            await updateDoc(doc(db, 'clientes', clienteId), {
-                userId,
-                hasUserAccount: true,
-                updatedAt: serverTimestamp()
-            });
+            const clienteId = existingClientes[0].id;
+            await supabase
+                .from('users')
+                .update({
+                    cliente_id: clienteId,
+                    pending_cliente_profile: false,
+                    cliente_pre_data: null
+                })
+                .eq('id', userId);
+
+            await supabase
+                .from('clientes')
+                .update({
+                    user_id: userId,
+                    has_user_account: true,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', clienteId);
+
             return { success: true, clienteId };
         }
 
         // Criar novo cliente - remover campos undefined
-        const clienteRef = doc(collection(db, 'clientes'));
         const cleanData = removeUndefined(data);
         const clienteData = {
             ...cleanData,
-            userId,
-            hasUserAccount: true,
+            user_id: userId,
+            has_user_account: true,
             ativo: true,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
         };
 
-        await setDoc(clienteRef, clienteData);
+        const { data: newCliente, error: insertError } = await supabase
+            .from('clientes')
+            .insert(clienteData)
+            .select('id')
+            .single();
+
+        if (insertError) throw insertError;
 
         // Atualizar usuário com o vínculo
-        await updateDoc(doc(db, 'users', userId), {
-            clienteId: clienteRef.id,
-            pendingClienteProfile: false,
-            clientePreData: null
-        });
+        await supabase
+            .from('users')
+            .update({
+                cliente_id: newCliente.id,
+                pending_cliente_profile: false,
+                cliente_pre_data: null
+            })
+            .eq('id', userId);
 
-        return { success: true, clienteId: clienteRef.id };
+        return { success: true, clienteId: newCliente.id };
     } catch (error: any) {
         console.error('Erro ao completar cadastro de cliente:', error);
         return { success: false, error: error.message };
@@ -332,58 +375,78 @@ export async function completeFornecedorProfile(
 ): Promise<{ success: boolean; fornecedorId?: string; error?: string }> {
     try {
         // Verificar se email já está em uso
-        const existingQuery = query(
-            collection(db, 'fornecedores'),
-            where('email', '==', data.email)
-        );
-        const existingSnap = await getDocs(existingQuery);
+        const { data: existingFornecedores } = await supabase
+            .from('fornecedores')
+            .select('id')
+            .eq('email', data.email)
+            .limit(1);
 
-        if (!existingSnap.empty) {
+        if (existingFornecedores && existingFornecedores.length > 0) {
             // Vincular ao existente
-            const fornecedorId = existingSnap.docs[0].id;
-            await updateDoc(doc(db, 'users', userId), {
-                fornecedorId,
-                pendingFornecedorProfile: false,
-                fornecedorPreData: null
-            });
-            await updateDoc(doc(db, 'fornecedores', fornecedorId), {
-                userId,
-                hasUserAccount: true,
-                updatedAt: serverTimestamp()
-            });
+            const fornecedorId = existingFornecedores[0].id;
+            await supabase
+                .from('users')
+                .update({
+                    fornecedor_id: fornecedorId,
+                    pending_fornecedor_profile: false,
+                    fornecedor_pre_data: null
+                })
+                .eq('id', userId);
+
+            await supabase
+                .from('fornecedores')
+                .update({
+                    user_id: userId,
+                    has_user_account: true,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', fornecedorId);
+
             return { success: true, fornecedorId };
         }
 
         // Criar novo fornecedor - remover campos undefined
-        const fornecedorRef = doc(collection(db, 'fornecedores'));
         const cleanData = removeUndefined(data);
         const fornecedorData = {
             ...cleanData,
-            userId,
-            hasUserAccount: true,
+            razao_social: data.razaoSocial,
+            user_id: userId,
+            has_user_account: true,
             ativo: true,
             codigo: `F${Date.now()}`,
-            codigoGrupo: '',
-            grupoInsumos: '',
+            codigo_grupo: '',
+            grupo_insumos: '',
             contato: data.razaoSocial || '',
             fone: data.telefone || '',
-            inscricaoEstadual: '',
+            inscricao_estadual: '',
             numero: '',
-            cartaoCredito: false,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
+            cartao_credito: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
         };
 
-        await setDoc(fornecedorRef, fornecedorData);
+        // Remove razaoSocial pois já mapeamos para razao_social
+        delete (fornecedorData as any).razaoSocial;
+
+        const { data: newFornecedor, error: insertError } = await supabase
+            .from('fornecedores')
+            .insert(fornecedorData)
+            .select('id')
+            .single();
+
+        if (insertError) throw insertError;
 
         // Atualizar usuário com o vínculo
-        await updateDoc(doc(db, 'users', userId), {
-            fornecedorId: fornecedorRef.id,
-            pendingFornecedorProfile: false,
-            fornecedorPreData: null
-        });
+        await supabase
+            .from('users')
+            .update({
+                fornecedor_id: newFornecedor.id,
+                pending_fornecedor_profile: false,
+                fornecedor_pre_data: null
+            })
+            .eq('id', userId);
 
-        return { success: true, fornecedorId: fornecedorRef.id };
+        return { success: true, fornecedorId: newFornecedor.id };
     } catch (error: any) {
         console.error('Erro ao completar cadastro de fornecedor:', error);
         return { success: false, error: error.message };

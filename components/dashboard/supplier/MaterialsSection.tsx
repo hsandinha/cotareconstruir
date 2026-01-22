@@ -13,9 +13,8 @@ import {
     Squares2X2Icon
 } from "@heroicons/react/24/outline";
 import { CheckCircleIcon, ClockIcon } from "@heroicons/react/24/solid";
-import { auth, db } from "../../../lib/firebase";
-import { collection, doc, onSnapshot, getDocs, getDoc, setDoc, addDoc, serverTimestamp } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "@/lib/supabaseAuth";
+import { useAuth } from "@/lib/useAuth";
 
 // Interfaces
 interface MaterialBase {
@@ -41,10 +40,10 @@ interface GrupoInsumo {
 }
 
 export function SupplierMaterialsSection() {
+    const { user, profile, initialized } = useAuth();
     const [searchTerm, setSearchTerm] = useState("");
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
     const [loading, setLoading] = useState(true);
-    const [userUid, setUserUid] = useState<string | null>(null);
     const [fornecedorId, setFornecedorId] = useState<string | null>(null);
 
     // Dados base do sistema
@@ -73,51 +72,69 @@ export function SupplierMaterialsSection() {
 
     // Carregar dados do usuário e fornecedor
     useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+        const loadUserData = async () => {
+            if (!initialized) return;
+
             if (user) {
-                setUserUid(user.uid);
-
                 // Buscar fornecedor vinculado ao usuário
-                const userDoc = await getDoc(doc(db, "users", user.uid));
-                if (userDoc.exists()) {
-                    const userData = userDoc.data();
-                    if (userData.fornecedorId) {
-                        setFornecedorId(userData.fornecedorId);
+                const { data: userData, error: userError } = await supabase
+                    .from('users')
+                    .select('fornecedor_id')
+                    .eq('id', user.id)
+                    .single();
 
-                        // Buscar dados do fornecedor
-                        const fornecedorDoc = await getDoc(doc(db, "fornecedores", userData.fornecedorId));
-                        if (fornecedorDoc.exists()) {
-                            const fornecedorData = fornecedorDoc.data();
-                            setFornecedorGrupoIds(fornecedorData.grupoInsumoIds || []);
-                        }
+                if (userData?.fornecedor_id) {
+                    setFornecedorId(userData.fornecedor_id);
+
+                    // Buscar dados do fornecedor
+                    const { data: fornecedorData, error: fornecedorError } = await supabase
+                        .from('fornecedores')
+                        .select('grupo_insumo_ids')
+                        .eq('id', userData.fornecedor_id)
+                        .single();
+
+                    if (fornecedorData) {
+                        setFornecedorGrupoIds(fornecedorData.grupo_insumo_ids || []);
                     }
                 }
             }
             setLoading(false);
-        });
+        };
 
-        return () => unsubscribeAuth();
-    }, []);
+        loadUserData();
+    }, [user, initialized]);
 
     // Carregar materiais base e grupos
     useEffect(() => {
         const loadBaseData = async () => {
             try {
                 // Carregar grupos
-                const gruposSnap = await getDocs(collection(db, "grupos_insumo"));
-                const gruposData = gruposSnap.docs.map(doc => ({
-                    id: doc.id,
-                    nome: doc.data().nome
-                }));
-                setGrupos(gruposData.sort((a, b) => a.nome.localeCompare(b.nome)));
+                const { data: gruposData, error: gruposError } = await supabase
+                    .from('grupos_insumo')
+                    .select('id, nome')
+                    .order('nome', { ascending: true });
+
+                if (gruposData) {
+                    setGrupos(gruposData);
+                }
 
                 // Carregar materiais
-                const materiaisSnap = await getDocs(collection(db, "materiais"));
-                const materiaisData = materiaisSnap.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                })) as MaterialBase[];
-                setMateriaisBase(materiaisData.sort((a, b) => a.nome.localeCompare(b.nome)));
+                const { data: materiaisData, error: materiaisError } = await supabase
+                    .from('materiais')
+                    .select('id, nome, unidade, grupos_insumo_ids, descricao, fabricante')
+                    .order('nome', { ascending: true });
+
+                if (materiaisData) {
+                    const mappedMateriais = materiaisData.map(m => ({
+                        id: m.id,
+                        nome: m.nome,
+                        unidade: m.unidade,
+                        gruposInsumoIds: m.grupos_insumo_ids || [],
+                        descricao: m.descricao,
+                        fabricante: m.fabricante
+                    }));
+                    setMateriaisBase(mappedMateriais);
+                }
             } catch (error) {
                 console.error("Erro ao carregar dados base:", error);
             }
@@ -132,19 +149,35 @@ export function SupplierMaterialsSection() {
 
         const loadFornecedorMateriais = async () => {
             try {
-                const snapshot = await getDocs(collection(db, "fornecedores", fornecedorId, "materiais"));
+                const { data: materiaisData, error } = await supabase
+                    .from('fornecedor_materiais')
+                    .select('*')
+                    .eq('fornecedor_id', fornecedorId);
+
+                if (error) {
+                    console.error("Erro ao carregar materiais do fornecedor:", error);
+                    // Se der erro de permissão, apenas inicializa vazio
+                    if (error.code === 'PGRST301') {
+                        console.warn('Sem permissão para acessar materiais. Inicializando vazio.');
+                        setFornecedorMateriais(new Map());
+                    }
+                    return;
+                }
+
                 const materiaisMap = new Map<string, FornecedorMaterial>();
-                snapshot.forEach(doc => {
-                    materiaisMap.set(doc.id, doc.data() as FornecedorMaterial);
+                materiaisData?.forEach(item => {
+                    materiaisMap.set(item.material_id, {
+                        materialId: item.material_id,
+                        preco: item.preco,
+                        estoque: item.estoque,
+                        ativo: item.ativo,
+                        dataAtualizacao: item.data_atualizacao
+                    });
                 });
                 setFornecedorMateriais(materiaisMap);
             } catch (error: any) {
                 console.error("Erro ao carregar materiais do fornecedor:", error);
-                // Se der erro de permissão, apenas inicializa vazio
-                if (error.code === 'permission-denied') {
-                    console.warn('Sem permissão para acessar materiais. Inicializando vazio.');
-                    setFornecedorMateriais(new Map());
-                }
+                setFornecedorMateriais(new Map());
             }
         };
 
@@ -252,14 +285,31 @@ export function SupplierMaterialsSection() {
         if (!fornecedorId || !editingMaterial) return;
 
         try {
-            const materialRef = doc(db, "fornecedores", fornecedorId, "materiais", editingMaterial);
-            await setDoc(materialRef, {
-                materialId: editingMaterial,
-                preco: parseFloat(editPreco) || 0,
-                estoque: parseInt(editEstoque) || 0,
-                ativo: true,
-                dataAtualizacao: new Date().toISOString()
-            }, { merge: true });
+            const { error } = await supabase
+                .from('fornecedor_materiais')
+                .upsert({
+                    fornecedor_id: fornecedorId,
+                    material_id: editingMaterial,
+                    preco: parseFloat(editPreco) || 0,
+                    estoque: parseInt(editEstoque) || 0,
+                    ativo: true,
+                    data_atualizacao: new Date().toISOString()
+                }, { onConflict: 'fornecedor_id,material_id' });
+
+            if (error) throw error;
+
+            // Atualiza o mapa local
+            setFornecedorMateriais(prev => {
+                const newMap = new Map(prev);
+                newMap.set(editingMaterial, {
+                    materialId: editingMaterial,
+                    preco: parseFloat(editPreco) || 0,
+                    estoque: parseInt(editEstoque) || 0,
+                    ativo: true,
+                    dataAtualizacao: new Date().toISOString()
+                });
+                return newMap;
+            });
 
             cancelEditing();
         } catch (error) {
@@ -276,15 +326,19 @@ export function SupplierMaterialsSection() {
 
         setSendingRequest(true);
         try {
-            await addDoc(collection(db, "solicitacoes_materiais"), {
-                fornecedorId,
-                userId: userUid,
-                nomeMaterial: requestMaterialName,
-                descricao: requestMaterialDesc,
-                grupoSugerido: requestGrupo,
-                status: "pendente",
-                criadoEm: serverTimestamp()
-            });
+            const { error } = await supabase
+                .from('solicitacoes_materiais')
+                .insert({
+                    fornecedor_id: fornecedorId,
+                    user_id: user?.id,
+                    nome_material: requestMaterialName,
+                    descricao: requestMaterialDesc,
+                    grupo_sugerido: requestGrupo,
+                    status: "pendente",
+                    created_at: new Date().toISOString()
+                });
+
+            if (error) throw error;
 
             alert("Solicitação enviada com sucesso! O administrador irá analisar.");
             setShowRequestModal(false);

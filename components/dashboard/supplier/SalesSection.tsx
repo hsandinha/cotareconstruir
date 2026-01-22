@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ChatInterface } from "../../ChatInterface";
 import {
     MagnifyingGlassIcon,
@@ -12,9 +12,8 @@ import {
     CurrencyDollarIcon,
     DocumentTextIcon
 } from "@heroicons/react/24/outline";
-import { auth, db } from "../../../lib/firebase";
-import { collection, query, where, onSnapshot, doc, updateDoc } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "../../../lib/supabase";
+import { useAuth } from "../../../lib/useAuth";
 
 type SaleStatus = "pending" | "responded" | "negotiating" | "approved" | "completed" | "cancelled";
 
@@ -84,13 +83,13 @@ interface SaleOrder {
 }
 
 export function SupplierSalesSection() {
+    const { user, loading: authLoading } = useAuth();
     const [activeTab, setActiveTab] = useState<"all" | "pending" | "negotiating" | "approved">("all");
     const [selectedOrder, setSelectedOrder] = useState<SaleOrder | null>(null);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [orders, setOrders] = useState<SaleOrder[]>([]);
     const [loading, setLoading] = useState(true);
-    const [userUid, setUserUid] = useState<string | null>(null);
 
     const [negotiationModal, setNegotiationModal] = useState<{
         isOpen: boolean;
@@ -101,40 +100,109 @@ export function SupplierSalesSection() {
         discountPercent: number;
     } | null>(null);
 
-    useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-            if (user) {
-                setUserUid(user.uid);
-                // Query orders where supplierId is the current user
-                const q = query(collection(db, "orders"), where("supplierId", "==", user.uid));
-                const unsubscribeSnapshot = onSnapshot(
-                    q,
-                    (snapshot) => {
-                        const items: SaleOrder[] = [];
-                        snapshot.forEach((doc) => {
-                            items.push({ id: doc.id, ...doc.data() } as SaleOrder);
-                        });
-                        setOrders(items);
-                        setLoading(false);
-                    },
-                    (error) => {
-                        // Silenciar erro de permissão - é esperado quando coleção não existe
-                        if (error.code !== 'permission-denied') {
-                            console.error("Erro ao carregar vendas:", error);
-                        }
-                        setOrders([]);
-                        setLoading(false);
-                    }
-                );
-                return () => unsubscribeSnapshot();
-            } else {
-                setOrders([]);
-                setLoading(false);
-            }
-        });
+    // Function to fetch orders from Supabase
+    const fetchOrders = useCallback(async (fornecedorId: string) => {
+        try {
+            const { data, error } = await supabase
+                .from('pedidos')
+                .select('*')
+                .eq('fornecedor_id', fornecedorId)
+                .order('created_at', { ascending: false });
 
-        return () => unsubscribeAuth();
+            if (error) {
+                console.error("Erro ao carregar vendas:", error);
+                setOrders([]);
+            } else {
+                // Map Supabase data to SaleOrder format
+                const mappedOrders: SaleOrder[] = (data || []).map((pedido) => ({
+                    id: pedido.id,
+                    quotationId: pedido.cotacao_id || '',
+                    clientCode: pedido.user_id || '',
+                    clientName: pedido.endereco_entrega?.clientName || '',
+                    workName: pedido.endereco_entrega?.workName || 'Obra sem nome',
+                    location: {
+                        neighborhood: pedido.endereco_entrega?.neighborhood || '',
+                        city: pedido.endereco_entrega?.city || '',
+                        state: pedido.endereco_entrega?.state || '',
+                        fullAddress: pedido.endereco_entrega?.fullAddress || ''
+                    },
+                    deliverySchedule: pedido.endereco_entrega?.deliverySchedule,
+                    items: pedido.endereco_entrega?.items || [],
+                    clientDetails: pedido.endereco_entrega?.clientDetails,
+                    status: mapSupabaseStatus(pedido.status),
+                    createdAt: pedido.created_at,
+                    deadline: pedido.data_previsao_entrega,
+                    totalValue: pedido.valor_total,
+                    proposal: pedido.endereco_entrega?.proposal
+                }));
+                setOrders(mappedOrders);
+            }
+        } catch (err) {
+            console.error("Erro ao carregar vendas:", err);
+            setOrders([]);
+        } finally {
+            setLoading(false);
+        }
     }, []);
+
+    // Map Supabase status to component status
+    const mapSupabaseStatus = (status: string): SaleStatus => {
+        const statusMap: Record<string, SaleStatus> = {
+            'pendente': 'pending',
+            'confirmado': 'approved',
+            'em_preparacao': 'negotiating',
+            'enviado': 'negotiating',
+            'entregue': 'completed',
+            'cancelado': 'cancelled'
+        };
+        return statusMap[status] || 'pending';
+    };
+
+    // Map component status to Supabase status
+    const mapToSupabaseStatus = (status: SaleStatus): string => {
+        const statusMap: Record<SaleStatus, string> = {
+            'pending': 'pendente',
+            'responded': 'pendente',
+            'negotiating': 'em_preparacao',
+            'approved': 'confirmado',
+            'completed': 'entregue',
+            'cancelled': 'cancelado'
+        };
+        return statusMap[status] || 'pendente';
+    };
+
+    useEffect(() => {
+        if (authLoading) return;
+
+        if (!user) {
+            setOrders([]);
+            setLoading(false);
+            return;
+        }
+
+        const fornecedorId = user.id;
+
+        // Initial fetch
+        fetchOrders(fornecedorId);
+
+        // Set up realtime subscription
+        const channel = supabase
+            .channel('orders-changes')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'pedidos',
+                filter: `fornecedor_id=eq.${fornecedorId}`
+            }, () => {
+                // Refetch orders when any change occurs
+                fetchOrders(fornecedorId);
+            })
+            .subscribe();
+
+        return () => {
+            channel.unsubscribe();
+        };
+    }, [user, authLoading, fetchOrders]);
 
     const filteredOrders = orders.filter(order => {
         const matchesTab = activeTab === "all" || order.status === activeTab;
@@ -147,9 +215,19 @@ export function SupplierSalesSection() {
 
     const handleStatusUpdate = async (orderId: string, newStatus: SaleStatus) => {
         try {
-            await updateDoc(doc(db, "orders", orderId), {
-                status: newStatus
-            });
+            const supabaseStatus = mapToSupabaseStatus(newStatus);
+            const { error } = await supabase
+                .from('pedidos')
+                .update({
+                    status: supabaseStatus,
+                    updated_at: new Date().toISOString(),
+                    ...(newStatus === 'approved' && { data_confirmacao: new Date().toISOString() })
+                })
+                .eq('id', orderId);
+
+            if (error) {
+                throw error;
+            }
         } catch (error) {
             console.error("Error updating status:", error);
             alert("Erro ao atualizar status.");

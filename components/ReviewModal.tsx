@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { addReview } from "../lib/services";
-import { auth } from "../lib/firebase";
+import { useAuth } from '@/lib/useAuth';
 
 interface ReviewModalProps {
     isOpen: boolean;
@@ -16,16 +16,17 @@ export function ReviewModal({ isOpen, onClose, supplierId, supplierName, orderId
     const [rating, setRating] = useState(5);
     const [comment, setComment] = useState("");
     const [loading, setLoading] = useState(false);
+    const { user } = useAuth();
 
     if (!isOpen) return null;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!auth.currentUser) return;
+        if (!user) return;
 
         setLoading(true);
         try {
-            await addReview(auth.currentUser.uid, supplierId, rating, comment, orderId);
+            await addReview(user.id, supplierId, rating, comment, orderId);
             alert("Avaliação enviada com sucesso!");
             onClose();
         } catch (error) {

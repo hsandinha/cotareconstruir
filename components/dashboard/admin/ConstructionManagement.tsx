@@ -52,8 +52,7 @@ import {
     getServicosByGrupoInsumoId,
     getFasesByGrupoInsumoId
 } from '@/lib/constructionServices';
-import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 
 // --- Types ---
 
@@ -240,18 +239,18 @@ export default function ConstructionManagement() {
             setLoading(true);
             setError(null);
 
-            const [fasesData, servicosData, gruposData, materiaisData, manufacturersSnap] = await Promise.all([
+            const [fasesData, servicosData, gruposData, materiaisData, manufacturersResult] = await Promise.all([
                 getFases(),
                 getServicos(),
                 getGruposInsumo(),
                 getMateriais(),
-                getDocs(collection(db, 'manufacturers'))
+                supabase.from('manufacturers').select('id, name').order('name')
             ]);
 
-            const manufacturersData = manufacturersSnap.docs.map(doc => ({
+            const manufacturersData = (manufacturersResult.data || []).map(doc => ({
                 id: doc.id,
-                name: doc.data().name || 'Sem nome'
-            })).sort((a, b) => a.name.localeCompare(b.name));
+                name: doc.name || 'Sem nome'
+            }));
 
             setFases(fasesData);
             setServicos(servicosData);

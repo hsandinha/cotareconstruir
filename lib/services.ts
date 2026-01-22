@@ -1,5 +1,4 @@
-import { db } from "./firebase";
-import { collection, addDoc, serverTimestamp, updateDoc, doc, getDoc } from "firebase/firestore";
+import { supabase } from "./supabase";
 
 // --- Types ---
 
@@ -7,41 +6,40 @@ export interface AuditLog {
     userId: string;
     action: string;
     details: string;
-    timestamp: any;
-    ip?: string; // Optional, would need a way to capture this server-side or via headers
+    timestamp?: string;
+    ip?: string;
 }
 
 export interface Report {
     reporterId: string;
-    reportedId: string; // User or Content ID
+    reportedId: string;
     type: "user" | "content" | "chat";
     reason: string;
     description: string;
     status: "pending" | "resolved" | "dismissed";
-    timestamp: any;
+    timestamp?: string;
 }
 
 export interface Review {
     reviewerId: string;
-    targetId: string; // Supplier ID
+    targetId: string; // Fornecedor ID
     orderId?: string;
     rating: number; // 1-5
     comment: string;
-    timestamp: any;
+    timestamp?: string;
 }
 
 // --- Functions ---
 
 /**
- * Logs a critical action to the 'audit_logs' collection.
+ * Logs a critical action to the 'audit_logs' table.
  */
 export const logAction = async (userId: string, action: string, details: string) => {
     try {
-        await addDoc(collection(db, "audit_logs"), {
-            userId,
+        await supabase.from("audit_logs").insert({
+            user_id: userId,
             action,
-            details,
-            timestamp: serverTimestamp()
+            details: { message: details },
         });
     } catch (error) {
         console.error("Failed to log action:", error);
@@ -50,18 +48,27 @@ export const logAction = async (userId: string, action: string, details: string)
 
 /**
  * Creates a report against a user or content.
+ * Note: Uses 'reports' table in Supabase
  */
-export const createReport = async (reporterId: string, reportedId: string, type: "user" | "content" | "chat", reason: string, description: string) => {
+export const createReport = async (
+    reporterId: string,
+    reportedId: string,
+    type: "user" | "content" | "chat",
+    reason: string,
+    description: string
+) => {
     try {
-        await addDoc(collection(db, "reports"), {
-            reporterId,
-            reportedId,
+        const { error } = await supabase.from("reports").insert({
+            reporter_id: reporterId,
+            reported_id: reportedId,
             type,
             reason,
             description,
             status: "pending",
-            timestamp: serverTimestamp()
         });
+
+        if (error) throw error;
+
         await logAction(reporterId, "CREATE_REPORT", `Reported ${type} ${reportedId}: ${reason}`);
     } catch (error) {
         console.error("Failed to create report:", error);
@@ -71,41 +78,53 @@ export const createReport = async (reporterId: string, reportedId: string, type:
 
 /**
  * Adds a review for a supplier and updates their average rating.
+ * The trigger 'trigger_update_fornecedor_rating' handles rating recalculation automatically.
  */
-export const addReview = async (reviewerId: string, targetId: string, rating: number, comment: string, orderId?: string) => {
+export const addReview = async (
+    reviewerId: string,
+    targetId: string,
+    rating: number,
+    comment: string,
+    orderId?: string
+) => {
     try {
-        // 1. Add the review document
-        await addDoc(collection(db, "reviews"), {
-            reviewerId,
-            targetId,
-            orderId,
-            rating,
-            comment,
-            timestamp: serverTimestamp()
-        });
+        // Get fornecedor_id from targetId (which could be user_id)
+        let fornecedorId = targetId;
 
-        // 2. Update the supplier's average rating
-        // Note: In a real high-traffic app, this should be a Cloud Function or aggregated periodically.
-        // For now, we'll do a simple read-update.
-        const userRef = doc(db, "users", targetId);
-        const userSnap = await getDoc(userRef);
+        const { data: fornecedorCheck } = await supabase
+            .from("fornecedores")
+            .select("id")
+            .eq("id", targetId)
+            .single();
 
-        if (userSnap.exists()) {
-            const userData = userSnap.data();
-            const currentRating = userData.rating || 0;
-            const currentCount = userData.reviewCount || 0;
+        if (!fornecedorCheck) {
+            // targetId might be a user_id, find the fornecedor
+            const { data: userFornecedor } = await supabase
+                .from("fornecedores")
+                .select("id")
+                .eq("user_id", targetId)
+                .single();
 
-            const newCount = currentCount + 1;
-            const newRating = ((currentRating * currentCount) + rating) / newCount;
-
-            await updateDoc(userRef, {
-                rating: newRating,
-                reviewCount: newCount
-            });
+            if (userFornecedor) {
+                fornecedorId = userFornecedor.id;
+            }
         }
 
-        await logAction(reviewerId, "ADD_REVIEW", `Reviewed user ${targetId} with ${rating} stars`);
+        // Add the review to avaliacoes table
+        const { error } = await supabase.from("avaliacoes").insert({
+            avaliador_id: reviewerId,
+            fornecedor_id: fornecedorId,
+            pedido_id: orderId || null,
+            rating,
+            comentario: comment,
+        });
 
+        if (error) throw error;
+
+        // The trigger 'trigger_update_fornecedor_rating' automatically updates
+        // the fornecedor's rating and review_count
+
+        await logAction(reviewerId, "ADD_REVIEW", `Reviewed fornecedor ${fornecedorId} with ${rating} stars`);
     } catch (error) {
         console.error("Failed to add review:", error);
         throw error;
@@ -114,20 +133,26 @@ export const addReview = async (reviewerId: string, targetId: string, rating: nu
 
 /**
  * Submits a document for verification.
+ * Note: Uses 'verifications' table in Supabase
  */
 export const submitDocument = async (userId: string, docType: string, fileUrl: string) => {
     try {
-        await addDoc(collection(db, "verifications"), {
-            userId,
-            docType,
-            fileUrl,
+        const { error: verificationError } = await supabase.from("verifications").insert({
+            user_id: userId,
+            doc_type: docType,
+            file_url: fileUrl,
             status: "pending",
-            timestamp: serverTimestamp()
         });
 
-        await updateDoc(doc(db, "users", userId), {
-            verificationStatus: "pending"
-        });
+        if (verificationError) throw verificationError;
+
+        // Update user verification status
+        const { error: userError } = await supabase
+            .from("users")
+            .update({ is_verified: false })
+            .eq("id", userId);
+
+        if (userError) throw userError;
 
         await logAction(userId, "SUBMIT_DOC", `Submitted ${docType} for verification`);
     } catch (error) {

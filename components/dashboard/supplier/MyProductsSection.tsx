@@ -9,9 +9,8 @@ import {
     PercentBadgeIcon,
     CurrencyDollarIcon
 } from "@heroicons/react/24/outline";
-import { auth, db } from "../../../lib/firebase";
-import { collection, getDocs, getDoc, doc, updateDoc, setDoc, deleteDoc } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "../../../lib/supabase";
+import { useAuth } from "../../../lib/useAuth";
 
 // Interfaces
 interface MaterialBase {
@@ -41,9 +40,9 @@ interface GrupoInsumo {
 }
 
 export function SupplierMyProductsSection() {
+    const { user, profile } = useAuth();
     const [searchTerm, setSearchTerm] = useState("");
     const [loading, setLoading] = useState(true);
-    const [userUid, setUserUid] = useState<string | null>(null);
     const [fornecedorId, setFornecedorId] = useState<string | null>(null);
 
     const [materiaisBase, setMateriaisBase] = useState<MaterialBase[]>([]);
@@ -58,44 +57,57 @@ export function SupplierMyProductsSection() {
 
     // Carregar dados do usuário e fornecedor
     useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                setUserUid(user.uid);
-
-                const userDoc = await getDoc(doc(db, "users", user.uid));
-                if (userDoc.exists()) {
-                    const userData = userDoc.data();
-                    if (userData.fornecedorId) {
-                        setFornecedorId(userData.fornecedorId);
-                    }
-                }
+        const loadUserData = async () => {
+            if (!user) {
+                setLoading(false);
+                return;
             }
-            setLoading(false);
-        });
 
-        return () => unsubscribeAuth();
-    }, []);
+            try {
+                // Buscar dados do usuário para obter fornecedorId
+                const { data: userData, error: userError } = await supabase
+                    .from('users')
+                    .select('fornecedor_id')
+                    .eq('id', user.id)
+                    .single();
+
+                if (!userError && userData?.fornecedor_id) {
+                    setFornecedorId(userData.fornecedor_id);
+                }
+            } catch (error) {
+                console.error("Erro ao carregar dados do usuário:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadUserData();
+    }, [user]);
 
     // Carregar materiais base e grupos
     useEffect(() => {
         const loadBaseData = async () => {
             try {
-                const [gruposSnap, materiaisSnap] = await Promise.all([
-                    getDocs(collection(db, "grupos_insumo")),
-                    getDocs(collection(db, "materiais"))
+                const [gruposResult, materiaisResult] = await Promise.all([
+                    supabase.from('grupos_insumo').select('id, nome'),
+                    supabase.from('materiais').select('id, nome, unidade, grupos_insumo_ids, descricao, fabricante')
                 ]);
 
-                const gruposData = gruposSnap.docs.map(doc => ({
-                    id: doc.id,
-                    nome: doc.data().nome
-                }));
-                setGrupos(gruposData);
+                if (gruposResult.data) {
+                    setGrupos(gruposResult.data);
+                }
 
-                const materiaisData = materiaisSnap.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                })) as MaterialBase[];
-                setMateriaisBase(materiaisData);
+                if (materiaisResult.data) {
+                    const materiaisData = materiaisResult.data.map(m => ({
+                        id: m.id,
+                        nome: m.nome,
+                        unidade: m.unidade,
+                        gruposInsumoIds: m.grupos_insumo_ids || [],
+                        descricao: m.descricao,
+                        fabricante: m.fabricante
+                    })) as MaterialBase[];
+                    setMateriaisBase(materiaisData);
+                }
             } catch (error) {
                 console.error("Erro ao carregar dados base:", error);
             }
@@ -110,10 +122,25 @@ export function SupplierMyProductsSection() {
 
         const loadFornecedorMateriais = async () => {
             try {
-                const snapshot = await getDocs(collection(db, "fornecedores", fornecedorId, "materiais"));
+                const { data, error } = await supabase
+                    .from('fornecedor_materiais')
+                    .select('*')
+                    .eq('fornecedor_id', fornecedorId);
+
+                if (error) throw error;
+
                 const materiaisMap = new Map<string, FornecedorMaterial>();
-                snapshot.forEach(doc => {
-                    materiaisMap.set(doc.id, doc.data() as FornecedorMaterial);
+                data?.forEach(item => {
+                    materiaisMap.set(item.material_id, {
+                        materialId: item.material_id,
+                        preco: item.preco || 0,
+                        estoque: item.estoque || 0,
+                        ativo: item.ativo ?? true,
+                        dataAtualizacao: item.data_atualizacao || new Date().toISOString(),
+                        tipoOferta: item.tipo_oferta,
+                        valorOferta: item.valor_oferta,
+                        quantidadeMinima: item.quantidade_minima
+                    });
                 });
                 setFornecedorMateriais(materiaisMap);
             } catch (error: any) {
@@ -169,7 +196,6 @@ export function SupplierMyProductsSection() {
         if (!fornecedorId || !editingMaterial) return;
 
         try {
-            const materialRef = doc(db, "fornecedores", fornecedorId, "materiais", editingMaterial);
             const currentConfig = fornecedorMateriais.get(editingMaterial);
             const materialBase = materiaisBase.find(m => m.id === editingMaterial);
 
@@ -178,23 +204,29 @@ export function SupplierMyProductsSection() {
             const dataAtualizacao = new Date().toISOString();
 
             // Atualizar material do fornecedor
-            await updateDoc(materialRef, {
-                ...currentConfig,
-                tipoOferta: editTipoOferta,
-                valorOferta,
-                quantidadeMinima: parseInt(editQtdMinima) || 0,
-                dataAtualizacao
-            });
+            const { error: updateError } = await supabase
+                .from('fornecedor_materiais')
+                .update({
+                    tipo_oferta: editTipoOferta,
+                    valor_oferta: valorOferta,
+                    quantidade_minima: parseInt(editQtdMinima) || 0,
+                    data_atualizacao: dataAtualizacao
+                })
+                .eq('fornecedor_id', fornecedorId)
+                .eq('material_id', editingMaterial);
 
-            // Gerenciar coleção global de ofertas
-            const ofertaId = `${fornecedorId}_${editingMaterial}`;
-            const ofertaRef = doc(db, "ofertas", ofertaId);
+            if (updateError) throw updateError;
 
+            // Gerenciar tabela global de ofertas
             if (valorOferta > 0 && preco > 0 && materialBase) {
                 // Buscar dados do fornecedor para nome
-                const fornecedorDoc = await getDoc(doc(db, "fornecedores", fornecedorId));
-                const fornecedorData = fornecedorDoc.data();
-                const fornecedorNome = fornecedorData?.nomeFantasia || fornecedorData?.razaoSocial || "Fornecedor";
+                const { data: fornecedorData } = await supabase
+                    .from('fornecedores')
+                    .select('nome_fantasia, razao_social')
+                    .eq('id', fornecedorId)
+                    .single();
+
+                const fornecedorNome = fornecedorData?.nome_fantasia || fornecedorData?.razao_social || "Fornecedor";
 
                 // Calcular preço final
                 let precoFinal = preco;
@@ -207,41 +239,61 @@ export function SupplierMyProductsSection() {
                     descontoPercentual = Math.round((valorOferta / preco) * 100);
                 }
 
-                // Criar/atualizar oferta global
-                await setDoc(ofertaRef, {
-                    materialId: editingMaterial,
-                    materialNome: materialBase.nome,
-                    materialUnidade: materialBase.unidade,
-                    materialDescricao: materialBase.descricao || null,
-                    gruposInsumoIds: materialBase.gruposInsumoIds || [],
-                    fornecedorId,
-                    fornecedorNome,
-                    preco,
-                    precoFinal,
-                    tipoOferta: editTipoOferta,
-                    valorOferta,
-                    descontoPercentual,
-                    quantidadeMinima: parseInt(editQtdMinima) || 1,
-                    estoque: currentConfig?.estoque || 0,
-                    ativo: true,
-                    dataAtualizacao
-                });
-                console.log("Oferta salva na coleção global:", ofertaId);
+                // Criar/atualizar oferta global usando upsert
+                const { error: ofertaError } = await supabase
+                    .from('ofertas')
+                    .upsert({
+                        fornecedor_id: fornecedorId,
+                        material_id: editingMaterial,
+                        material_nome: materialBase.nome,
+                        material_unidade: materialBase.unidade,
+                        material_descricao: materialBase.descricao || null,
+                        grupos_insumo_ids: materialBase.gruposInsumoIds || [],
+                        fornecedor_nome: fornecedorNome,
+                        preco,
+                        preco_final: precoFinal,
+                        tipo_oferta: editTipoOferta,
+                        valor_oferta: valorOferta,
+                        desconto_percentual: descontoPercentual,
+                        quantidade_minima: parseInt(editQtdMinima) || 1,
+                        estoque: currentConfig?.estoque || 0,
+                        ativo: true,
+                        data_atualizacao: dataAtualizacao
+                    }, { onConflict: 'fornecedor_id,material_id' });
+
+                if (ofertaError) {
+                    console.error("Erro ao salvar oferta:", ofertaError);
+                } else {
+                    console.log("Oferta salva na tabela global");
+                }
             } else {
                 // Remover oferta se valor for 0
-                try {
-                    await deleteDoc(ofertaRef);
-                    console.log("Oferta removida:", ofertaId);
-                } catch (e) {
-                    // Ignora se não existia
-                }
+                await supabase
+                    .from('ofertas')
+                    .delete()
+                    .eq('fornecedor_id', fornecedorId)
+                    .eq('material_id', editingMaterial);
+                console.log("Oferta removida");
             }
 
             // Recarregar dados
-            const snapshot = await getDocs(collection(db, "fornecedores", fornecedorId, "materiais"));
+            const { data: materiaisData } = await supabase
+                .from('fornecedor_materiais')
+                .select('*')
+                .eq('fornecedor_id', fornecedorId);
+
             const materiaisMap = new Map<string, FornecedorMaterial>();
-            snapshot.forEach(doc => {
-                materiaisMap.set(doc.id, doc.data() as FornecedorMaterial);
+            materiaisData?.forEach(item => {
+                materiaisMap.set(item.material_id, {
+                    materialId: item.material_id,
+                    preco: item.preco || 0,
+                    estoque: item.estoque || 0,
+                    ativo: item.ativo ?? true,
+                    dataAtualizacao: item.data_atualizacao || new Date().toISOString(),
+                    tipoOferta: item.tipo_oferta,
+                    valorOferta: item.valor_oferta,
+                    quantidadeMinima: item.quantidade_minima
+                });
             });
             setFornecedorMateriais(materiaisMap);
 

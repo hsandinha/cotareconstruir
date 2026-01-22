@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { Search, Edit2, Trash2, X, Save, Package, CreditCard, Tags, UserPlus, UserCheck, RefreshCw, Mail, Plus } from 'lucide-react';
 import { createUserAccount, resetUserPassword } from '@/lib/userAccountService';
 import { useToast } from '@/components/ToastProvider';
@@ -139,21 +138,63 @@ export default function FornecedoresManagement() {
     const loadFornecedores = async () => {
         try {
             setLoading(true);
-            const [fornecedoresSnap, gruposSnap, usersSnap] = await Promise.all([
-                getDocs(collection(db, 'fornecedores')),
-                getDocs(collection(db, 'grupos_insumo')),
-                getDocs(collection(db, 'users'))
+
+            // Buscar fornecedores, grupos e usuários do Supabase
+            const [fornecedoresRes, gruposRes, usersRes, fornecedorGruposRes] = await Promise.all([
+                supabase.from('fornecedores').select('*'),
+                supabase.from('grupos_insumo').select('*'),
+                supabase.from('users').select('id, fornecedor_id'),
+                supabase.from('fornecedor_grupo').select('fornecedor_id, grupo_id')
             ]);
 
-            const fornecedoresData = fornecedoresSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Fornecedor[];
-            const gruposData = gruposSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GrupoInsumo[];
+            if (fornecedoresRes.error) throw fornecedoresRes.error;
+            if (gruposRes.error) throw gruposRes.error;
+            if (usersRes.error) throw usersRes.error;
+            if (fornecedorGruposRes.error) throw fornecedorGruposRes.error;
+
+            // Mapear dados do Supabase para o formato do componente
+            const fornecedoresData: Fornecedor[] = (fornecedoresRes.data || []).map(f => {
+                // Buscar grupos associados a este fornecedor
+                const grupoIds = (fornecedorGruposRes.data || [])
+                    .filter(fg => fg.fornecedor_id === f.id)
+                    .map(fg => fg.grupo_id);
+
+                return {
+                    id: f.id,
+                    codigo: f.codigo || '',
+                    razaoSocial: f.razao_social || '',
+                    codigoGrupo: f.codigo_grupo || '',
+                    grupoInsumos: f.grupo_insumos || '',
+                    grupoInsumoIds: grupoIds,
+                    contato: f.contato || '',
+                    fone: f.telefone || '',
+                    whatsapp: f.whatsapp || '',
+                    email: f.email || '',
+                    cnpj: f.cnpj || '',
+                    inscricaoEstadual: f.inscricao_estadual || '',
+                    endereco: f.logradouro || '',
+                    numero: f.numero || '',
+                    bairro: f.bairro || '',
+                    cidade: f.cidade || '',
+                    estado: f.estado || '',
+                    cep: f.cep || '',
+                    cartaoCredito: f.cartao_credito || false,
+                    ativo: f.ativo ?? true,
+                    createdAt: f.created_at,
+                    updatedAt: f.updated_at
+                };
+            });
+
+            const gruposData: GrupoInsumo[] = (gruposRes.data || []).map(g => ({
+                id: g.id,
+                nome: g.nome || ''
+            }));
 
             // Criar mapa de fornecedorId -> userId para verificar quem tem conta
             const fornecedorUserMap = new Map<string, string>();
-            usersSnap.docs.forEach(doc => {
-                const userData = doc.data();
-                if (userData.fornecedorId) {
-                    fornecedorUserMap.set(userData.fornecedorId, doc.id);
+            (usersRes.data || []).forEach(user => {
+                if (user.fornecedor_id) {
+                    fornecedorUserMap.set(user.fornecedor_id, user.id);
                 }
             });
 
@@ -187,36 +228,59 @@ export default function FornecedoresManagement() {
         try {
             setSaving(true);
 
+            // Preparar dados para o Supabase (snake_case)
+            const supabaseData = {
+                razao_social: formData.razaoSocial,
+                cnpj: formData.cnpj || '',
+                email: formData.email,
+                telefone: formData.fone || '',
+                whatsapp: formData.whatsapp || '',
+                contato: formData.contato || '',
+                cep: formData.cep || '',
+                logradouro: formData.endereco || '',
+                numero: formData.numero || '',
+                bairro: formData.bairro || '',
+                cidade: formData.cidade || '',
+                estado: formData.estado || '',
+                inscricao_estadual: formData.inscricaoEstadual || '',
+                cartao_credito: formData.cartaoCredito || false,
+                ativo: formData.ativo ?? true,
+                updated_at: new Date().toISOString(),
+            };
+
             if (editingFornecedor) {
                 // Editando fornecedor existente
-                await updateDoc(doc(db, 'fornecedores', editingFornecedor.id), {
-                    ...formData,
-                    updatedAt: new Date(),
-                });
+                const { error } = await supabase
+                    .from('fornecedores')
+                    .update(supabaseData)
+                    .eq('id', editingFornecedor.id);
+
+                if (error) throw error;
                 showToast('success', 'Fornecedor atualizado com sucesso!');
             } else {
                 // Criando novo fornecedor
                 const codigo = `F${Date.now().toString().slice(-6)}`;
-                const fornecedorRef = await addDoc(collection(db, 'fornecedores'), {
-                    ...formData,
-                    codigo,
-                    codigoGrupo: '',
-                    grupoInsumos: '',
-                    grupoInsumoIds: [],
-                    inscricaoEstadual: formData.inscricaoEstadual || '',
-                    cartaoCredito: formData.cartaoCredito || false,
-                    ativo: formData.ativo ?? true,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                });
+                const { data: newFornecedor, error } = await supabase
+                    .from('fornecedores')
+                    .insert({
+                        ...supabaseData,
+                        codigo,
+                        codigo_grupo: '',
+                        grupo_insumos: '',
+                        created_at: new Date().toISOString(),
+                    })
+                    .select()
+                    .single();
+
+                if (error) throw error;
 
                 // Se marcou para criar acesso junto
-                if (createAccessOnSave && formData.email) {
+                if (createAccessOnSave && formData.email && newFornecedor) {
                     try {
                         await createUserAccount({
                             email: formData.email,
                             entityType: 'fornecedor',
-                            entityId: fornecedorRef.id,
+                            entityId: newFornecedor.id,
                             entityName: formData.razaoSocial || '',
                             whatsapp: formData.whatsapp
                         });
@@ -247,10 +311,23 @@ export default function FornecedoresManagement() {
         if (!confirm('Deseja realmente excluir este fornecedor?')) return;
 
         try {
-            await deleteDoc(doc(db, 'fornecedores', id));
+            // Primeiro remover os grupos associados
+            await supabase
+                .from('fornecedor_grupo')
+                .delete()
+                .eq('fornecedor_id', id);
+
+            // Depois remover o fornecedor
+            const { error } = await supabase
+                .from('fornecedores')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
             loadFornecedores();
         } catch (error) {
             console.error('Erro ao excluir fornecedor:', error);
+            showToast('error', 'Erro ao excluir fornecedor');
         }
     };
 
@@ -303,20 +380,36 @@ export default function FornecedoresManagement() {
 
         try {
             setSaving(true);
-            await updateDoc(doc(db, 'fornecedores', selectedFornecedorGrupos.id), {
-                grupoInsumoIds: arrayUnion(selectedGrupoToAdd),
-                updatedAt: new Date()
-            });
+
+            // Inserir na tabela de junção fornecedor_grupo
+            const { error } = await supabase
+                .from('fornecedor_grupo')
+                .insert({
+                    fornecedor_id: selectedFornecedorGrupos.id,
+                    grupo_id: selectedGrupoToAdd
+                });
+
+            if (error) throw error;
+
+            // Atualizar timestamp do fornecedor
+            await supabase
+                .from('fornecedores')
+                .update({ updated_at: new Date().toISOString() })
+                .eq('id', selectedFornecedorGrupos.id);
+
             await loadFornecedores();
 
-            // Atualizar o fornecedor selecionado
-            const updated = fornecedores.find(f => f.id === selectedFornecedorGrupos.id);
-            if (updated) {
-                setSelectedFornecedorGrupos(updated);
-            }
+            // Atualizar o fornecedor selecionado após recarregar
+            setTimeout(() => {
+                const updated = fornecedores.find(f => f.id === selectedFornecedorGrupos.id);
+                if (updated) {
+                    setSelectedFornecedorGrupos(updated);
+                }
+            }, 100);
             setSelectedGrupoToAdd('');
         } catch (error) {
             console.error('Erro ao adicionar grupo:', error);
+            showToast('error', 'Erro ao adicionar grupo');
         } finally {
             setSaving(false);
         }
@@ -327,19 +420,34 @@ export default function FornecedoresManagement() {
 
         try {
             setSaving(true);
-            await updateDoc(doc(db, 'fornecedores', selectedFornecedorGrupos.id), {
-                grupoInsumoIds: arrayRemove(grupoId),
-                updatedAt: new Date()
-            });
+
+            // Remover da tabela de junção fornecedor_grupo
+            const { error } = await supabase
+                .from('fornecedor_grupo')
+                .delete()
+                .eq('fornecedor_id', selectedFornecedorGrupos.id)
+                .eq('grupo_id', grupoId);
+
+            if (error) throw error;
+
+            // Atualizar timestamp do fornecedor
+            await supabase
+                .from('fornecedores')
+                .update({ updated_at: new Date().toISOString() })
+                .eq('id', selectedFornecedorGrupos.id);
+
             await loadFornecedores();
 
-            // Atualizar o fornecedor selecionado
-            const updated = fornecedores.find(f => f.id === selectedFornecedorGrupos.id);
-            if (updated) {
-                setSelectedFornecedorGrupos(updated);
-            }
+            // Atualizar o fornecedor selecionado após recarregar
+            setTimeout(() => {
+                const updated = fornecedores.find(f => f.id === selectedFornecedorGrupos.id);
+                if (updated) {
+                    setSelectedFornecedorGrupos(updated);
+                }
+            }, 100);
         } catch (error) {
             console.error('Erro ao remover grupo:', error);
+            showToast('error', 'Erro ao remover grupo');
         } finally {
             setSaving(false);
         }

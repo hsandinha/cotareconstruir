@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc, query, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { Search, Plus, Edit2, Trash2, X, Save, Building2, UserPlus, UserCheck, RefreshCw, Mail, Briefcase, Layers, ChevronDown, ChevronRight, MapPin, Calendar } from 'lucide-react';
 import { createUserAccount, resetUserPassword } from '@/lib/userAccountService';
 import { useToast } from '@/components/ToastProvider';
@@ -159,35 +158,75 @@ export default function ClientesManagement() {
             setLoading(true);
 
             // Carregar clientes
-            const clientesSnapshot = await getDocs(collection(db, 'clientes'));
-            const clientesData = clientesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Cliente[];
+            const { data: clientesData, error: clientesError } = await supabase
+                .from('clientes')
+                .select('*');
+
+            if (clientesError) throw clientesError;
+
+            // Mapear campos do Supabase para o formato esperado
+            const mappedClientes = (clientesData || []).map(c => ({
+                id: c.id,
+                userId: c.user_id,
+                hasUserAccount: !!c.user_id,
+                nome: c.razao_social || c.nome || '',
+                cpf: c.cpf_cnpj?.length === 11 ? c.cpf_cnpj : undefined,
+                cnpj: c.cpf_cnpj?.length === 14 ? c.cpf_cnpj : undefined,
+                email: c.email || '',
+                telefone: c.telefone || '',
+                endereco: c.logradouro || '',
+                numero: c.numero || '',
+                complemento: c.complemento || '',
+                bairro: c.bairro || '',
+                cidade: c.cidade || '',
+                estado: c.estado || '',
+                cep: c.cep || '',
+                ativo: c.ativo !== false,
+                createdAt: c.created_at,
+                updatedAt: c.updated_at
+            })) as Cliente[];
 
             // Carregar todas as obras
-            const obrasSnapshot = await getDocs(collection(db, 'works'));
-            const obrasData = obrasSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as (Obra & { userId?: string })[];
+            const { data: obrasData, error: obrasError } = await supabase
+                .from('works')
+                .select('*');
+
+            if (obrasError) throw obrasError;
 
             // Criar mapa de obras por userId
             const obrasByUserId: Record<string, Obra[]> = {};
-            obrasData.forEach(obra => {
-                if (obra.userId) {
-                    if (!obrasByUserId[obra.userId]) {
-                        obrasByUserId[obra.userId] = [];
+            (obrasData || []).forEach((obra: any) => {
+                const mappedObra: Obra = {
+                    id: obra.id,
+                    obra: obra.obra || obra.nome || '',
+                    endereco: obra.endereco || '',
+                    bairro: obra.bairro || '',
+                    cidade: obra.cidade || '',
+                    etapa: obra.etapa || '',
+                    dataInicio: obra.data_inicio || obra.dataInicio || '',
+                    previsaoTermino: obra.previsao_termino || obra.previsaoTermino || '',
+                    stages: obra.stages || []
+                };
+                const odUserId = obra.user_id || obra.userId;
+                if (odUserId) {
+                    if (!obrasByUserId[odUserId]) {
+                        obrasByUserId[odUserId] = [];
                     }
-                    obrasByUserId[obra.userId].push(obra);
+                    obrasByUserId[odUserId].push(mappedObra);
                 }
             });
 
             // Mapear obras por clienteId (através do userId do cliente)
             const obrasByCliente: Record<string, Obra[]> = {};
-            clientesData.forEach(cliente => {
+            mappedClientes.forEach(cliente => {
                 if (cliente.userId && obrasByUserId[cliente.userId]) {
                     obrasByCliente[cliente.id] = obrasByUserId[cliente.userId];
                 }
             });
 
             setObrasByClienteId(obrasByCliente);
-            setClientes(clientesData);
-            setFilteredClientes(clientesData);
+            setClientes(mappedClientes);
+            setFilteredClientes(mappedClientes);
         } catch (error) {
             console.error('Erro ao carregar clientes:', error);
         } finally {
@@ -202,28 +241,53 @@ export default function ClientesManagement() {
         }
 
         try {
+            // Preparar dados para o Supabase
+            const supabaseData = {
+                razao_social: formData.nome,
+                nome: formData.nome,
+                cpf_cnpj: formData.cnpj || formData.cpf || null,
+                email: formData.email,
+                telefone: formData.telefone || null,
+                cep: formData.cep || null,
+                logradouro: formData.endereco || null,
+                numero: formData.numero || null,
+                complemento: formData.complemento || null,
+                bairro: formData.bairro || null,
+                cidade: formData.cidade || null,
+                estado: formData.estado || null,
+                ativo: formData.ativo !== false,
+                updated_at: new Date().toISOString()
+            };
+
             if (editingCliente) {
                 // Editando cliente existente
-                await updateDoc(doc(db, 'clientes', editingCliente.id), {
-                    ...formData,
-                    updatedAt: new Date(),
-                });
+                const { error } = await supabase
+                    .from('clientes')
+                    .update(supabaseData)
+                    .eq('id', editingCliente.id);
+
+                if (error) throw error;
                 showToast('success', 'Cliente atualizado com sucesso!');
             } else {
                 // Criando novo cliente
-                const clienteRef = await addDoc(collection(db, 'clientes'), {
-                    ...formData,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                });
+                const { data: newCliente, error } = await supabase
+                    .from('clientes')
+                    .insert({
+                        ...supabaseData,
+                        created_at: new Date().toISOString()
+                    })
+                    .select()
+                    .single();
+
+                if (error) throw error;
 
                 // Se marcou para criar acesso junto
-                if (createAccessOnSave && formData.email) {
+                if (createAccessOnSave && formData.email && newCliente) {
                     try {
                         await createUserAccount({
                             email: formData.email,
                             entityType: 'cliente',
-                            entityId: clienteRef.id,
+                            entityId: newCliente.id,
                             entityName: formData.nome || '',
                             whatsapp: formData.telefone
                         });
@@ -251,10 +315,17 @@ export default function ClientesManagement() {
         if (!confirm('Deseja realmente excluir este cliente?')) return;
 
         try {
-            await deleteDoc(doc(db, 'clientes', id));
+            const { error } = await supabase
+                .from('clientes')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+            showToast('success', 'Cliente excluído com sucesso!');
             loadClientes();
         } catch (error) {
             console.error('Erro ao excluir cliente:', error);
+            showToast('error', 'Erro ao excluir cliente');
         }
     };
 
@@ -873,18 +944,18 @@ export default function ClientesManagement() {
                                                                     <div
                                                                         key={idx}
                                                                         className={`flex items-center justify-between p-3 rounded-lg border ${stage.status === 'completed'
-                                                                                ? 'bg-green-50 border-green-200'
-                                                                                : stage.status === 'in_progress'
-                                                                                    ? 'bg-blue-50 border-blue-200'
-                                                                                    : 'bg-slate-50 border-slate-200'
+                                                                            ? 'bg-green-50 border-green-200'
+                                                                            : stage.status === 'in_progress'
+                                                                                ? 'bg-blue-50 border-blue-200'
+                                                                                : 'bg-slate-50 border-slate-200'
                                                                             }`}
                                                                     >
                                                                         <div className="flex items-center gap-3">
                                                                             <div className={`w-2 h-2 rounded-full ${stage.status === 'completed'
-                                                                                    ? 'bg-green-500'
-                                                                                    : stage.status === 'in_progress'
-                                                                                        ? 'bg-blue-500'
-                                                                                        : 'bg-slate-400'
+                                                                                ? 'bg-green-500'
+                                                                                : stage.status === 'in_progress'
+                                                                                    ? 'bg-blue-500'
+                                                                                    : 'bg-slate-400'
                                                                                 }`} />
                                                                             <span className="font-medium text-sm text-slate-800">
                                                                                 {stage.stageName}
@@ -896,10 +967,10 @@ export default function ClientesManagement() {
                                                                                 {stage.predictedDate ? new Date(stage.predictedDate).toLocaleDateString('pt-BR') : '-'}
                                                                             </span>
                                                                             <span className={`px-2 py-0.5 rounded ${stage.status === 'completed'
-                                                                                    ? 'bg-green-100 text-green-700'
-                                                                                    : stage.status === 'in_progress'
-                                                                                        ? 'bg-blue-100 text-blue-700'
-                                                                                        : 'bg-slate-100 text-slate-600'
+                                                                                ? 'bg-green-100 text-green-700'
+                                                                                : stage.status === 'in_progress'
+                                                                                    ? 'bg-blue-100 text-blue-700'
+                                                                                    : 'bg-slate-100 text-slate-600'
                                                                                 }`}>
                                                                                 {stage.status === 'completed' ? 'Concluída' : stage.status === 'in_progress' ? 'Em andamento' : 'Pendente'}
                                                                             </span>

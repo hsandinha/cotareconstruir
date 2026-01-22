@@ -3,66 +3,141 @@
 import { useState, useEffect } from "react";
 import { ArrowRightIcon, CalendarIcon, MapPinIcon, DocumentTextIcon } from "@heroicons/react/24/outline";
 import { ClientComparativeSection } from "./ComparativeSection";
-import { auth, db } from "../../../lib/firebase";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "@/lib/supabaseAuth";
+import { useAuth } from "@/lib/useAuth";
 
 export function ClientOrderSection() {
+    const { user, initialized } = useAuth();
     const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
     const [orders, setOrders] = useState<any[]>([]);
     const [worksMap, setWorksMap] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-            if (user) {
-                // Fetch Works to map IDs to Names
-                const qWorks = query(collection(db, "works"), where("userId", "==", user.uid));
-                const unsubscribeWorks = onSnapshot(qWorks, (snapshot) => {
-                    const map: Record<string, string> = {};
-                    snapshot.docs.forEach(doc => {
-                        map[doc.id] = doc.data().obra;
-                    });
-                    setWorksMap(map);
+        if (!initialized) return;
+
+        if (!user) {
+            setOrders([]);
+            setLoading(false);
+            return;
+        }
+
+        // Buscar obras para mapear IDs para nomes
+        const fetchWorks = async () => {
+            const { data, error } = await supabase
+                .from('works')
+                .select('id, obra')
+                .eq('user_id', user.id);
+
+            if (!error && data) {
+                const map: Record<string, string> = {};
+                data.forEach(doc => {
+                    map[doc.id] = doc.obra;
                 });
+                setWorksMap(map);
+            }
+        };
 
-                // Fetch Quotations (Orders)
-                const qQuotations = query(
-                    collection(db, "quotations"),
-                    where("userId", "==", user.uid)
-                );
+        // Buscar cotações (Orders)
+        const fetchQuotations = async () => {
+            const { data, error } = await supabase
+                .from('quotations')
+                .select('*')
+                .eq('user_id', user.id);
 
-                const unsubscribeQuotations = onSnapshot(qQuotations, (snapshot) => {
-                    const ordersData = snapshot.docs.map(doc => {
-                        const data = doc.data();
+            if (error) {
+                console.error("Erro ao carregar pedidos:", error);
+                setOrders([]);
+            } else {
+                const ordersData = (data || []).map(doc => {
+                    return {
+                        id: doc.id,
+                        workId: doc.work_id,
+                        date: doc.created_at ? new Date(doc.created_at).toLocaleDateString('pt-BR') : 'Data desconhecida',
+                        timestamp: doc.created_at ? new Date(doc.created_at).getTime() : 0,
+                        items: doc.total_items || (doc.items ? doc.items.length : 0),
+                        status: mapStatus(doc.status),
+                        statusColor: mapStatusColor(doc.status),
+                        totalEstimado: "-" // Placeholder
+                    };
+                });
+                // Sort by date descending
+                ordersData.sort((a, b) => b.timestamp - a.timestamp);
+                setOrders(ordersData);
+            }
+            setLoading(false);
+        };
+
+        fetchWorks();
+        fetchQuotations();
+
+        // Configurar subscriptions realtime
+        const worksChannel = supabase
+            .channel('works_orders_changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'works',
+                    filter: `user_id=eq.${user.id}`
+                },
+                async () => {
+                    const { data } = await supabase
+                        .from('works')
+                        .select('id, obra')
+                        .eq('user_id', user.id);
+
+                    if (data) {
+                        const map: Record<string, string> = {};
+                        data.forEach(doc => {
+                            map[doc.id] = doc.obra;
+                        });
+                        setWorksMap(map);
+                    }
+                }
+            )
+            .subscribe();
+
+        const quotationsChannel = supabase
+            .channel('quotations_changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'quotations',
+                    filter: `user_id=eq.${user.id}`
+                },
+                async () => {
+                    const { data } = await supabase
+                        .from('quotations')
+                        .select('*')
+                        .eq('user_id', user.id);
+
+                    const ordersData = (data || []).map(doc => {
                         return {
                             id: doc.id,
-                            workId: data.workId,
-                            date: data.createdAt ? new Date(data.createdAt).toLocaleDateString('pt-BR') : 'Data desconhecida',
-                            timestamp: data.createdAt ? new Date(data.createdAt).getTime() : 0,
-                            items: data.totalItems || (data.items ? data.items.length : 0),
-                            status: mapStatus(data.status),
-                            statusColor: mapStatusColor(data.status),
-                            totalEstimado: "-" // Placeholder
+                            workId: doc.work_id,
+                            date: doc.created_at ? new Date(doc.created_at).toLocaleDateString('pt-BR') : 'Data desconhecida',
+                            timestamp: doc.created_at ? new Date(doc.created_at).getTime() : 0,
+                            items: doc.total_items || (doc.items ? doc.items.length : 0),
+                            status: mapStatus(doc.status),
+                            statusColor: mapStatusColor(doc.status),
+                            totalEstimado: "-"
                         };
                     });
-                    // Sort by date descending
                     ordersData.sort((a, b) => b.timestamp - a.timestamp);
                     setOrders(ordersData);
-                    setLoading(false);
-                });
+                }
+            )
+            .subscribe();
 
-                return () => {
-                    unsubscribeWorks();
-                    unsubscribeQuotations();
-                };
-            } else {
-                setOrders([]);
-                setLoading(false);
-            }
-        });
-        return () => unsubscribeAuth();
-    }, []);
+        return () => {
+            supabase.removeChannel(worksChannel);
+            supabase.removeChannel(quotationsChannel);
+        };
+    }, [user, initialized]);
 
     const mapStatus = (status: string) => {
         switch (status) {

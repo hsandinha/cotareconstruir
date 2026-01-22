@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { auth, db } from "../../../lib/firebase";
-import { collection, doc, writeBatch, serverTimestamp } from "firebase/firestore";
+import { supabase } from "../../../lib/supabase";
+import { useAuth } from "../../../lib/useAuth";
 
 interface SupplierQuotationResponseSectionProps {
     quotation: any;
@@ -10,6 +10,7 @@ interface SupplierQuotationResponseSectionProps {
 }
 
 export function SupplierQuotationResponseSection({ quotation, onBack }: SupplierQuotationResponseSectionProps) {
+    const { user, profile } = useAuth();
     const [responses, setResponses] = useState<{ [key: number]: { preco: string, disponibilidade: string } }>({});
     const [paymentMethod, setPaymentMethod] = useState("");
     const [validity, setValidity] = useState("");
@@ -27,19 +28,10 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
     };
 
     const handleSendProposal = async () => {
-        if (!auth.currentUser) return;
+        if (!user) return;
         setLoading(true);
 
         try {
-            const batch = writeBatch(db);
-
-            // Generate a new ID for the proposal
-            const proposalRef = doc(collection(db, "quotations", quotation.id, "proposals"));
-            const proposalId = proposalRef.id;
-
-            // Reference to the root proposals collection with the same ID
-            const rootProposalRef = doc(db, "proposals", proposalId);
-
             const totalValue = quotation.items.reduce((total: number, item: any) => {
                 const response = responses[item.id];
                 if (response?.preco) {
@@ -48,51 +40,83 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                 return total;
             }, 0);
 
-            const proposalData = {
-                id: proposalId,
-                supplierId: auth.currentUser.uid,
-                supplierName: auth.currentUser.displayName || "Fornecedor",
-                quotationId: quotation.id,
-                clientCode: quotation.clientCode || "Cliente",
-                location: quotation.location || {},
-                items: quotation.items.map((item: any) => ({
-                    itemId: item.id,
-                    description: item.descricao,
-                    quantity: item.quantidade,
-                    unit: item.unidade,
-                    price: responses[item.id]?.preco ? parseFloat(responses[item.id].preco) : 0,
-                    availability: responses[item.id]?.disponibilidade || "indisponivel"
-                })),
-                paymentMethod,
-                validity,
-                observations,
-                totalValue,
-                createdAt: serverTimestamp(),
-                status: "sent"
+            // Calcular data de validade baseado na seleção
+            const validityDays: { [key: string]: number } = {
+                '7-dias': 7,
+                '15-dias': 15,
+                '30-dias': 30,
+                '60-dias': 60
             };
+            const dataValidade = new Date();
+            dataValidade.setDate(dataValidade.getDate() + (validityDays[validity] || 30));
 
-            // Save to subcollection of the quotation
-            batch.set(proposalRef, proposalData);
+            // Inserir proposta
+            const { data: proposta, error: propostaError } = await supabase
+                .from('propostas')
+                .insert({
+                    cotacao_id: quotation.id,
+                    fornecedor_id: user.id,
+                    status: 'enviada',
+                    valor_total: totalValue,
+                    prazo_entrega: null,
+                    condicoes_pagamento: paymentMethod,
+                    observacoes: observations,
+                    data_envio: new Date().toISOString(),
+                    data_validade: dataValidade.toISOString()
+                })
+                .select()
+                .single();
 
-            // Save to root proposals collection (for supplier dashboard)
-            batch.set(rootProposalRef, proposalData);
+            if (propostaError) throw propostaError;
 
-            // Create notification for the client
+            // Inserir itens da proposta
+            const propostaItens = quotation.items.map((item: any) => {
+                const response = responses[item.id] || { preco: '0', disponibilidade: 'indisponivel' };
+                const precoUnitario = parseFloat(response.preco) || 0;
+
+                // Mapear disponibilidade para prazo em dias
+                const prazoDiasMap: { [key: string]: number } = {
+                    'imediata': 0,
+                    '24h': 1,
+                    '48h': 2,
+                    '3-5-dias': 5,
+                    '5-10-dias': 10,
+                    'indisponivel': -1
+                };
+
+                return {
+                    proposta_id: proposta.id,
+                    cotacao_item_id: item.id,
+                    preco_unitario: precoUnitario,
+                    quantidade: item.quantidade,
+                    subtotal: precoUnitario * item.quantidade,
+                    disponibilidade: response.disponibilidade || 'indisponivel',
+                    prazo_dias: prazoDiasMap[response.disponibilidade] ?? -1,
+                    observacao: null
+                };
+            });
+
+            const { error: itensError } = await supabase
+                .from('proposta_itens')
+                .insert(propostaItens);
+
+            if (itensError) throw itensError;
+
+            // Criar notificação para o cliente
             if (quotation.userId) {
-                const notificationRef = doc(collection(db, "notifications"));
-                batch.set(notificationRef, {
-                    userId: quotation.userId,
-                    title: "Nova Proposta Recebida",
-                    message: `Um fornecedor enviou uma proposta para sua cotação.`,
-                    type: "success",
-                    read: false,
-                    createdAt: serverTimestamp(),
-                    relatedId: quotation.id,
-                    relatedType: "quotation"
-                });
+                await supabase
+                    .from('notificacoes')
+                    .insert({
+                        user_id: quotation.userId,
+                        titulo: 'Nova Proposta Recebida',
+                        mensagem: 'Um fornecedor enviou uma proposta para sua cotação.',
+                        tipo: 'success',
+                        lida: false,
+                        data_criacao: new Date().toISOString(),
+                        relacionado_id: quotation.id,
+                        relacionado_tipo: 'cotacao'
+                    });
             }
-
-            await batch.commit();
 
             alert("Proposta enviada com sucesso!");
             onBack();

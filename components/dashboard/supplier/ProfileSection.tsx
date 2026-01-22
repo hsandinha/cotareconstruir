@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { ChevronDownIcon, ChevronUpIcon, PlusIcon } from "@heroicons/react/24/outline";
-import { auth, db } from "../../../lib/firebase";
-import { doc, getDoc, updateDoc, collection, getDocs, query, orderBy } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "@/lib/supabaseAuth";
+import { useAuth } from "@/lib/useAuth";
 import { formatCepBr, formatCnpjBr, formatPhoneBr, isValidCNPJ } from "../../../lib/utils";
 import { SupplierVerificationSection } from "./VerificationSection";
 
@@ -15,6 +14,8 @@ export function SupplierProfileSection() {
     const [userUid, setUserUid] = useState<string | null>(null);
     const [fornecedorId, setFornecedorId] = useState<string | null>(null);
     const [showVerification, setShowVerification] = useState(false);
+    const [showProfile, setShowProfile] = useState(true);
+    const [showGroups, setShowGroups] = useState(true);
     const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; nome: string }>>([]);
     const [supplierGroups, setSupplierGroups] = useState<string[]>([]);
     const [savingGroups, setSavingGroups] = useState(false);
@@ -40,44 +41,55 @@ export function SupplierProfileSection() {
     });
     const [loadingCep, setLoadingCep] = useState(false);
 
+    const { user, profile, initialized } = useAuth();
+
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (!initialized) return;
+
+        const loadProfile = async () => {
             if (user) {
-                setUserUid(user.uid);
+                setUserUid(user.id);
                 try {
-                    const docRef = doc(db, "users", user.uid);
-                    const docSnap = await getDoc(docRef);
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
+                    if (profile) {
                         setFormData({
-                            companyName: data.companyName || "",
-                            cnpj: formatCnpjBr(data.cnpj || ""),
-                            stateRegistration: data.stateRegistration || "",
-                            phone: formatPhoneBr(data.phone || ""),
-                            managerName: data.managerName || data.name || "",
-                            managerRole: data.managerRole || "",
-                            email: data.email || user.email || "",
-                            whatsapp: formatPhoneBr(data.whatsapp || ""),
-                            cep: formatCepBr(data.cep || ""),
-                            endereco: data.endereco || data.address || "",
-                            numero: data.numero || "",
-                            bairro: data.bairro || "",
-                            cidade: data.cidade || "",
-                            estado: data.estado || "",
-                            complemento: data.complemento || "",
-                            operatingRegions: data.operatingRegions || "",
-                            operatingCategories: data.operatingCategories || ""
+                            companyName: profile.company_name || "",
+                            cnpj: formatCnpjBr(profile.cnpj || ""),
+                            stateRegistration: profile.state_registration || "",
+                            phone: formatPhoneBr(profile.phone || ""),
+                            managerName: profile.manager_name || profile.nome || "",
+                            managerRole: profile.manager_role || "",
+                            email: profile.email || user.email || "",
+                            whatsapp: formatPhoneBr(profile.whatsapp || ""),
+                            cep: formatCepBr(profile.cep || ""),
+                            endereco: profile.endereco || profile.address || "",
+                            numero: profile.numero || "",
+                            bairro: profile.bairro || "",
+                            cidade: profile.cidade || "",
+                            estado: profile.estado || "",
+                            complemento: profile.complemento || "",
+                            operatingRegions: profile.operating_regions || "",
+                            operatingCategories: profile.operating_categories || ""
                         });
 
-                        // Buscar dados do fornecedor se existir fornecedorId
-                        if (data.fornecedorId) {
-                            setFornecedorId(data.fornecedorId);
-                            const fornecedorDoc = await getDoc(doc(db, "fornecedores", data.fornecedorId));
-                            if (fornecedorDoc.exists()) {
-                                const fornecedorData = fornecedorDoc.data();
-                                console.log("Dados do fornecedor:", fornecedorData);
-                                console.log("Grupos do fornecedor:", fornecedorData.grupoInsumoIds);
-                                setSupplierGroups(fornecedorData.grupoInsumoIds || []);
+                        // Buscar dados do fornecedor se existir fornecedor_id
+                        if (profile.fornecedor_id) {
+                            setFornecedorId(profile.fornecedor_id);
+                            const { data: fornecedorData } = await supabase
+                                .from('fornecedores')
+                                .select('*')
+                                .eq('id', profile.fornecedor_id)
+                                .single();
+
+                            if (fornecedorData) {
+                                // Buscar grupos vinculados ao fornecedor
+                                const { data: gruposData } = await supabase
+                                    .from('fornecedor_grupo')
+                                    .select('grupo_id')
+                                    .eq('fornecedor_id', profile.fornecedor_id);
+
+                                if (gruposData) {
+                                    setSupplierGroups(gruposData.map(g => g.grupo_id));
+                                }
                             }
                         }
                     }
@@ -86,22 +98,23 @@ export function SupplierProfileSection() {
                 }
             }
             setLoading(false);
-        });
+        };
 
-        return () => unsubscribe();
-    }, []);
+        loadProfile();
+    }, [user, profile, initialized]);
 
     // Carregar grupos de insumo disponíveis
     useEffect(() => {
         const loadGroups = async () => {
             try {
-                const q = query(collection(db, "grupos_insumo"), orderBy("nome"));
-                const snapshot = await getDocs(q);
-                const groups = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    nome: doc.data().nome
-                }));
-                setAvailableGroups(groups);
+                const { data: groups } = await supabase
+                    .from('grupos_insumo')
+                    .select('id, nome')
+                    .order('nome');
+
+                if (groups) {
+                    setAvailableGroups(groups);
+                }
             } catch (error) {
                 console.error("Erro ao carregar grupos:", error);
             }
@@ -178,7 +191,6 @@ export function SupplierProfileSection() {
                 cidade: data.city || "",
                 estado: data.state || "",
             }));
-            alert("Endereço preenchido pelo CEP!");
         } catch (error) {
             console.error("Erro ao consultar CEP:", error);
             alert("Não foi possível buscar o CEP. Verifique o número ou tente novamente.");
@@ -197,11 +209,29 @@ export function SupplierProfileSection() {
 
         setSaving(true);
         try {
-            const docRef = doc(db, "users", userUid);
-            await updateDoc(docRef, {
-                ...formData,
-                updatedAt: new Date().toISOString()
-            });
+            await supabase
+                .from('users')
+                .update({
+                    company_name: formData.companyName,
+                    cnpj: formData.cnpj.replace(/\D/g, ''),
+                    state_registration: formData.stateRegistration,
+                    phone: formData.phone.replace(/\D/g, ''),
+                    manager_name: formData.managerName,
+                    manager_role: formData.managerRole,
+                    email: formData.email,
+                    whatsapp: formData.whatsapp.replace(/\D/g, ''),
+                    cep: formData.cep.replace(/\D/g, ''),
+                    endereco: formData.endereco,
+                    numero: formData.numero,
+                    bairro: formData.bairro,
+                    cidade: formData.cidade,
+                    estado: formData.estado,
+                    complemento: formData.complemento,
+                    operating_regions: formData.operatingRegions,
+                    operating_categories: formData.operatingCategories,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', userUid);
             alert("Perfil atualizado com sucesso!");
         } catch (error) {
             console.error("Error updating profile:", error);
@@ -229,11 +259,21 @@ export function SupplierProfileSection() {
 
         setSavingGroups(true);
         try {
-            const docRef = doc(db, "fornecedores", fornecedorId);
-            await updateDoc(docRef, {
-                grupoInsumoIds: supplierGroups,
-                updatedAt: new Date().toISOString()
-            });
+            // Deletar grupos antigos
+            await supabase
+                .from('fornecedor_grupo')
+                .delete()
+                .eq('fornecedor_id', fornecedorId);
+
+            // Inserir novos grupos
+            if (supplierGroups.length > 0) {
+                const insertData = supplierGroups.map(grupoId => ({
+                    fornecedor_id: fornecedorId,
+                    grupo_id: grupoId
+                }));
+                await supabase.from('fornecedor_grupo').insert(insertData);
+            }
+
             alert("Grupos de insumo atualizados com sucesso!");
         } catch (error) {
             console.error("Erro ao atualizar grupos:", error);
@@ -249,394 +289,430 @@ export function SupplierProfileSection() {
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <div>
-                <h3 className="text-lg font-medium text-gray-900">Cadastro e Gerenciamento do Perfil</h3>
-                <p className="mt-1 text-sm text-gray-600">
-                    Gerencie os dados da sua empresa e configure seu perfil de fornecedor
-                </p>
-            </div>
+            {/* Seção de Cadastro e Gerenciamento do Perfil */}
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <button
+                    onClick={() => setShowProfile(!showProfile)}
+                    className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors"
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-blue-100 rounded-lg">
+                            <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                        </div>
+                        <div className="text-left">
+                            <h3 className="text-lg font-bold text-gray-900">Cadastro e Gerenciamento do Perfil</h3>
+                            <p className="text-sm text-gray-600">Gerencie os dados da sua empresa e configure seu perfil de fornecedor</p>
+                        </div>
+                    </div>
+                    {showProfile ? (
+                        <ChevronUpIcon className="h-5 w-5 text-gray-500" />
+                    ) : (
+                        <ChevronDownIcon className="h-5 w-5 text-gray-500" />
+                    )}
+                </button>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Dados da Empresa */}
-                <div className="bg-white border border-gray-200 rounded-lg p-6">
-                    <h4 className="text-base font-medium text-gray-900 mb-4">Dados da Empresa</h4>
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Razão Social *</label>
-                            <input
-                                type="text"
-                                name="companyName"
-                                value={formData.companyName}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                placeholder="Nome da empresa"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">CNPJ *</label>
-                            <input
-                                type="text"
-                                name="cnpj"
-                                value={formData.cnpj}
-                                onChange={handleChange}
-                                onBlur={handleConsultCNPJ}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                placeholder="00.000.000/0000-00"
-                            />
-                            <p className="mt-1 text-xs text-gray-500">Preenche automaticamente ao sair do campo (dados da Receita).</p>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Inscrição Estadual</label>
-                            <input
-                                type="text"
-                                name="stateRegistration"
-                                value={formData.stateRegistration}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                placeholder="000.000.000.000"
-                            />
-                        </div>
-                        <div className="space-y-4">
-                            <div className="flex gap-2">
-                                <div className="flex-1">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">CEP</label>
-                                    <div className="flex gap-2">
+                {showProfile && (
+                    <div className="border-t border-gray-200 p-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            {/* Dados da Empresa */}
+                            <div className="bg-white border border-gray-200 rounded-lg p-6">
+                                <h4 className="text-base font-medium text-gray-900 mb-4">Dados da Empresa</h4>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Razão Social *</label>
                                         <input
                                             type="text"
-                                            name="cep"
-                                            value={formData.cep || ""}
+                                            name="companyName"
+                                            value={formData.companyName}
                                             onChange={handleChange}
-                                            onBlur={handleConsultCEP}
-                                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                            placeholder="00000-000"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                            placeholder="Nome da empresa"
                                         />
-                                        <button
-                                            type="button"
-                                            onClick={handleConsultCEP}
-                                            disabled={loadingCep}
-                                            className="px-3 py-2 bg-green-100 text-green-700 rounded-md hover:bg-green-200 disabled:opacity-50 transition-colors"
-                                        >
-                                            {loadingCep ? "..." : "Buscar"}
-                                        </button>
                                     </div>
-                                    <p className="text-xs text-gray-500 mt-1">Busca automática ao sair do campo</p>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Endereço (Logradouro)</label>
-                                <input
-                                    type="text"
-                                    name="endereco"
-                                    value={formData.endereco || ""}
-                                    onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                    placeholder="Rua, Avenida, etc"
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Número</label>
-                                    <input
-                                        type="text"
-                                        name="numero"
-                                        value={formData.numero || ""}
-                                        onChange={handleChange}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                        placeholder="123"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Complemento</label>
-                                    <input
-                                        type="text"
-                                        name="complemento"
-                                        value={formData.complemento || ""}
-                                        onChange={handleChange}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                        placeholder="Apto, Sala, Bloco..."
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Bairro</label>
-                                <input
-                                    type="text"
-                                    name="bairro"
-                                    value={formData.bairro || ""}
-                                    onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                    placeholder="Bairro"
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Cidade</label>
-                                    <input
-                                        type="text"
-                                        name="cidade"
-                                        value={formData.cidade || ""}
-                                        onChange={handleChange}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                        placeholder="Cidade"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
-                                    <input
-                                        type="text"
-                                        name="estado"
-                                        value={formData.estado || ""}
-                                        onChange={handleChange}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                        placeholder="UF"
-                                        maxLength={2}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Telefone Comercial *</label>
-                            <input
-                                type="text"
-                                name="phone"
-                                value={formData.phone}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                placeholder="(11) 0000-0000"
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Contato Gerencial */}
-                <div className="bg-white border border-gray-200 rounded-lg p-6">
-                    <h4 className="text-base font-medium text-gray-900 mb-4">Contato Gerencial</h4>
-                    <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
-                        <p className="text-sm text-blue-800">
-                            <strong>Importante:</strong> O contato deve ser preferencialmente com gerente comercial ou diretor comercial.
-                        </p>
-                    </div>
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Responsável *</label>
-                            <input
-                                type="text"
-                                name="managerName"
-                                value={formData.managerName}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                placeholder="Nome completo"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Cargo *</label>
-                            <select
-                                name="managerRole"
-                                value={formData.managerRole}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                            >
-                                <option value="">Selecione o cargo</option>
-                                <option value="gerente-comercial">Gerente Comercial</option>
-                                <option value="diretor-comercial">Diretor Comercial</option>
-                                <option value="proprietario">Proprietário</option>
-                                <option value="vendedor">Vendedor</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">E-mail *</label>
-                            <input
-                                type="email"
-                                name="email"
-                                value={formData.email}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                placeholder="email@empresa.com"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp *</label>
-                            <input
-                                type="text"
-                                name="whatsapp"
-                                value={formData.whatsapp}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                placeholder="(11) 90000-0000"
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Preferências de Atendimento */}
-                <div className="bg-white border border-gray-200 rounded-lg p-6 md:col-span-2">
-                    <h4 className="text-base font-medium text-gray-900 mb-4">Preferências de Atendimento</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Regiões de Atuação (Bairros/Cidades)</label>
-                            <p className="text-xs text-gray-500 mb-2">Separe por vírgula. Ex: Centro, Zona Sul, São Paulo</p>
-                            <input
-                                type="text"
-                                name="operatingRegions"
-                                value={formData.operatingRegions}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                placeholder="Ex: Centro, Copacabana, Rio de Janeiro"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Categorias de Materiais</label>
-                            <p className="text-xs text-gray-500 mb-2">Separe por vírgula. Ex: Cimento, Elétrica, Hidráulica</p>
-                            <input
-                                type="text"
-                                name="operatingCategories"
-                                value={formData.operatingCategories}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                                placeholder="Ex: Cimento, Aço, Tintas"
-                            />
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Ações */}
-            <div className="flex justify-end space-x-3">
-                <button
-                    onClick={() => window.location.reload()}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                >
-                    Cancelar
-                </button>
-                <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 disabled:opacity-50"
-                >
-                    {saving ? "Salvando..." : "Salvar Alterações"}
-                </button>
-            </div>
-
-            {/* Seção de Grupos de Insumo */}
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <div className="flex items-center justify-between mb-4">
-                    <div>
-                        <h4 className="text-base font-medium text-gray-900">Grupos de Insumo</h4>
-                        <p className="text-sm text-gray-600 mt-1">Selecione os grupos de materiais que sua empresa fornece</p>
-                    </div>
-                    <button
-                        onClick={handleSaveGroups}
-                        disabled={savingGroups}
-                        className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 disabled:opacity-50"
-                    >
-                        {savingGroups ? "Salvando..." : "Salvar Grupos"}
-                    </button>
-                </div>
-
-                <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
-                    <p className="text-sm text-blue-800">
-                        <strong>Dica:</strong> Marque os grupos de materiais que você fornece. Isso ajudará a receber oportunidades relevantes.
-                    </p>
-                </div>
-
-                {availableGroups.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                        <p>Carregando grupos de insumo...</p>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Coluna Esquerda: Grupos Disponíveis */}
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between pb-2 border-b border-gray-200">
-                                <h5 className="text-sm font-semibold text-gray-700">Grupos Disponíveis</h5>
-                                <span className="text-xs text-gray-500">
-                                    {availableGroups.filter(g => !supplierGroups.includes(g.id)).length} grupos
-                                </span>
-                            </div>
-                            <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
-                                {availableGroups
-                                    .filter(group => !supplierGroups.includes(group.id))
-                                    .map(group => (
-                                        <button
-                                            key={group.id}
-                                            onClick={() => toggleGroup(group.id)}
-                                            className="w-full flex items-center justify-between p-3 rounded-lg border border-gray-200 bg-white hover:border-green-400 hover:bg-green-50 transition-all group"
-                                        >
-                                            <span className="text-sm font-medium text-gray-700 group-hover:text-green-700">
-                                                {group.nome}
-                                            </span>
-                                            <PlusIcon className="h-4 w-4 text-gray-400 group-hover:text-green-600" />
-                                        </button>
-                                    ))}
-                                {availableGroups.filter(g => !supplierGroups.includes(g.id)).length === 0 && (
-                                    <div className="text-center py-8 text-gray-400">
-                                        <p className="text-sm">Todos os grupos foram selecionados</p>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">CNPJ *</label>
+                                        <input
+                                            type="text"
+                                            name="cnpj"
+                                            value={formData.cnpj}
+                                            onChange={handleChange}
+                                            onBlur={handleConsultCNPJ}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                            placeholder="00.000.000/0000-00"
+                                        />
+                                        <p className="mt-1 text-xs text-gray-500">Preenche automaticamente ao sair do campo (dados da Receita).</p>
                                     </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Coluna Direita: Grupos Selecionados */}
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between pb-3 border-b-2 border-green-500">
-                                <h5 className="text-sm font-semibold text-gray-900">Meus Grupos</h5>
-                                <span className="px-2.5 py-1 text-xs font-bold text-white bg-green-600 rounded-full">
-                                    {supplierGroups.length}
-                                </span>
-                            </div>
-                            <div className="space-y-2.5 max-h-96 overflow-y-auto pr-2">
-                                {availableGroups
-                                    .filter(group => supplierGroups.includes(group.id))
-                                    .map(group => (
-                                        <div
-                                            key={group.id}
-                                            className="group flex items-center justify-between p-3.5 rounded-lg border-2 border-green-500 bg-gradient-to-r from-green-50 to-green-100 hover:from-green-100 hover:to-green-200 transition-all shadow-sm"
-                                        >
-                                            <div className="flex items-center gap-2.5">
-                                                <div className="w-2 h-2 rounded-full bg-green-600"></div>
-                                                <span className="text-sm font-semibold text-gray-900">
-                                                    {group.nome}
-                                                </span>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Inscrição Estadual</label>
+                                        <input
+                                            type="text"
+                                            name="stateRegistration"
+                                            value={formData.stateRegistration}
+                                            onChange={handleChange}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                            placeholder="000.000.000.000"
+                                        />
+                                    </div>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">CEP</label>
+                                            <input
+                                                type="text"
+                                                name="cep"
+                                                value={formData.cep || ""}
+                                                onChange={handleChange}
+                                                onBlur={handleConsultCEP}
+                                                disabled={loadingCep}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-100"
+                                                placeholder="00000-000"
+                                            />
+                                            <p className="text-xs text-gray-500 mt-1">{loadingCep ? "Buscando..." : "Busca automática ao sair do campo"}</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Endereço (Logradouro)</label>
+                                            <input
+                                                type="text"
+                                                name="endereco"
+                                                value={formData.endereco || ""}
+                                                onChange={handleChange}
+                                                readOnly
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 bg-gray-50"
+                                                placeholder="Rua, Avenida, etc"
+                                            />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Número</label>
+                                                <input
+                                                    type="text"
+                                                    name="numero"
+                                                    value={formData.numero || ""}
+                                                    onChange={handleChange}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                                    placeholder="123"
+                                                />
                                             </div>
-                                            <button
-                                                onClick={() => toggleGroup(group.id)}
-                                                className="p-1.5 rounded-lg bg-white border border-red-200 hover:bg-red-50 hover:border-red-400 transition-all shadow-sm"
-                                                title="Remover grupo"
-                                            >
-                                                <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                            </button>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Complemento</label>
+                                                <input
+                                                    type="text"
+                                                    name="complemento"
+                                                    value={formData.complemento || ""}
+                                                    onChange={handleChange}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                                    placeholder="Apto, Sala, Bloco..."
+                                                />
+                                            </div>
                                         </div>
-                                    ))}
-                                {supplierGroups.length === 0 && (
-                                    <div className="text-center py-16 px-4">
-                                        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 mb-4">
-                                            <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                                            </svg>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Bairro</label>
+                                            <input
+                                                type="text"
+                                                name="bairro"
+                                                value={formData.bairro || ""}
+                                                onChange={handleChange}
+                                                readOnly
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 bg-gray-50"
+                                                placeholder="Bairro"
+                                            />
                                         </div>
-                                        <p className="text-base font-semibold text-gray-700 mb-1">Nenhum grupo selecionado</p>
-                                        <p className="text-sm text-gray-500">Clique nos grupos à esquerda para adicionar aos seus materiais</p>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Cidade</label>
+                                                <input
+                                                    type="text"
+                                                    name="cidade"
+                                                    value={formData.cidade || ""}
+                                                    onChange={handleChange}
+                                                    readOnly
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 bg-gray-50"
+                                                    placeholder="Cidade"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                                                <input
+                                                    type="text"
+                                                    name="estado"
+                                                    value={formData.estado || ""}
+                                                    onChange={handleChange}
+                                                    readOnly
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 bg-gray-50"
+                                                    placeholder="UF"
+                                                    maxLength={2}
+                                                />
+                                            </div>
+                                        </div>
                                     </div>
-                                )}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Telefone Comercial *</label>
+                                        <input
+                                            type="text"
+                                            name="phone"
+                                            value={formData.phone}
+                                            onChange={handleChange}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                            placeholder="(11) 0000-0000"
+                                        />
+                                    </div>
+                                </div>
                             </div>
+
+                            {/* Contato Gerencial */}
+                            <div className="bg-white border border-gray-200 rounded-lg p-6">
+                                <h4 className="text-base font-medium text-gray-900 mb-4">Contato Gerencial</h4>
+                                <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
+                                    <p className="text-sm text-blue-800">
+                                        <strong>Importante:</strong> O contato deve ser preferencialmente com gerente comercial ou diretor comercial.
+                                    </p>
+                                </div>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Responsável *</label>
+                                        <input
+                                            type="text"
+                                            name="managerName"
+                                            value={formData.managerName}
+                                            onChange={handleChange}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                            placeholder="Nome completo"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Cargo *</label>
+                                        <select
+                                            name="managerRole"
+                                            value={formData.managerRole}
+                                            onChange={handleChange}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        >
+                                            <option value="">Selecione o cargo</option>
+                                            <option value="gerente-comercial">Gerente Comercial</option>
+                                            <option value="diretor-comercial">Diretor Comercial</option>
+                                            <option value="proprietario">Proprietário</option>
+                                            <option value="vendedor">Vendedor</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">E-mail *</label>
+                                        <input
+                                            type="email"
+                                            name="email"
+                                            value={formData.email}
+                                            onChange={handleChange}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                            placeholder="email@empresa.com"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp *</label>
+                                        <input
+                                            type="text"
+                                            name="whatsapp"
+                                            value={formData.whatsapp}
+                                            onChange={handleChange}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                            placeholder="(11) 90000-0000"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Preferências de Atendimento */}
+                            <div className="bg-white border border-gray-200 rounded-lg p-6 md:col-span-2">
+                                <h4 className="text-base font-medium text-gray-900 mb-4">Preferências de Atendimento</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Regiões de Atuação (Bairros/Cidades)</label>
+                                        <p className="text-xs text-gray-500 mb-2">Separe por vírgula. Ex: Centro, Zona Sul, São Paulo</p>
+                                        <input
+                                            type="text"
+                                            name="operatingRegions"
+                                            value={formData.operatingRegions}
+                                            onChange={handleChange}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                            placeholder="Ex: Centro, Copacabana, Rio de Janeiro"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Categorias de Materiais</label>
+                                        <p className="text-xs text-gray-500 mb-2">Separe por vírgula. Ex: Cimento, Elétrica, Hidráulica</p>
+                                        <input
+                                            type="text"
+                                            name="operatingCategories"
+                                            value={formData.operatingCategories}
+                                            onChange={handleChange}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                            placeholder="Ex: Cimento, Aço, Tintas"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Ações */}
+                        <div className="flex justify-end space-x-3">
+                            <button
+                                onClick={() => window.location.reload()}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleSave}
+                                disabled={saving}
+                                className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 disabled:opacity-50"
+                            >
+                                {saving ? "Salvando..." : "Salvar Alterações"}
+                            </button>
                         </div>
                     </div>
                 )}
+            </div>
 
-                {supplierGroups.length > 0 && (
-                    <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
-                        <p className="text-sm font-medium text-green-700">
-                            Total de grupos selecionados: <span className="font-bold">{supplierGroups.length}</span>
-                        </p>
+            {/* Seção de Grupos de Insumo */}
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <button
+                    onClick={() => setShowGroups(!showGroups)}
+                    className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors"
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-purple-100 rounded-lg">
+                            <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                            </svg>
+                        </div>
+                        <div className="text-left">
+                            <h3 className="text-lg font-bold text-gray-900">Grupos de Insumo</h3>
+                            <p className="text-sm text-gray-600">Selecione os grupos de materiais que sua empresa fornece ({supplierGroups.length} selecionados)</p>
+                        </div>
+                    </div>
+                    {showGroups ? (
+                        <ChevronUpIcon className="h-5 w-5 text-gray-500" />
+                    ) : (
+                        <ChevronDownIcon className="h-5 w-5 text-gray-500" />
+                    )}
+                </button>
+
+                {showGroups && (
+                    <div className="border-t border-gray-200 p-6">
+                        <div className="flex items-center justify-end mb-4">
+                            <button
+                                onClick={handleSaveGroups}
+                                disabled={savingGroups}
+                                className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 disabled:opacity-50"
+                            >
+                                {savingGroups ? "Salvando..." : "Salvar Grupos"}
+                            </button>
+                        </div>
+
+                        <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
+                            <p className="text-sm text-blue-800">
+                                <strong>Dica:</strong> Marque os grupos de materiais que você fornece. Isso ajudará a receber oportunidades relevantes.
+                            </p>
+                        </div>
+
+                        {availableGroups.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500">
+                                <p>Carregando grupos de insumo...</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                {/* Coluna Esquerda: Grupos Disponíveis */}
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between pb-2 border-b border-gray-200">
+                                        <h5 className="text-sm font-semibold text-gray-700">Grupos Disponíveis</h5>
+                                        <span className="text-xs text-gray-500">
+                                            {availableGroups.filter(g => !supplierGroups.includes(g.id)).length} grupos
+                                        </span>
+                                    </div>
+                                    <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
+                                        {availableGroups
+                                            .filter(group => !supplierGroups.includes(group.id))
+                                            .map(group => (
+                                                <button
+                                                    key={group.id}
+                                                    onClick={() => toggleGroup(group.id)}
+                                                    className="w-full flex items-center justify-between p-3 rounded-lg border border-gray-200 bg-white hover:border-green-400 hover:bg-green-50 transition-all group"
+                                                >
+                                                    <span className="text-sm font-medium text-gray-700 group-hover:text-green-700">
+                                                        {group.nome}
+                                                    </span>
+                                                    <PlusIcon className="h-4 w-4 text-gray-400 group-hover:text-green-600" />
+                                                </button>
+                                            ))}
+                                        {availableGroups.filter(g => !supplierGroups.includes(g.id)).length === 0 && (
+                                            <div className="text-center py-8 text-gray-400">
+                                                <p className="text-sm">Todos os grupos foram selecionados</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Coluna Direita: Grupos Selecionados */}
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between pb-3 border-b-2 border-green-500">
+                                        <h5 className="text-sm font-semibold text-gray-900">Meus Grupos</h5>
+                                        <span className="px-2.5 py-1 text-xs font-bold text-white bg-green-600 rounded-full">
+                                            {supplierGroups.length}
+                                        </span>
+                                    </div>
+                                    <div className="space-y-2.5 max-h-96 overflow-y-auto pr-2">
+                                        {availableGroups
+                                            .filter(group => supplierGroups.includes(group.id))
+                                            .map(group => (
+                                                <div
+                                                    key={group.id}
+                                                    className="group flex items-center justify-between p-3.5 rounded-lg border-2 border-green-500 bg-gradient-to-r from-green-50 to-green-100 hover:from-green-100 hover:to-green-200 transition-all shadow-sm"
+                                                >
+                                                    <div className="flex items-center gap-2.5">
+                                                        <div className="w-2 h-2 rounded-full bg-green-600"></div>
+                                                        <span className="text-sm font-semibold text-gray-900">
+                                                            {group.nome}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => toggleGroup(group.id)}
+                                                        className="p-1.5 rounded-lg bg-white border border-red-200 hover:bg-red-50 hover:border-red-400 transition-all shadow-sm"
+                                                        title="Remover grupo"
+                                                    >
+                                                        <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        {supplierGroups.length === 0 && (
+                                            <div className="text-center py-16 px-4">
+                                                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 mb-4">
+                                                    <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                                    </svg>
+                                                </div>
+                                                <p className="text-base font-semibold text-gray-700 mb-1">Nenhum grupo selecionado</p>
+                                                <p className="text-sm text-gray-500">Clique nos grupos à esquerda para adicionar aos seus materiais</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {supplierGroups.length > 0 && (
+                            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
+                                <p className="text-sm font-medium text-green-700">
+                                    Total de grupos selecionados: <span className="font-bold">{supplierGroups.length}</span>
+                                </p>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
 
             {/* Seção de Verificação e Documentos */}
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm mt-6">
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                 <button
                     onClick={() => setShowVerification(!showVerification)}
                     className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors"

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { auth, db } from "../../lib/firebase";
-import { onAuthStateChanged, updatePassword, signOut } from "firebase/auth";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { useAuth } from "@/lib/useAuth";
+import { updatePassword } from "@/lib/supabaseAuth";
+import { supabase } from "@/lib/supabaseAuth";
 import { useToast } from "@/components/ToastProvider";
 import { useRouter } from "next/navigation";
+import { startSessionMonitoring, stopSessionMonitoring } from "../../lib/sessionManager";
 
 export default function DashboardLayout({
     children,
@@ -18,23 +19,24 @@ export default function DashboardLayout({
     const [loading, setLoading] = useState(false);
     const { showToast } = useToast();
     const router = useRouter();
+    const { user, profile, logout, initialized } = useAuth();
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                try {
-                    const userDoc = await getDoc(doc(db, "users", user.uid));
-                    if (userDoc.exists() && userDoc.data().mustChangePassword) {
-                        setMustChangePassword(true);
-                    }
-                } catch (error) {
-                    console.error("Error checking password status:", error);
-                }
-            }
-        });
+        if (initialized && !user) {
+            // Se não está autenticado, redirecionar para login
+            router.push('/login');
+            return;
+        }
 
-        return () => unsubscribe();
-    }, []);
+        if (user) {
+            // Iniciar monitoramento de sessão
+            startSessionMonitoring();
+        }
+
+        return () => {
+            stopSessionMonitoring();
+        };
+    }, [user, initialized, router]);
 
     const handleChangePassword = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -49,36 +51,32 @@ export default function DashboardLayout({
 
         setLoading(true);
         try {
-            const user = auth.currentUser;
-            if (user) {
-                await updatePassword(user, newPassword);
-                await updateDoc(doc(db, "users", user.uid), {
-                    mustChangePassword: false
-                });
-                setMustChangePassword(false);
-                showToast("success", "Senha alterada com sucesso!");
+            const result = await updatePassword(newPassword);
+
+            if (!result.success) {
+                throw new Error(result.error);
             }
+
+            // Atualizar flag no perfil
+            if (user) {
+                await supabase
+                    .from('users')
+                    .update({ mustChangePassword: false })
+                    .eq('id', user.id);
+            }
+
+            setMustChangePassword(false);
+            showToast("success", "Senha alterada com sucesso!");
         } catch (error: any) {
             console.error("Error updating password:", error);
-            if (error.code === 'auth/requires-recent-login') {
-                showToast("error", "Por favor, faça login novamente para alterar a senha.");
-                await signOut(auth);
-                router.push('/login');
-            } else {
-                showToast("error", "Erro ao alterar senha.");
-            }
+            showToast("error", error.message || "Erro ao alterar senha.");
         } finally {
             setLoading(false);
         }
     };
 
     const handleLogout = async () => {
-        try {
-            await signOut(auth);
-            router.push("/login");
-        } catch (error) {
-            console.error("Error logging out:", error);
-        }
+        await logout();
     };
 
     return (

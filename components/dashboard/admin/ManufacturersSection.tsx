@@ -7,9 +7,7 @@ import {
     PencilSquareIcon,
     TrashIcon,
 } from "@heroicons/react/24/outline";
-import { auth, db } from "../../../lib/firebase";
-import { collection, addDoc, deleteDoc, doc, onSnapshot, query, updateDoc } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "@/lib/supabaseAuth";
 
 interface Manufacturer {
     id: string;
@@ -33,17 +31,39 @@ export function ManufacturersSection() {
     });
 
     useEffect(() => {
-        // Admin vê fabricantes de nível global (coleção raiz)
-        const q = query(collection(db, "manufacturers"));
-        const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
-            const items: Manufacturer[] = [];
-            snapshot.forEach((doc) => {
-                items.push({ id: doc.id, ...doc.data() } as Manufacturer);
-            });
-            setManufacturers(items);
+        const fetchManufacturers = async () => {
+            const { data, error } = await supabase
+                .from('fabricantes')
+                .select('*')
+                .order('name');
+
+            if (!error && data) {
+                setManufacturers(data.map(item => ({
+                    id: item.id,
+                    name: item.nome || item.name,
+                    category: item.categoria || item.category || '',
+                    contact: item.contato || item.contact || '',
+                    status: item.status || 'Ativo'
+                })));
+            }
             setLoading(false);
-        });
-        return () => unsubscribeSnapshot();
+        };
+
+        fetchManufacturers();
+
+        // Subscribe to real-time updates
+        const channel = supabase
+            .channel('fabricantes_changes')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'fabricantes' },
+                () => fetchManufacturers()
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, []);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -58,11 +78,19 @@ export function ManufacturersSection() {
         }
 
         try {
-            await addDoc(collection(db, "manufacturers"), {
-                ...formData,
-                createdAt: new Date(),
-                updatedAt: new Date()
-            });
+            const { error } = await supabase
+                .from('fabricantes')
+                .insert({
+                    nome: formData.name,
+                    categoria: formData.category,
+                    contato: formData.contact,
+                    status: formData.status,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                });
+
+            if (error) throw error;
+
             setFormData({
                 name: "",
                 category: "",
@@ -80,7 +108,12 @@ export function ManufacturersSection() {
     const handleDeleteManufacturer = async (id: string) => {
         if (confirm("Tem certeza que deseja excluir este fabricante?")) {
             try {
-                await deleteDoc(doc(db, "manufacturers", id));
+                const { error } = await supabase
+                    .from('fabricantes')
+                    .delete()
+                    .eq('id', id);
+
+                if (error) throw error;
             } catch (error) {
                 console.error("Error deleting manufacturer:", error);
                 alert("Erro ao excluir fabricante.");

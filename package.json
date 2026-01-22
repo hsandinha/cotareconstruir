@@ -9,7 +9,9 @@
     "lint": "next lint",
     "test": "jest",
     "test:watch": "jest --watch",
-    "seed": "tsx scripts/seedDatabase.ts"
+    "seed": "tsx scripts/seedDatabase.ts",
+    "workers": "tsx watch lib/workers.ts",
+    "workers:prod": "tsx lib/workers.ts"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "6.5.2",
@@ -17,14 +19,20 @@
     "@fortawesome/free-solid-svg-icons": "6.5.2",
     "@fortawesome/react-fontawesome": "0.2.2",
     "@heroicons/react": "^2.2.0",
+    "@sentry/nextjs": "^10.32.1",
+    "@supabase/supabase-js": "^2.91.0",
+    "@types/qrcode": "^1.5.6",
+    "@upstash/redis": "^1.35.8",
+    "bullmq": "^5.66.2",
     "date-fns": "^4.1.0",
-    "firebase": "^12.6.0",
-    "firebase-admin": "^13.6.0",
+    "ioredis": "^5.8.2",
     "lucide-react": "^0.562.0",
     "next": "^16.0.7",
+    "qrcode": "^1.5.4",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "resend": "^6.5.2"
+    "resend": "^6.5.2",
+    "speakeasy": "^2.0.0"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",
@@ -34,6 +42,7 @@
     "@types/node": "24.10.1",
     "@types/react": "19.2.5",
     "@types/react-dom": "19.2.3",
+    "@types/speakeasy": "^2.0.10",
     "@types/testing-library__jest-dom": "^5.14.9",
     "autoprefixer": "10.4.19",
     "baseline-browser-mapping": "^2.9.4",
@@ -46,6 +55,7 @@
     "tailwindcss": "3.4.4",
     "ts-jest": "^29.4.6",
     "tsx": "^4.21.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "xlsx": "^0.18.5"
   }
 }
