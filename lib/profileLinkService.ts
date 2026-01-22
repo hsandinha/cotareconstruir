@@ -322,7 +322,6 @@ export async function completeClienteProfile(
                 .from('clientes')
                 .update({
                     user_id: userId,
-                    has_user_account: true,
                     updated_at: new Date().toISOString()
                 })
                 .eq('id', clienteId);
@@ -335,8 +334,6 @@ export async function completeClienteProfile(
         const clienteData = {
             ...cleanData,
             user_id: userId,
-            has_user_account: true,
-            ativo: true,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
@@ -397,7 +394,6 @@ export async function completeFornecedorProfile(
                 .from('fornecedores')
                 .update({
                     user_id: userId,
-                    has_user_account: true,
                     updated_at: new Date().toISOString()
                 })
                 .eq('id', fornecedorId);
@@ -411,16 +407,6 @@ export async function completeFornecedorProfile(
             ...cleanData,
             razao_social: data.razaoSocial,
             user_id: userId,
-            has_user_account: true,
-            ativo: true,
-            codigo: `F${Date.now()}`,
-            codigo_grupo: '',
-            grupo_insumos: '',
-            contato: data.razaoSocial || '',
-            fone: data.telefone || '',
-            inscricao_estadual: '',
-            numero: '',
-            cartao_credito: false,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };

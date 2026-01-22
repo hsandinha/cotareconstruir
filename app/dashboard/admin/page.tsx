@@ -479,7 +479,7 @@ export default function AdminDashboard() {
             // Criar usuário via API (usa supabaseAdmin no servidor)
             const response = await fetch('/api/admin/users', {
                 method: 'POST',
-                headers: { 
+                headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${session.access_token}`
                 },
