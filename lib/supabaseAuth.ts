@@ -1,31 +1,15 @@
 /**
  * Serviço de Autenticação - Supabase
+ * Re-exporta clientes de lib/supabase.ts para evitar múltiplas instâncias
  */
 
-import { createClient, User, Session } from '@supabase/supabase-js';
+import { User, Session } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Importar os clientes do arquivo principal para evitar múltiplas instâncias
+import { supabase, supabaseAdmin } from './supabase';
 
-// Cliente público (client-side)
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-        autoRefreshToken: true,
-        persistSession: true,
-        detectSessionInUrl: true,
-    },
-});
-
-// Cliente admin (server-side only)
-export const supabaseAdmin = supabaseServiceKey
-    ? createClient(supabaseUrl, supabaseServiceKey, {
-        auth: {
-            autoRefreshToken: false,
-            persistSession: false,
-        },
-    })
-    : null;
+// Re-exportar para outros módulos
+export { supabase, supabaseAdmin };
 
 // =====================================================
 // TIPOS
