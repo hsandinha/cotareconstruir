@@ -329,14 +329,19 @@ export async function completeClienteProfile(
             return { success: true, clienteId };
         }
 
-        // Criar novo cliente - remover campos undefined
+        // Criar novo cliente - remover campos undefined e mapear campos
         const cleanData = removeUndefined(data);
         const clienteData = {
             ...cleanData,
+            logradouro: data.endereco, // Mapear endereco → logradouro
             user_id: userId,
+            status: 'active',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
+        
+        // Remover endereco se existe (já mapeado para logradouro)
+        delete (clienteData as any).endereco;
 
         const { data: newCliente, error: insertError } = await supabase
             .from('clientes')
