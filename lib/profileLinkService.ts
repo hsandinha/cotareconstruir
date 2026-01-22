@@ -1,4 +1,4 @@
-import { supabase, supabaseAdmin } from './supabase';
+import { supabase } from './supabase';
 
 /**
  * Serviço para gerenciar vínculos entre usuários (users), clientes e fornecedores.
@@ -299,71 +299,32 @@ export async function completeClienteProfile(
     data: ClienteMinimalData
 ): Promise<{ success: boolean; clienteId?: string; error?: string }> {
     try {
-        // Verificar se email já está em uso
-        const { data: existingClientes } = await supabase
-            .from('clientes')
-            .select('id')
-            .eq('email', data.email)
-            .limit(1);
-
-        if (existingClientes && existingClientes.length > 0) {
-            // Vincular ao existente
-            const clienteId = existingClientes[0].id;
-            await supabase
-                .from('users')
-                .update({
-                    cliente_id: clienteId,
-                    pending_cliente_profile: false,
-                    cliente_pre_data: null
-                })
-                .eq('id', userId);
-
-            await supabase
-                .from('clientes')
-                .update({
-                    user_id: userId,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', clienteId);
-
-            return { success: true, clienteId };
+        // Obter token da sessão
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+            throw new Error('Sessão não encontrada');
         }
 
-        // Criar novo cliente - remover campos undefined e mapear campos
-        const cleanData = removeUndefined(data);
-        const { endereco, ...restData } = cleanData as any;
-        const clienteData = {
-            ...restData,
-            logradouro: endereco || data.endereco,
-            user_id: userId,
-            status: 'active',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
-
-        if (!supabaseAdmin) {
-            throw new Error('Supabase admin client not configured');
-        }
-
-        const { data: newCliente, error: insertError } = await supabaseAdmin
-            .from('clientes')
-            .insert(clienteData)
-            .select('id')
-            .single();
-
-        if (insertError) throw insertError;
-
-        // Atualizar usuário com o vínculo
-        await supabaseAdmin
-            .from('users')
-            .update({
-                cliente_id: newCliente.id,
-                pending_cliente_profile: false,
-                cliente_pre_data: null
+        // Chamar API para completar cadastro
+        const response = await fetch('/api/profile/complete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({
+                type: 'cliente',
+                data
             })
-            .eq('id', userId);
+        });
 
-        return { success: true, clienteId: newCliente.id };
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Erro ao completar cadastro');
+        }
+
+        return result;
     } catch (error: any) {
         console.error('Erro ao completar cadastro de cliente:', error);
         return { success: false, error: error.message };
@@ -378,72 +339,32 @@ export async function completeFornecedorProfile(
     data: FornecedorMinimalData
 ): Promise<{ success: boolean; fornecedorId?: string; error?: string }> {
     try {
-        // Verificar se email já está em uso
-        const { data: existingFornecedores } = await supabase
-            .from('fornecedores')
-            .select('id')
-            .eq('email', data.email)
-            .limit(1);
-
-        if (existingFornecedores && existingFornecedores.length > 0) {
-            // Vincular ao existente
-            const fornecedorId = existingFornecedores[0].id;
-            await supabase
-                .from('users')
-                .update({
-                    fornecedor_id: fornecedorId,
-                    pending_fornecedor_profile: false,
-                    fornecedor_pre_data: null
-                })
-                .eq('id', userId);
-
-            await supabase
-                .from('fornecedores')
-                .update({
-                    user_id: userId,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', fornecedorId);
-
-            return { success: true, fornecedorId };
+        // Obter token da sessão
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+            throw new Error('Sessão não encontrada');
         }
 
-        // Criar novo fornecedor - remover campos undefined
-        const cleanData = removeUndefined(data);
-        const fornecedorData = {
-            ...cleanData,
-            razao_social: data.razaoSocial,
-            user_id: userId,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
-
-        // Remove razaoSocial pois já mapeamos para razao_social
-        delete (fornecedorData as any).razaoSocial;
-
-        if (!supabaseAdmin) {
-            throw new Error('Supabase admin client not configured');
-        }
-
-        const { data: newFornecedor, error: insertError } = await supabaseAdmin
-            .from('fornecedores')
-            .insert(fornecedorData)
-            .select('id')
-            .single();
-
-        if (insertError) throw insertError;
-
-        // Atualizar usuário com o vínculo
-        await supabaseAdmin
-            .from('users')
-            .update({
-                fornecedor_id: newFornecedor.id,
-                pending_fornecedor_profile: false,
-                fornecedor_pre_data: null
+        // Chamar API para completar cadastro
+        const response = await fetch('/api/profile/complete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({
+                type: 'fornecedor',
+                data
             })
-            .eq('id', userId);
+        });
 
-        return { success: true, fornecedorId: newFornecedor.id };
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Erro ao completar cadastro');
+        }
+
+        return result;
     } catch (error: any) {
         console.error('Erro ao completar cadastro de fornecedor:', error);
         return { success: false, error: error.message };
