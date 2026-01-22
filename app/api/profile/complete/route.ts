@@ -17,22 +17,29 @@ function removeUndefined(obj: any): any {
 export async function POST(request: NextRequest) {
     try {
         const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+        
+        console.log('=== API /api/profile/complete chamada ===');
 
         // Verificar autenticação
         const authHeader = request.headers.get('authorization');
         const token = authHeader?.replace('Bearer ', '');
 
         if (!token) {
+            console.log('Erro: Token não fornecido');
             return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
         }
 
         const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
 
         if (authError || !user) {
+            console.log('Erro ao validar token:', authError);
             return NextResponse.json({ error: 'Token inválido' }, { status: 401 });
         }
 
+        console.log('Usuário autenticado:', user.id, user.email);
+
         const body = await request.json();
+        console.log('Tipo de cadastro:', body.type);
         const { type, data } = body; // type: 'cliente' | 'fornecedor'
 
         if (type === 'cliente') {
