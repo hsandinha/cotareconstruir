@@ -25,7 +25,7 @@ export function ClientOrderSection() {
         // Buscar obras para mapear IDs para nomes
         const fetchWorks = async () => {
             const { data, error } = await supabase
-                .from('works')
+                .from('obras')
                 .select('id, obra')
                 .eq('user_id', user.id);
 
@@ -79,12 +79,12 @@ export function ClientOrderSection() {
                 {
                     event: '*',
                     schema: 'public',
-                    table: 'works',
+                    table: 'obras',
                     filter: `user_id=eq.${user.id}`
                 },
                 async () => {
                     const { data } = await supabase
-                        .from('works')
+                        .from('obras')
                         .select('id, obra')
                         .eq('user_id', user.id);
 

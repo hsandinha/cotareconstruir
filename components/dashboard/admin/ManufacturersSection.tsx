@@ -33,16 +33,16 @@ export function ManufacturersSection() {
     useEffect(() => {
         const fetchManufacturers = async () => {
             const { data, error } = await supabase
-                .from('fabricantes')
+                .from('manufacturers')
                 .select('*')
                 .order('name');
 
             if (!error && data) {
                 setManufacturers(data.map(item => ({
                     id: item.id,
-                    name: item.nome || item.name,
-                    category: item.categoria || item.category || '',
-                    contact: item.contato || item.contact || '',
+                    name: item.name || '',
+                    category: item.category || '',
+                    contact: item.contact || '',
                     status: item.status || 'Ativo'
                 })));
             }
@@ -53,10 +53,10 @@ export function ManufacturersSection() {
 
         // Subscribe to real-time updates
         const channel = supabase
-            .channel('fabricantes_changes')
+            .channel('manufacturers_changes')
             .on(
                 'postgres_changes',
-                { event: '*', schema: 'public', table: 'fabricantes' },
+                { event: '*', schema: 'public', table: 'manufacturers' },
                 () => fetchManufacturers()
             )
             .subscribe();
@@ -79,11 +79,11 @@ export function ManufacturersSection() {
 
         try {
             const { error } = await supabase
-                .from('fabricantes')
+                .from('manufacturers')
                 .insert({
-                    nome: formData.name,
-                    categoria: formData.category,
-                    contato: formData.contact,
+                    name: formData.name,
+                    category: formData.category,
+                    contact: formData.contact,
                     status: formData.status,
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString()
@@ -109,7 +109,7 @@ export function ManufacturersSection() {
         if (confirm("Tem certeza que deseja excluir este fabricante?")) {
             try {
                 const { error } = await supabase
-                    .from('fabricantes')
+                    .from('manufacturers')
                     .delete()
                     .eq('id', id);
 

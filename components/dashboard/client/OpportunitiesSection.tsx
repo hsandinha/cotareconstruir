@@ -192,7 +192,7 @@ export function ClientOpportunitiesSection() {
         // Buscar obras inicialmente
         const fetchWorks = async () => {
             const { data, error } = await supabase
-                .from('works')
+                .from('obras')
                 .select('*')
                 .eq('user_id', user.id);
 
@@ -221,12 +221,12 @@ export function ClientOpportunitiesSection() {
                 {
                     event: '*',
                     schema: 'public',
-                    table: 'works',
+                    table: 'obras',
                     filter: `user_id=eq.${user.id}`
                 },
                 async () => {
                     const { data } = await supabase
-                        .from('works')
+                        .from('obras')
                         .select('*')
                         .eq('user_id', user.id);
 

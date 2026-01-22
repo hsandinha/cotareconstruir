@@ -188,7 +188,7 @@ export default function ClientesManagement() {
 
             // Carregar todas as obras
             const { data: obrasData, error: obrasError } = await supabase
-                .from('works')
+                .from('obras')
                 .select('*');
 
             if (obrasError) throw obrasError;

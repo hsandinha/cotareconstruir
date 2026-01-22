@@ -100,7 +100,7 @@ export function ClientWorksSection() {
         // Buscar obras inicialmente
         const fetchWorks = async () => {
             const { data, error } = await supabase
-                .from('works')
+                .from('obras')
                 .select('*')
                 .eq('user_id', user.id);
 
@@ -127,13 +127,13 @@ export function ClientWorksSection() {
                 {
                     event: '*',
                     schema: 'public',
-                    table: 'works',
+                    table: 'obras',
                     filter: `user_id=eq.${user.id}`
                 },
                 async () => {
                     // Recarregar dados quando houver mudanças
                     const { data } = await supabase
-                        .from('works')
+                        .from('obras')
                         .select('*')
                         .eq('user_id', user.id);
 
@@ -211,7 +211,7 @@ export function ClientWorksSection() {
             if (editingWorkId) {
                 // Atualizar obra existente
                 const { error } = await supabase
-                    .from('works')
+                    .from('obras')
                     .update({
                         ...form,
                         inicio_recebimento_oferta: inicioRecebimentoOferta,
@@ -224,7 +224,7 @@ export function ClientWorksSection() {
             } else {
                 // Criar nova obra
                 const { error } = await supabase
-                    .from('works')
+                    .from('obras')
                     .insert({
                         ...form,
                         inicio_recebimento_oferta: inicioRecebimentoOferta,
@@ -311,7 +311,7 @@ export function ClientWorksSection() {
         try {
             // Buscar obra atual para adicionar ao array de stages
             const { data: workData, error: fetchError } = await supabase
-                .from('works')
+                .from('obras')
                 .select('stages')
                 .eq('id', String(selectedWork))
                 .single();
@@ -322,7 +322,7 @@ export function ClientWorksSection() {
             const updatedStages = [...currentStages, newStage];
 
             const { error } = await supabase
-                .from('works')
+                .from('obras')
                 .update({ stages: updatedStages })
                 .eq('id', String(selectedWork));
 
@@ -352,7 +352,7 @@ export function ClientWorksSection() {
 
         try {
             const { error } = await supabase
-                .from('works')
+                .from('obras')
                 .update({ stages: updatedStages })
                 .eq('id', String(workId));
 
@@ -366,7 +366,7 @@ export function ClientWorksSection() {
         if (!confirm("Tem certeza que deseja excluir esta obra?")) return;
         try {
             const { error } = await supabase
-                .from('works')
+                .from('obras')
                 .delete()
                 .eq('id', String(workId));
 
