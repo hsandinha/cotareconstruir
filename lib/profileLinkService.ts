@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, supabaseAdmin } from './supabase';
 
 /**
  * Serviço para gerenciar vínculos entre usuários (users), clientes e fornecedores.
@@ -341,7 +341,11 @@ export async function completeClienteProfile(
             updated_at: new Date().toISOString()
         };
 
-        const { data: newCliente, error: insertError } = await supabase
+        if (!supabaseAdmin) {
+            throw new Error('Supabase admin client not configured');
+        }
+
+        const { data: newCliente, error: insertError } = await supabaseAdmin
             .from('clientes')
             .insert(clienteData)
             .select('id')
@@ -350,7 +354,7 @@ export async function completeClienteProfile(
         if (insertError) throw insertError;
 
         // Atualizar usuário com o vínculo
-        await supabase
+        await supabaseAdmin
             .from('users')
             .update({
                 cliente_id: newCliente.id,
@@ -417,7 +421,11 @@ export async function completeFornecedorProfile(
         // Remove razaoSocial pois já mapeamos para razao_social
         delete (fornecedorData as any).razaoSocial;
 
-        const { data: newFornecedor, error: insertError } = await supabase
+        if (!supabaseAdmin) {
+            throw new Error('Supabase admin client not configured');
+        }
+
+        const { data: newFornecedor, error: insertError } = await supabaseAdmin
             .from('fornecedores')
             .insert(fornecedorData)
             .select('id')
@@ -426,7 +434,7 @@ export async function completeFornecedorProfile(
         if (insertError) throw insertError;
 
         // Atualizar usuário com o vínculo
-        await supabase
+        await supabaseAdmin
             .from('users')
             .update({
                 fornecedor_id: newFornecedor.id,
