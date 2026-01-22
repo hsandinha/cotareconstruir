@@ -232,10 +232,10 @@ export default function ClienteDashboard() {
                     setShowPendingProfileModal(false);
                     // Forçar atualização da sessão antes de recarregar
                     await supabase.auth.refreshSession();
-                    // Pequeno delay para garantir que o banco foi atualizado
+                    // Delay para garantir que o banco foi atualizado
                     setTimeout(() => {
                         window.location.reload();
-                    }, 500);
+                    }, 1000);
                 }}
             />
         </div>

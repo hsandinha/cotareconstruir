@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
             if (insertError) throw insertError;
 
             // Atualizar usuário com o vínculo
-            await supabaseAdmin
+            const { error: updateError } = await supabaseAdmin
                 .from('users')
                 .update({
                     cliente_id: newCliente.id,
@@ -95,6 +95,13 @@ export async function POST(request: NextRequest) {
                     cliente_pre_data: null
                 })
                 .eq('id', user.id);
+
+            if (updateError) {
+                console.error('Erro ao atualizar user com cliente_id:', updateError);
+                throw updateError;
+            }
+
+            console.log('Cliente criado e vinculado:', { userId: user.id, clienteId: newCliente.id });
 
             return NextResponse.json({ success: true, clienteId: newCliente.id });
 
@@ -150,7 +157,7 @@ export async function POST(request: NextRequest) {
             if (insertError) throw insertError;
 
             // Atualizar usuário com o vínculo
-            await supabaseAdmin
+            const { error: updateError } = await supabaseAdmin
                 .from('users')
                 .update({
                     fornecedor_id: newFornecedor.id,
@@ -158,6 +165,13 @@ export async function POST(request: NextRequest) {
                     fornecedor_pre_data: null
                 })
                 .eq('id', user.id);
+
+            if (updateError) {
+                console.error('Erro ao atualizar user com fornecedor_id:', updateError);
+                throw updateError;
+            }
+
+            console.log('Fornecedor criado e vinculado:', { userId: user.id, fornecedorId: newFornecedor.id });
 
             return NextResponse.json({ success: true, fornecedorId: newFornecedor.id });
         }
