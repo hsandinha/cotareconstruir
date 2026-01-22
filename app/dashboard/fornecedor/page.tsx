@@ -239,10 +239,14 @@ export default function FornecedorDashboard() {
                 userId={userId}
                 userEmail={userEmail}
                 userName={userName}
-                onComplete={() => {
+                onComplete={async () => {
                     setShowPendingProfileModal(false);
-                    // Recarregar a página para atualizar os dados
-                    window.location.reload();
+                    // Forçar atualização da sessão antes de recarregar
+                    await supabase.auth.refreshSession();
+                    // Pequeno delay para garantir que o banco foi atualizado
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 500);
                 }}
             />
         </div>
