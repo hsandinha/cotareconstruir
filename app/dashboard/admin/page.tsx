@@ -470,10 +470,19 @@ export default function AdminDashboard() {
 
         setIsCreatingUser(true);
         try {
+            // Obter token da sessão
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.access_token) {
+                throw new Error('Sessão não encontrada');
+            }
+
             // Criar usuário via API (usa supabaseAdmin no servidor)
             const response = await fetch('/api/admin/users', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
                 body: JSON.stringify({
                     email: newUserEmail,
                     password: newUserPassword,
