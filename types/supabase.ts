@@ -259,6 +259,7 @@ export interface Database {
                     bairro: string | null;
                     cidade: string | null;
                     estado: string | null;
+                    status: 'pending' | 'active' | 'suspended' | null;
                     created_at: string;
                     updated_at: string;
                 };
@@ -277,6 +278,7 @@ export interface Database {
                     bairro?: string | null;
                     cidade?: string | null;
                     estado?: string | null;
+                    status?: 'pending' | 'active' | 'suspended' | null;
                     created_at?: string;
                     updated_at?: string;
                 };
@@ -295,6 +297,7 @@ export interface Database {
                     bairro?: string | null;
                     cidade?: string | null;
                     estado?: string | null;
+                    status?: 'pending' | 'active' | 'suspended' | null;
                     created_at?: string;
                     updated_at?: string;
                 };

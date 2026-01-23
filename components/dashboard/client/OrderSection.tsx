@@ -26,13 +26,13 @@ export function ClientOrderSection() {
         const fetchWorks = async () => {
             const { data, error } = await supabase
                 .from('obras')
-                .select('id, obra')
+                .select('id, nome')
                 .eq('user_id', user.id);
 
             if (!error && data) {
                 const map: Record<string, string> = {};
                 data.forEach(doc => {
-                    map[doc.id] = doc.obra;
+                    map[doc.id] = doc.nome;
                 });
                 setWorksMap(map);
             }
@@ -41,7 +41,7 @@ export function ClientOrderSection() {
         // Buscar cotações (Orders)
         const fetchQuotations = async () => {
             const { data, error } = await supabase
-                .from('quotations')
+                .from('cotacoes')
                 .select('*')
                 .eq('user_id', user.id);
 
@@ -85,13 +85,13 @@ export function ClientOrderSection() {
                 async () => {
                     const { data } = await supabase
                         .from('obras')
-                        .select('id, obra')
+                        .select('id, nome')
                         .eq('user_id', user.id);
 
                     if (data) {
                         const map: Record<string, string> = {};
                         data.forEach(doc => {
-                            map[doc.id] = doc.obra;
+                            map[doc.id] = doc.nome;
                         });
                         setWorksMap(map);
                     }
@@ -111,7 +111,7 @@ export function ClientOrderSection() {
                 },
                 async () => {
                     const { data } = await supabase
-                        .from('quotations')
+                        .from('cotacoes')
                         .select('*')
                         .eq('user_id', user.id);
 

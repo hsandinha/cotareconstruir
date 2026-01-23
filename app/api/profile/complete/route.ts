@@ -17,29 +17,22 @@ function removeUndefined(obj: any): any {
 export async function POST(request: NextRequest) {
     try {
         const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-        
-        console.log('=== API /api/profile/complete chamada ===');
 
         // Verificar autenticação
         const authHeader = request.headers.get('authorization');
         const token = authHeader?.replace('Bearer ', '');
 
         if (!token) {
-            console.log('Erro: Token não fornecido');
             return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
         }
 
         const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
 
         if (authError || !user) {
-            console.log('Erro ao validar token:', authError);
             return NextResponse.json({ error: 'Token inválido' }, { status: 401 });
         }
 
-        console.log('Usuário autenticado:', user.id, user.email);
-
         const body = await request.json();
-        console.log('Tipo de cadastro:', body.type);
         const { type, data } = body; // type: 'cliente' | 'fornecedor'
 
         if (type === 'cliente') {
@@ -56,9 +49,7 @@ export async function POST(request: NextRequest) {
                 await supabaseAdmin
                     .from('users')
                     .update({
-                        cliente_id: clienteId,
-                        pending_cliente_profile: false,
-                        cliente_pre_data: null
+                        cliente_id: clienteId
                     })
                     .eq('id', user.id);
 
@@ -74,16 +65,35 @@ export async function POST(request: NextRequest) {
             }
 
             // Criar novo cliente
+            console.log('[API] Dados recebidos do modal:', data);
+
             const cleanData = removeUndefined(data);
-            const { endereco, ...restData } = cleanData as any;
+            console.log('[API] Dados limpos (sem undefined):', cleanData);
+
+            // Determinar se é CPF ou CNPJ baseado nos dados
+            const cpfCnpjValue = data.cpf || data.cnpj || null;
+
+            // Mapear campos do modal para campos da tabela clientes
             const clienteData = {
-                ...restData,
-                logradouro: endereco || data.endereco,
+                nome: data.nome,
+                email: data.email,
+                telefone: data.telefone || null,
+                cpf_cnpj: cpfCnpjValue ? cpfCnpjValue.replace(/\D/g, '') : null,  // Coluna única para CPF ou CNPJ
+                cep: data.cep ? data.cep.replace(/\D/g, '') : null,
+                logradouro: data.endereco || null,  // Modal usa 'endereco', banco usa 'logradouro'
+                numero: data.numero || null,
+                complemento: data.complemento || null,
+                bairro: data.bairro || null,
+                cidade: data.cidade || null,
+                estado: data.estado || null,
+                razao_social: data.razaoSocial || data.razao_social || null,
                 user_id: user.id,
                 status: 'active',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             };
+
+            console.log('[API] Dados do cliente para inserir:', clienteData);
 
             const { data: newCliente, error: insertError } = await supabaseAdmin
                 .from('clientes')
@@ -93,22 +103,23 @@ export async function POST(request: NextRequest) {
 
             if (insertError) throw insertError;
 
+            console.log('[API] Cliente criado com ID:', newCliente.id);
+            console.log('[API] Atualizando user:', user.id, 'com cliente_id:', newCliente.id);
+
             // Atualizar usuário com o vínculo
             const { error: updateError } = await supabaseAdmin
                 .from('users')
                 .update({
-                    cliente_id: newCliente.id,
-                    pending_cliente_profile: false,
-                    cliente_pre_data: null
+                    cliente_id: newCliente.id
                 })
                 .eq('id', user.id);
 
             if (updateError) {
-                console.error('Erro ao atualizar user com cliente_id:', updateError);
+                console.error('[API] ERRO ao atualizar user com cliente_id:', updateError);
                 throw updateError;
             }
 
-            console.log('Cliente criado e vinculado:', { userId: user.id, clienteId: newCliente.id });
+            console.log('[API] User atualizado com sucesso!');
 
             return NextResponse.json({ success: true, clienteId: newCliente.id });
 
@@ -126,9 +137,7 @@ export async function POST(request: NextRequest) {
                 await supabaseAdmin
                     .from('users')
                     .update({
-                        fornecedor_id: fornecedorId,
-                        pending_fornecedor_profile: false,
-                        fornecedor_pre_data: null
+                        fornecedor_id: fornecedorId
                     })
                     .eq('id', user.id);
 
@@ -145,15 +154,26 @@ export async function POST(request: NextRequest) {
 
             // Criar novo fornecedor
             const cleanData = removeUndefined(data);
+
+            // Mapear campos do modal para campos da tabela fornecedores
             const fornecedorData = {
-                ...cleanData,
-                razao_social: data.razaoSocial,
+                razao_social: data.razaoSocial || data.razao_social || null,
+                nome_fantasia: data.nomeFantasia || data.nome_fantasia || null,
+                cnpj: data.cnpj ? data.cnpj.replace(/\D/g, '') : null,
+                email: data.email || null,
+                telefone: data.telefone || null,
+                cep: data.cep ? data.cep.replace(/\D/g, '') : null,
+                logradouro: data.endereco || data.logradouro || null,  // Modal usa 'endereco', banco usa 'logradouro'
+                numero: data.numero || null,
+                complemento: data.complemento || null,
+                bairro: data.bairro || null,
+                cidade: data.cidade || null,
+                estado: data.estado || null,
                 user_id: user.id,
+                status: 'pending',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             };
-
-            delete (fornecedorData as any).razaoSocial;
 
             const { data: newFornecedor, error: insertError } = await supabaseAdmin
                 .from('fornecedores')
@@ -167,9 +187,7 @@ export async function POST(request: NextRequest) {
             const { error: updateError } = await supabaseAdmin
                 .from('users')
                 .update({
-                    fornecedor_id: newFornecedor.id,
-                    pending_fornecedor_profile: false,
-                    fornecedor_pre_data: null
+                    fornecedor_id: newFornecedor.id
                 })
                 .eq('id', user.id);
 

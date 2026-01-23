@@ -42,9 +42,12 @@ export default function PendingProfileModal({
         telefone: '',
         cpf: '',
         cnpj: '',
+        razaoSocial: '',
         cidade: '',
         estado: '',
         endereco: '',
+        numero: '',
+        complemento: '',
         bairro: '',
         cep: ''
     });
@@ -358,17 +361,30 @@ export default function PendingProfileModal({
                                             />
                                         </div>
                                     ) : (
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">CNPJ</label>
-                                            <input
-                                                type="text"
-                                                name="cnpj"
-                                                value={clienteData.cnpj}
-                                                onChange={handleClienteChange}
-                                                placeholder="00.000.000/0000-00"
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            />
-                                        </div>
+                                        <>
+                                            <div className="col-span-2">
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Razão Social *</label>
+                                                <input
+                                                    type="text"
+                                                    name="razaoSocial"
+                                                    value={clienteData.razaoSocial}
+                                                    onChange={handleClienteChange}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    required
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">CNPJ</label>
+                                                <input
+                                                    type="text"
+                                                    name="cnpj"
+                                                    value={clienteData.cnpj}
+                                                    onChange={handleClienteChange}
+                                                    placeholder="00.000.000/0000-00"
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </div>
+                                        </>
                                     )}
 
                                     <div>
@@ -385,12 +401,37 @@ export default function PendingProfileModal({
                                     </div>
 
                                     <div className="col-span-2">
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Endereço</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Endereço (Logradouro)</label>
                                         <input
                                             type="text"
                                             name="endereco"
                                             value={clienteData.endereco}
                                             onChange={handleClienteChange}
+                                            placeholder="Rua, Avenida, etc."
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Número</label>
+                                        <input
+                                            type="text"
+                                            name="numero"
+                                            value={clienteData.numero}
+                                            onChange={handleClienteChange}
+                                            placeholder="123"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Complemento</label>
+                                        <input
+                                            type="text"
+                                            name="complemento"
+                                            value={clienteData.complemento}
+                                            onChange={handleClienteChange}
+                                            placeholder="Apto, Sala, etc."
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                     </div>

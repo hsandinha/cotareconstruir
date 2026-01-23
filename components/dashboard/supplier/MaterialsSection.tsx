@@ -86,15 +86,14 @@ export function SupplierMaterialsSection() {
                 if (userData?.fornecedor_id) {
                     setFornecedorId(userData.fornecedor_id);
 
-                    // Buscar dados do fornecedor
-                    const { data: fornecedorData, error: fornecedorError } = await supabase
-                        .from('fornecedores')
-                        .select('grupo_insumo_ids')
-                        .eq('id', userData.fornecedor_id)
-                        .single();
+                    // Buscar grupos do fornecedor na tabela de relacionamento
+                    const { data: gruposData, error: gruposError } = await supabase
+                        .from('fornecedor_grupo')
+                        .select('grupo_id')
+                        .eq('fornecedor_id', userData.fornecedor_id);
 
-                    if (fornecedorData) {
-                        setFornecedorGrupoIds(fornecedorData.grupo_insumo_ids || []);
+                    if (gruposData) {
+                        setFornecedorGrupoIds(gruposData.map(g => g.grupo_id));
                     }
                 }
             }

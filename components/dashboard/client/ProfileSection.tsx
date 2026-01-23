@@ -5,12 +5,14 @@ import { useToast } from "@/components/ToastProvider";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/useAuth";
 import { formatCepBr, formatCnpjBr, formatCpfBr, formatPhoneBr, isValidCNPJ, isValidCPF } from "../../../lib/utils";
+import { User, Building2, MapPin, Phone, Mail, FileText, Users, Save, Loader2, Search, CheckCircle2, AlertCircle } from "lucide-react";
 
 export function ClientProfileSection() {
     const { user, loading: authLoading } = useAuth();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [profileType, setProfileType] = useState<"cpf" | "cnpj">("cpf");
+    const [profileComplete, setProfileComplete] = useState(0);
 
     const [person, setPerson] = useState({
         name: "",
@@ -20,20 +22,25 @@ export function ClientProfileSection() {
         role: "",
     });
 
-    const [company, setCompany] = useState({
-        companyName: "",
-        cnpj: "",
-        role: "",
-        obras: 0,
+    const [address, setAddress] = useState({
         cep: "",
-        endereco: "",
+        logradouro: "",
         numero: "",
+        complemento: "",
         bairro: "",
         cidade: "",
         estado: "",
-        complemento: "",
     });
+
+    const [company, setCompany] = useState({
+        razaoSocial: "",
+        cnpj: "",
+        role: "",
+        obras: 0,
+    });
+
     const [loadingCep, setLoadingCep] = useState(false);
+    const [loadingCnpj, setLoadingCnpj] = useState(false);
 
     const [teamMembers, setTeamMembers] = useState<Array<{ name: string; email: string; phone: string; role: string }>>([]);
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -43,18 +50,31 @@ export function ClientProfileSection() {
 
     const { showToast } = useToast();
 
+    // Calcular completude do perfil
+    useEffect(() => {
+        let total = 0;
+        let filled = 0;
+
+        const cpfFields = [person.name, person.email, person.phone, person.cpf, address.cep, address.logradouro, address.numero, address.cidade, address.estado];
+        const cnpjFields = [...cpfFields, company.razaoSocial, company.cnpj];
+
+        const fields = profileType === "cpf" ? cpfFields : cnpjFields;
+        total = fields.length;
+        filled = fields.filter(f => f && f.toString().trim() !== "").length;
+
+        setProfileComplete(Math.round((filled / total) * 100));
+    }, [person, address, company, profileType]);
+
     const handleAddPersonAsMember = () => {
         if (!person.name || !person.email) {
             showToast("error", "Preencha nome e email do contato principal para adicionar.");
             return;
         }
-
         const exists = teamMembers.some((m) => m.email === person.email);
         if (exists) {
-            showToast("error", "Este email já está na lista de funcionários.");
+            showToast("error", "Esse email já está na lista de funcionários.");
             return;
         }
-
         setTeamMembers((prev) => [
             ...prev,
             {
@@ -73,44 +93,88 @@ export function ClientProfileSection() {
 
             if (user) {
                 try {
-                    const { data, error } = await supabase
+                    const { data: userData, error: userError } = await supabase
                         .from('users')
                         .select('*')
                         .eq('id', user.id)
                         .single();
 
-                    if (error) throw error;
+                    if (userError) throw userError;
 
-                    if (data) {
-                        const detectedProfile = data.profile_type || (data.cnpj ? "cnpj" : "cpf");
-                        setProfileType(detectedProfile);
-                        setPerson({
-                            name: data.nome || user.user_metadata?.full_name || "",
-                            cpf: formatCpfBr(data.cpf_cnpj || ""),
-                            email: data.email || user.email || "",
-                            phone: formatPhoneBr(data.telefone || ""),
-                            role: data.person_role || "",
-                        });
-                        setCompany({
-                            companyName: data.company_name || "",
-                            cnpj: formatCnpjBr(data.cnpj || ""),
-                            role: data.company_role || "",
-                            obras: data.obras || 0,
-                            cep: formatCepBr(data.cep || ""),
-                            endereco: data.endereco || data.address || "",
-                            numero: data.numero || data.address_number || "",
-                            bairro: data.bairro || "",
-                            cidade: data.cidade || "",
-                            estado: data.estado || "",
-                            complemento: data.complemento || data.address_complement || "",
-                        });
-                        setTeamMembers((data.team_members || []).map((m: any) => ({
-                            name: m.name || "",
-                            email: m.email || "",
-                            phone: formatPhoneBr(m.phone || ""),
-                            role: m.role || "",
-                        })));
+                    if (userData.cliente_id) {
+                        const { data: clienteData, error: clienteError } = await supabase
+                            .from('clientes')
+                            .select('*')
+                            .eq('id', userData.cliente_id);
+
+                        const cliente = clienteData && clienteData.length > 0 ? clienteData[0] : null;
+
+                        if (!clienteError && cliente) {
+                            const cpfCnpjClean = (cliente.cpf_cnpj || "").replace(/\D/g, "");
+                            const isCnpj = cpfCnpjClean.length === 14;
+                            const detectedProfile = isCnpj ? "cnpj" : "cpf";
+                            setProfileType(detectedProfile);
+
+                            setPerson({
+                                name: cliente.nome || userData.nome || "",
+                                cpf: isCnpj ? "" : formatCpfBr(cliente.cpf_cnpj || ""),
+                                email: cliente.email || userData.email || "",
+                                phone: formatPhoneBr(cliente.telefone || ""),
+                                role: "",
+                            });
+
+                            setAddress({
+                                cep: formatCepBr(cliente.cep || ""),
+                                logradouro: cliente.logradouro || "",
+                                numero: cliente.numero || "",
+                                complemento: cliente.complemento || "",
+                                bairro: cliente.bairro || "",
+                                cidade: cliente.cidade || "",
+                                estado: cliente.estado || "",
+                            });
+
+                            setCompany({
+                                razaoSocial: cliente.razao_social || "",
+                                cnpj: isCnpj ? formatCnpjBr(cliente.cpf_cnpj || "") : "",
+                                role: "",
+                                obras: 0,
+                            });
+
+                            setLoading(false);
+                            return;
+                        }
                     }
+
+                    const detectedProfile = userData.profile_type || (userData.cnpj ? "cnpj" : "cpf");
+                    setProfileType(detectedProfile);
+                    setPerson({
+                        name: userData.nome || user.user_metadata?.full_name || "",
+                        cpf: formatCpfBr(userData.cpf_cnpj || ""),
+                        email: userData.email || user.email || "",
+                        phone: formatPhoneBr(userData.telefone || ""),
+                        role: userData.person_role || "",
+                    });
+                    setAddress({
+                        cep: formatCepBr(userData.cep || ""),
+                        logradouro: userData.endereco || userData.logradouro || "",
+                        numero: userData.numero || "",
+                        complemento: userData.complemento || "",
+                        bairro: userData.bairro || "",
+                        cidade: userData.cidade || "",
+                        estado: userData.estado || "",
+                    });
+                    setCompany({
+                        razaoSocial: userData.company_name || "",
+                        cnpj: formatCnpjBr(userData.cnpj || ""),
+                        role: userData.company_role || "",
+                        obras: userData.obras || 0,
+                    });
+                    setTeamMembers((userData.team_members || []).map((m: any) => ({
+                        name: m.name || "",
+                        email: m.email || "",
+                        phone: formatPhoneBr(m.phone || ""),
+                        role: m.role || "",
+                    })));
                 } catch (error) {
                     console.error("Erro ao buscar perfil:", error);
                 }
@@ -151,41 +215,52 @@ export function ClientProfileSection() {
             return;
         }
 
-        if (profileType === "cnpj") {
-            const invalidMember = teamMembers.find((m) => !m.name || !m.email);
-            if (invalidMember) {
-                showToast("error", "Preencha nome e email de todos os responsáveis vinculados.");
-                return;
-            }
-        }
-
         setSaving(true);
         try {
-            const { error } = await supabase
+            const { data: userData } = await supabase
+                .from('users')
+                .select('cliente_id')
+                .eq('id', user.id)
+                .single();
+
+            if (userData?.cliente_id) {
+                const cpfCnpjValue = profileType === "cpf"
+                    ? person.cpf?.replace(/\D/g, '')
+                    : company.cnpj?.replace(/\D/g, '');
+
+                const { error: clienteError } = await supabase
+                    .from('clientes')
+                    .update({
+                        nome: person.name,
+                        cpf_cnpj: cpfCnpjValue || null,
+                        razao_social: profileType === "cnpj" ? company.razaoSocial : null,
+                        email: person.email,
+                        telefone: person.phone?.replace(/\D/g, ''),
+                        cep: address.cep?.replace(/\D/g, ''),
+                        logradouro: address.logradouro,
+                        numero: address.numero,
+                        complemento: address.complemento,
+                        bairro: address.bairro,
+                        cidade: address.cidade,
+                        estado: address.estado,
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', userData.cliente_id);
+
+                if (clienteError) throw clienteError;
+            }
+
+            const { error: userError } = await supabase
                 .from('users')
                 .update({
-                    profile_type: profileType,
                     nome: person.name,
-                    cpf_cnpj: profileType === "cpf" ? person.cpf : (profileType === "cnpj" ? company.cnpj : ""),
                     telefone: person.phone,
-                    person_role: person.role,
-                    company_name: profileType === "cnpj" ? company.companyName : "",
-                    cnpj: profileType === "cnpj" ? company.cnpj : "",
-                    company_role: profileType === "cnpj" ? company.role : "",
-                    obras: profileType === "cnpj" ? company.obras : 0,
-                    cep: profileType === "cnpj" ? company.cep : "",
-                    endereco: profileType === "cnpj" ? company.endereco : "",
-                    numero: profileType === "cnpj" ? company.numero : "",
-                    bairro: profileType === "cnpj" ? company.bairro : "",
-                    cidade: profileType === "cnpj" ? company.cidade : "",
-                    estado: profileType === "cnpj" ? company.estado : "",
-                    complemento: profileType === "cnpj" ? company.complemento : "",
-                    team_members: profileType === "cnpj" ? teamMembers : [],
                     updated_at: new Date().toISOString(),
                 })
                 .eq('id', user.id);
 
-            if (error) throw error;
+            if (userError) throw userError;
+
             showToast("success", "Perfil atualizado com sucesso!");
         } catch (error) {
             console.error("Erro ao salvar perfil:", error);
@@ -195,27 +270,38 @@ export function ClientProfileSection() {
         }
     };
 
-    if (loading) return <div className="p-6 text-center">Carregando perfil...</div>;
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center p-12">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                <span className="ml-3 text-slate-600">Carregando perfil...</span>
+            </div>
+        );
+    }
 
     const handleCepLookup = async () => {
-        const clean = (company.cep || "").replace(/\D/g, "");
-        if (clean.length !== 8) return;
+        const clean = (address.cep || "").replace(/\D/g, "");
+        if (clean.length !== 8) {
+            showToast("error", "CEP deve ter 8 dígitos.");
+            return;
+        }
 
         setLoadingCep(true);
         try {
             const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${clean}`);
             if (!response.ok) throw new Error("CEP não encontrado");
             const data = await response.json();
-            setCompany(prev => ({
+            setAddress(prev => ({
                 ...prev,
                 cep: formatCepBr(clean),
-                endereco: data.street || "",
+                logradouro: data.street || "",
                 bairro: data.neighborhood || "",
                 cidade: data.city || "",
                 estado: data.state || "",
             }));
+            showToast("success", "Endereço preenchido automaticamente!");
         } catch (error) {
-            showToast("error", "Não foi possível buscar o CEP. Verifique o número ou tente novamente.");
+            showToast("error", "Não foi possível buscar o CEP.");
         } finally {
             setLoadingCep(false);
         }
@@ -223,38 +309,46 @@ export function ClientProfileSection() {
 
     const handleConsultCNPJ = async () => {
         const clean = (company.cnpj || "").replace(/\D/g, "");
-        if (clean.length !== 14) return;
+        if (clean.length !== 14) {
+            showToast("error", "CNPJ deve ter 14 dígitos.");
+            return;
+        }
 
+        setLoadingCnpj(true);
         try {
             const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${clean}`);
             if (!response.ok) {
-                showToast("error", "CNPJ não encontrado ou erro na consulta. Verifique o número ou tente mais tarde.");
+                showToast("error", "CNPJ não encontrado.");
                 return;
             }
 
             const data = await response.json();
 
             if (data.descricao_situacao_cadastral && data.descricao_situacao_cadastral !== "ATIVA") {
-                showToast("error", `Atenção: O CNPJ consta como ${data.descricao_situacao_cadastral} na Receita Federal.`);
+                showToast("error", `CNPJ consta como ${data.descricao_situacao_cadastral}`);
             } else {
-                showToast("success", "Dados preenchidos automaticamente pela Receita.");
+                showToast("success", "Dados preenchidos automaticamente!");
             }
 
             setCompany(prev => ({
                 ...prev,
                 cnpj: formatCnpjBr(clean),
-                companyName: data.razao_social || prev.companyName,
-                endereco: data.logradouro || "",
+                razaoSocial: data.razao_social || prev.razaoSocial,
+            }));
+            setAddress(prev => ({
+                ...prev,
+                logradouro: data.logradouro || "",
                 numero: data.numero || "",
                 bairro: data.bairro || "",
                 cidade: data.municipio || "",
                 estado: data.uf || "",
                 complemento: data.complemento || "",
-                cep: formatCepBr(data.cep || clean.slice(0, 8)),
+                cep: formatCepBr(data.cep || ""),
             }));
         } catch (error) {
-            console.error("Erro ao consultar CNPJ:", error);
-            showToast("error", "Erro ao consultar CNPJ. Verifique se o número está correto ou tente novamente mais tarde.");
+            showToast("error", "Erro ao consultar CNPJ.");
+        } finally {
+            setLoadingCnpj(false);
         }
     };
 
@@ -265,8 +359,7 @@ export function ClientProfileSection() {
             showToast("error", "Não é possível remover o contato principal.");
             return;
         }
-        const confirmed = window.confirm("Deseja remover este funcionário?");
-        if (!confirmed) return;
+        if (!window.confirm("Deseja remover este funcionário?")) return;
         setTeamMembers(prev => prev.filter((_, i) => i !== index));
         showToast("success", "Funcionário removido.");
     };
@@ -293,378 +386,374 @@ export function ClientProfileSection() {
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2 rounded-2xl bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+            {/* Header com barra de progresso */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-900">Meu Perfil</h1>
+                        <p className="mt-1 text-slate-500">Complete seu cadastro para ter acesso a todas as funcionalidades</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <div className="text-right">
+                            <p className="text-sm text-slate-500">Perfil completo</p>
+                            <p className="text-2xl font-bold text-slate-900">{profileComplete}%</p>
+                        </div>
+                        <div className="h-16 w-16 relative">
+                            <svg className="w-16 h-16 transform -rotate-90">
+                                <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="6" fill="none" className="text-slate-200" />
+                                <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="6" fill="none"
+                                    strokeDasharray={`${profileComplete * 1.76} 176`}
+                                    className="text-blue-600 transition-all duration-500" />
+                            </svg>
+                            {profileComplete === 100 && (
+                                <CheckCircle2 className="absolute inset-0 m-auto w-6 h-6 text-emerald-500" />
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Seletor de tipo */}
+            <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-2 rounded-2xl bg-slate-100 p-1.5">
                     <button
                         type="button"
                         onClick={() => setProfileType("cpf")}
-                        className={`rounded-xl px-3 py-2 transition ${profileType === "cpf" ? "bg-blue-600 text-white shadow-sm" : "text-slate-700"}`}
+                        className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${profileType === "cpf" ? "bg-blue-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-200"
+                            }`}
                     >
-                        Sou pessoa física (CPF)
+                        <User className="w-4 h-4" />
+                        Pessoa Física (CPF)
                     </button>
                     <button
                         type="button"
                         onClick={() => setProfileType("cnpj")}
-                        className={`rounded-xl px-3 py-2 transition ${profileType === "cnpj" ? "bg-blue-600 text-white shadow-sm" : "text-slate-700"}`}
+                        className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${profileType === "cnpj" ? "bg-blue-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-200"
+                            }`}
                     >
-                        Sou pessoa jurídica (CNPJ)
+                        <Building2 className="w-4 h-4" />
+                        Pessoa Jurídica (CNPJ)
                     </button>
                 </div>
                 <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                    className="flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-blue-700 disabled:opacity-50 transition-all"
                 >
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     {saving ? "Salvando..." : "Salvar Alterações"}
                 </button>
             </div>
+
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                <div className="rounded-[28px] border border-slate-100 bg-white/80 p-6 shadow-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                        <div>
-                            <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">
-                                {profileType === "cnpj" ? "Associar funcionário" : "Dados pessoais"}
-                            </p>
-                            <h2 className="text-xl font-semibold text-slate-900">
-                                {profileType === "cnpj" ? "Contato principal da empresa" : "Responsável pelas cotações"}
-                            </h2>
-                            <p className="text-sm text-slate-500">
-                                {profileType === "cnpj"
-                                    ? "Contato principal (será listado junto com os demais responsáveis)."
-                                    : "Campos espelhados nos contratos com fornecedores."}
-                            </p>
+                {/* Dados Pessoais */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-100 text-blue-600">
+                            <User className="w-5 h-5" />
                         </div>
-                        {profileType === "cpf" && (
-                            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                                CPF + Conta pessoal
-                            </span>
+                        <div>
+                            <h2 className="text-lg font-semibold text-slate-900">
+                                {profileType === "cnpj" ? "Responsável Legal" : "Dados Pessoais"}
+                            </h2>
+                            <p className="text-sm text-slate-500">Informações do responsável pelas cotações</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Nome Completo *</label>
+                            <input
+                                value={person.name}
+                                onChange={(e) => setPerson({ ...person, name: e.target.value })}
+                                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                placeholder="Seu nome completo"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                                    <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> Email *</span>
+                                </label>
+                                <input value={person.email} disabled className="w-full rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-600 cursor-not-allowed" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                                    <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> Telefone *</span>
+                                </label>
+                                <input
+                                    value={person.phone}
+                                    onChange={(e) => setPerson({ ...person, phone: formatPhoneBr(e.target.value) })}
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                    placeholder="(00) 00000-0000"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                                    <span className="flex items-center gap-1"><FileText className="w-3 h-3" /> CPF *</span>
+                                </label>
+                                <input
+                                    value={person.cpf}
+                                    onChange={(e) => setPerson({ ...person, cpf: formatCpfBr(e.target.value) })}
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                    placeholder="000.000.000-00"
+                                />
+                                {person.cpf && !isValidCPF(person.cpf) && (
+                                    <p className="mt-1 text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> CPF inválido</p>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Cargo/Setor</label>
+                                <input
+                                    value={person.role}
+                                    onChange={(e) => setPerson({ ...person, role: e.target.value })}
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                    placeholder="Ex: Engenheiro..."
+                                />
+                            </div>
+                        </div>
+
+                        {profileType === "cnpj" && (
+                            <div className="pt-4 flex justify-end">
+                                <button type="button" onClick={handleAddPersonAsMember} className="flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100">
+                                    <Users className="w-4 h-4" /> Adicionar à equipe
+                                </button>
+                            </div>
                         )}
                     </div>
-
-                    <div className="mt-6 grid grid-cols-1 gap-4">
-                        {(["name", "email", "phone", "cpf", "role"] as const).map((field) => (
-                            <label key={field} className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                {field === "name"
-                                    ? "Nome completo"
-                                    : field === "email"
-                                        ? "Email corporativo"
-                                        : field === "phone"
-                                            ? "Telefone/WhatsApp"
-                                            : field === "cpf"
-                                                ? "CPF"
-                                                : "Cargo/Setor"}
-                                <input
-                                    value={person[field]}
-                                    onChange={(e) => {
-                                        const value = e.target.value;
-                                        setPerson({
-                                            ...person,
-                                            [field]: field === "phone"
-                                                ? formatPhoneBr(value)
-                                                : field === "cpf"
-                                                    ? formatCpfBr(value)
-                                                    : value,
-                                        });
-                                    }}
-                                    disabled={field === "email"}
-                                    className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none disabled:opacity-60"
-                                />
-                            </label>
-                        ))}
-                    </div>
-
-                    {profileType === "cnpj" && (
-                        <div className="mt-4 flex justify-end">
-                            <button
-                                type="button"
-                                onClick={handleAddPersonAsMember}
-                                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-                            >
-                                Adicionar funcionário
-                            </button>
-                        </div>
-                    )}
                 </div>
 
-                {profileType === "cnpj" && (
-                    <>
-                        <div className="rounded-[28px] border border-slate-100 bg-white/80 p-6 shadow-sm">
-                            <div className="flex flex-wrap items-center justify-between gap-4">
-                                <div>
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-violet-600">
-                                        Dados da empresa
-                                    </p>
-                                    <h2 className="text-xl font-semibold text-slate-900">
-                                        Garantia de confidencialidade
-                                    </h2>
-                                    <p className="text-sm text-slate-500">
-                                        CNPJ vinculado ao contrato mestre com a Cotar & Construir.
-                                    </p>
-                                </div>
-                                <div className="rounded-2xl bg-slate-900/90 px-4 py-2 text-right text-xs text-white">
-                                    <p className="font-semibold">{company.obras} obras</p>
-                                    <p>ativos vinculados</p>
-                                </div>
-                            </div>
+                {/* Endereço */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600">
+                            <MapPin className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-semibold text-slate-900">Endereço</h2>
+                            <p className="text-sm text-slate-500">{profileType === "cnpj" ? "Endereço da empresa" : "Endereço de entrega"}</p>
+                        </div>
+                    </div>
 
-                            <div className="mt-6 grid grid-cols-1 gap-4">
-                                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    Razão Social
-                                    <input
-                                        value={company.companyName}
-                                        onChange={(e) => setCompany({ ...company, companyName: e.target.value })}
-                                        className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
-                                    />
-                                </label>
-                                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    CNPJ
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">CEP *</label>
+                            <div className="flex gap-2">
+                                <input
+                                    value={address.cep}
+                                    onChange={(e) => setAddress({ ...address, cep: formatCepBr(e.target.value) })}
+                                    className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                    placeholder="00000-000"
+                                    maxLength={9}
+                                />
+                                <button type="button" onClick={handleCepLookup} disabled={loadingCep} className="flex items-center gap-2 rounded-xl bg-slate-100 border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-50">
+                                    {loadingCep ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />} Buscar
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Logradouro *</label>
+                            <input
+                                value={address.logradouro}
+                                onChange={(e) => setAddress({ ...address, logradouro: e.target.value })}
+                                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                placeholder="Rua, Avenida..."
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Número *</label>
+                                <input
+                                    value={address.numero}
+                                    onChange={(e) => setAddress({ ...address, numero: e.target.value })}
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                    placeholder="123"
+                                />
+                            </div>
+                            <div className="col-span-1 md:col-span-2">
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Complemento</label>
+                                <input
+                                    value={address.complemento}
+                                    onChange={(e) => setAddress({ ...address, complemento: e.target.value })}
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                    placeholder="Apto, Sala..."
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Bairro *</label>
+                            <input
+                                value={address.bairro}
+                                onChange={(e) => setAddress({ ...address, bairro: e.target.value })}
+                                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                placeholder="Nome do bairro"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-4">
+                            <div className="col-span-2">
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Cidade *</label>
+                                <input
+                                    value={address.cidade}
+                                    onChange={(e) => setAddress({ ...address, cidade: e.target.value })}
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                    placeholder="Cidade"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">UF *</label>
+                                <select
+                                    value={address.estado}
+                                    onChange={(e) => setAddress({ ...address, estado: e.target.value })}
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                >
+                                    <option value="">UF</option>
+                                    {["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"].map(uf => (
+                                        <option key={uf} value={uf}>{uf}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Dados Empresa (CNPJ) */}
+                {profileType === "cnpj" && (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-violet-100 text-violet-600">
+                                <Building2 className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1">
+                                <h2 className="text-lg font-semibold text-slate-900">Dados da Empresa</h2>
+                                <p className="text-sm text-slate-500">Informações jurídicas</p>
+                            </div>
+                            <div className="rounded-xl bg-slate-900 px-4 py-2 text-right text-white">
+                                <p className="text-lg font-bold">{company.obras}</p>
+                                <p className="text-xs text-slate-300">obras ativas</p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">CNPJ *</label>
+                                <div className="flex gap-2">
                                     <input
                                         value={company.cnpj}
                                         onChange={(e) => setCompany({ ...company, cnpj: formatCnpjBr(e.target.value) })}
-                                        onBlur={handleConsultCNPJ}
-                                        className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
+                                        className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                                         placeholder="00.000.000/0000-00"
                                     />
-                                    <p className="mt-1 text-[11px] text-slate-500">Busca automática na Receita ao sair do campo.</p>
-                                </label>
-                                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    CEP
-                                    <input
-                                        value={company.cep || ""}
-                                        onChange={(e) => setCompany({ ...company, cep: formatCepBr(e.target.value) })}
-                                        onBlur={handleCepLookup}
-                                        disabled={loadingCep}
-                                        className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none disabled:bg-slate-100"
-                                        placeholder="00000-000"
-                                    />
-                                    <p className="mt-1 text-[11px] text-slate-500">{loadingCep ? "Buscando..." : "Busca automática ao sair do campo."}</p>
-                                </label>
-                                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    Endereço (Logradouro)
-                                    <input
-                                        value={company.endereco || ""}
-                                        onChange={(e) => setCompany({ ...company, endereco: e.target.value })}
-                                        readOnly
-                                        className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
-                                        placeholder="Rua, Avenida, etc"
-                                    />
-                                </label>
-                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                        Número
-                                        <input
-                                            value={company.numero || ""}
-                                            onChange={(e) => setCompany({ ...company, numero: e.target.value })}
-                                            className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
-                                            placeholder="Ex: 123"
-                                        />
-                                    </label>
-                                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                        Complemento
-                                        <input
-                                            value={company.complemento || ""}
-                                            onChange={(e) => setCompany({ ...company, complemento: e.target.value })}
-                                            className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
-                                            placeholder="Apto, sala, bloco..."
-                                        />
-                                    </label>
-                                </div>
-                                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    Bairro
-                                    <input
-                                        value={company.bairro || ""}
-                                        onChange={(e) => setCompany({ ...company, bairro: e.target.value })}
-                                        readOnly
-                                        className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
-                                        placeholder="Bairro"
-                                    />
-                                </label>
-                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                        Cidade
-                                        <input
-                                            value={company.cidade || ""}
-                                            onChange={(e) => setCompany({ ...company, cidade: e.target.value })}
-                                            readOnly
-                                            className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
-                                            placeholder="Cidade"
-                                        />
-                                    </label>
-                                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                        Estado
-                                        <input
-                                            value={company.estado || ""}
-                                            onChange={(e) => setCompany({ ...company, estado: e.target.value })}
-                                            readOnly
-                                            className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
-                                            placeholder="UF"
-                                            maxLength={2}
-                                        />
-                                    </label>
-                                </div>
-                                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    Função no processo
-                                    <input
-                                        value={company.role}
-                                        onChange={(e) => setCompany({ ...company, role: e.target.value })}
-                                        className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
-                                    />
-                                </label>
-                                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    Obras vinculadas
-                                    <input
-                                        value={company.obras}
-                                        onChange={(e) =>
-                                            setCompany({ ...company, obras: Number(e.target.value) })
-                                        }
-                                        type="number"
-                                        className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
-                                    />
-                                </label>
-
-                            </div>
-                        </div>
-
-                        <div className="rounded-[28px] border border-slate-100 bg-white/80 p-6 shadow-sm lg:col-span-2">
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Funcionários</p>
-                                    <h3 className="text-lg font-semibold text-slate-900">Equipe cadastrada</h3>
-                                    <p className="text-sm text-slate-500">Lista dos funcionários com acesso às cotações.</p>
-                                </div>
-                                <div className="flex items-center gap-2 text-xs text-slate-600">
-                                    <label className="font-semibold">Ordenar por</label>
-                                    <select
-                                        value={sortBy}
-                                        onChange={(e) => setSortBy(e.target.value as "name" | "role")}
-                                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
-                                    >
-                                        <option value="name">Nome</option>
-                                        <option value="role">Cargo</option>
-                                    </select>
-                                    <button
-                                        type="button"
-                                        onClick={() => setSortDir((prev) => prev === "asc" ? "desc" : "asc")}
-                                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
-                                    >
-                                        {sortDir === "asc" ? "A→Z" : "Z→A"}
+                                    <button type="button" onClick={handleConsultCNPJ} disabled={loadingCnpj} className="flex items-center gap-2 rounded-xl bg-violet-50 border border-violet-200 px-4 py-3 text-sm font-semibold text-violet-700 hover:bg-violet-100 disabled:opacity-50">
+                                        {loadingCnpj ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />} Consultar
                                     </button>
                                 </div>
+                                {company.cnpj && !isValidCNPJ(company.cnpj) && (
+                                    <p className="mt-1 text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> CNPJ inválido</p>
+                                )}
                             </div>
-
-                            <div className="mt-6 overflow-x-auto">
-                                <table className="min-w-full border-collapse text-sm text-slate-800">
-                                    <thead>
-                                        <tr className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                            <th className="px-3 py-2">Nome</th>
-                                            <th className="px-3 py-2">Email</th>
-                                            <th className="px-3 py-2">Telefone</th>
-                                            <th className="px-3 py-2">Cargo/Setor</th>
-                                            <th className="px-3 py-2 text-right">Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {sortedMembers.length === 0 && (
-                                            <tr>
-                                                <td className="px-3 py-3 text-sm text-slate-500" colSpan={5}>
-                                                    Nenhum funcionário adicionado ainda.
-                                                </td>
-                                            </tr>
-                                        )}
-                                        {sortedMembers.map(({ member, originalIndex }) => {
-                                            const isEditing = editingIndex === originalIndex;
-                                            const principal = member.email === person.email;
-                                            return (
-                                                <tr key={`${member.email}-${originalIndex}`} className="border-t border-slate-100">
-                                                    <td className="px-3 py-3 font-semibold text-slate-900">
-                                                        {isEditing ? (
-                                                            <input
-                                                                value={editDraft.name}
-                                                                onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })}
-                                                                className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
-                                                            />
-                                                        ) : (
-                                                            <div className="flex items-center gap-2">
-                                                                <span>{member.name}</span>
-                                                                {principal && (
-                                                                    <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700">Contato principal</span>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-3 py-3 text-slate-700">
-                                                        {isEditing ? (
-                                                            <input
-                                                                value={editDraft.email}
-                                                                onChange={(e) => setEditDraft({ ...editDraft, email: e.target.value })}
-                                                                className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
-                                                            />
-                                                        ) : member.email}
-                                                    </td>
-                                                    <td className="px-3 py-3 text-slate-600">
-                                                        {isEditing ? (
-                                                            <input
-                                                                value={editDraft.phone}
-                                                                onChange={(e) => setEditDraft({ ...editDraft, phone: formatPhoneBr(e.target.value) })}
-                                                                className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
-                                                            />
-                                                        ) : (member.phone || "Telefone não informado")}
-                                                    </td>
-                                                    <td className="px-3 py-3 text-slate-600">
-                                                        {isEditing ? (
-                                                            <input
-                                                                value={editDraft.role}
-                                                                onChange={(e) => setEditDraft({ ...editDraft, role: e.target.value })}
-                                                                className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
-                                                            />
-                                                        ) : (member.role || "-")}
-                                                    </td>
-                                                    <td className="px-3 py-3 text-right space-x-2">
-                                                        {isEditing ? (
-                                                            <>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => saveEdit(originalIndex)}
-                                                                    className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
-                                                                >
-                                                                    Salvar
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={cancelEdit}
-                                                                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                                                                >
-                                                                    Cancelar
-                                                                </button>
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => startEdit(originalIndex)}
-                                                                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                                                                >
-                                                                    Editar
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleRemoveMember(originalIndex)}
-                                                                    className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50"
-                                                                    disabled={principal}
-                                                                >
-                                                                    Excluir
-                                                                </button>
-                                                            </>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Razão Social *</label>
+                                <input
+                                    value={company.razaoSocial}
+                                    onChange={(e) => setCompany({ ...company, razaoSocial: e.target.value })}
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                    placeholder="Nome da empresa"
+                                />
                             </div>
                         </div>
-                    </>
+                    </div>
+                )}
+
+                {/* Equipe (CNPJ) */}
+                {profileType === "cnpj" && (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+                        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+                            <div className="flex items-center gap-3">
+                                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-100 text-blue-600">
+                                    <Users className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-semibold text-slate-900">Equipe</h2>
+                                    <p className="text-sm text-slate-500">Funcionários com acesso</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <select value={sortBy} onChange={(e) => setSortBy(e.target.value as "name" | "role")} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700">
+                                    <option value="name">Nome</option>
+                                    <option value="role">Cargo</option>
+                                </select>
+                                <button type="button" onClick={() => setSortDir(prev => prev === "asc" ? "desc" : "asc")} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                                    {sortDir === "asc" ? "A→Z" : "Z→A"}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="overflow-x-auto rounded-xl border border-slate-200">
+                            <table className="min-w-full text-sm">
+                                <thead className="bg-slate-50">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Email</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Telefone</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Cargo</th>
+                                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {sortedMembers.length === 0 && (
+                                        <tr>
+                                            <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                                                <Users className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                                                <p>Nenhum funcionário cadastrado.</p>
+                                            </td>
+                                        </tr>
+                                    )}
+                                    {sortedMembers.map(({ member, originalIndex }) => {
+                                        const isEditing = editingIndex === originalIndex;
+                                        const isPrincipal = member.email === person.email;
+                                        return (
+                                            <tr key={`${member.email}-${originalIndex}`} className="hover:bg-slate-50">
+                                                <td className="px-4 py-3">
+                                                    {isEditing ? (
+                                                        <input value={editDraft.name} onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })} className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm" />
+                                                    ) : (
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-medium text-slate-900">{member.name}</span>
+                                                            {isPrincipal && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">Principal</span>}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-600">{isEditing ? <input value={editDraft.email} onChange={(e) => setEditDraft({ ...editDraft, email: e.target.value })} className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm" /> : member.email}</td>
+                                                <td className="px-4 py-3 text-slate-600">{isEditing ? <input value={editDraft.phone} onChange={(e) => setEditDraft({ ...editDraft, phone: formatPhoneBr(e.target.value) })} className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm" /> : (member.phone || "-")}</td>
+                                                <td className="px-4 py-3 text-slate-600">{isEditing ? <input value={editDraft.role} onChange={(e) => setEditDraft({ ...editDraft, role: e.target.value })} className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm" /> : (member.role || "-")}</td>
+                                                <td className="px-4 py-3 text-right">
+                                                    {isEditing ? (
+                                                        <div className="flex justify-end gap-2">
+                                                            <button onClick={() => saveEdit(originalIndex)} className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">Salvar</button>
+                                                            <button onClick={cancelEdit} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200">Cancelar</button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex justify-end gap-2">
+                                                            <button onClick={() => startEdit(originalIndex)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200">Editar</button>
+                                                            <button onClick={() => handleRemoveMember(originalIndex)} disabled={isPrincipal} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed">Excluir</button>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 )}
             </div>
         </div>

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ClientProfileSection } from "../../../components/dashboard/client/ProfileSection";
 import { ClientWorksSection } from "../../../components/dashboard/client/WorksSection";
 import { ClientOrderSection } from "../../../components/dashboard/client/OrderSection";
-import { ClientExploreSection } from "../../../components/dashboard/client/ExploreSection";
+import { ClientSolicitationSection } from "../../../components/dashboard/client/SolicitationSection";
 import { ClientOpportunitiesSection } from "../../../components/dashboard/client/OpportunitiesSection";
 import { NotificationBell } from "../../../components/NotificationBell";
 import { ProfileSwitcher } from "../../../components/ProfileSwitcher";
@@ -97,7 +97,7 @@ export default function ClienteDashboard() {
             case "obras":
                 return <ClientWorksSection />;
             case "cotacao":
-                return <ClientExploreSection />;
+                return <ClientSolicitationSection />;
             case "pedidos":
                 return <ClientOrderSection />;
             case "oportunidades":

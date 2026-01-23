@@ -25,9 +25,12 @@ export interface ClienteMinimalData {
     telefone?: string;
     cpf?: string;
     cnpj?: string;
+    razaoSocial?: string;
     cidade?: string;
     estado?: string;
     endereco?: string;
+    numero?: string;
+    complemento?: string;
     bairro?: string;
     cep?: string;
 }
