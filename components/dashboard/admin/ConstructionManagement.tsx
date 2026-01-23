@@ -233,6 +233,9 @@ export default function ConstructionManagement() {
     // Drag State
     const [draggedItem, setDraggedItem] = useState<{ type: string; id: string } | null>(null);
 
+    // Collapsed Phases State
+    const [expandedPhases, setExpandedPhases] = useState<Record<string, boolean>>({});
+
     // --- Load data from Firestore ---
     const loadData = useCallback(async () => {
         try {
@@ -791,8 +794,6 @@ export default function ConstructionManagement() {
             } else {
                 s.faseIds.forEach(fid => {
                     const list = servicesByPhase.get(fid) || [];
-                    // Avoid duplicates if service is in multiple phases, but for sorting within a phase, we need it in each list
-                    // Since filteredServicos has unique services, we push it to each phase bucket it belongs to.
                     list.push(s);
                     servicesByPhase.set(fid, list);
                 });
@@ -824,10 +825,18 @@ export default function ConstructionManagement() {
                         const phaseServices = servicesByPhase.get(fase.id) || [];
                         if (searchQuery && phaseServices.length === 0) return null;
 
+                        const isExpanded = expandedPhases[fase.id];
+
                         return (
                             <div key={fase.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                                <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                                <div 
+                                    className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
+                                    onClick={() => setExpandedPhases(prev => ({ ...prev, [fase.id]: !prev[fase.id] }))}
+                                >
                                     <div className="flex items-center gap-2">
+                                        <div className={`transform transition-transform duration-200 ${isExpanded ? 'rotate-0' : '-rotate-90'}`}>
+                                            <ChevronDown className="w-5 h-5 text-slate-400" />
+                                        </div>
                                         <div className="bg-blue-100 text-blue-700 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">
                                             {fase.cronologia}
                                         </div>
@@ -837,94 +846,98 @@ export default function ConstructionManagement() {
                                         </span>
                                     </div>
                                 </div>
-                                <div className="p-2 space-y-1">
-                                    {phaseServices.length > 0 ? (
-                                        phaseServices.map(servico => {
-                                            const servicoGrupos = servico.gruposInsumoIds.map(id => grupoById.get(id)).filter(Boolean) as GrupoInsumo[];
+                                
+                                {isExpanded && (
+                                    <div className="p-2 space-y-1 animate-in slide-in-from-top-1 duration-200">
+                                        {phaseServices.length > 0 ? (
+                                            phaseServices.map(servico => {
+                                                const servicoGrupos = servico.gruposInsumoIds.map(id => grupoById.get(id)).filter(Boolean) as GrupoInsumo[];
 
-                                            return (
-                                                <div
-                                                    key={`${fase.id}-${servico.id}`}
-                                                    draggable={!searchQuery}
-                                                    onDragStart={(e) => handleDragStart(e, 'servico', servico.id)}
-                                                    onDragOver={handleDragOver}
-                                                    onDrop={(e) => handleDrop(e, servico.id, 'servico')}
-                                                    className={`${draggedItem?.id === servico.id ? 'opacity-50 bg-slate-50' : ''} transition-colors rounded-lg`}
-                                                >
-                                                    <TreeItem
-                                                        title={
-                                                            <div className="flex items-center gap-3 flex-wrap">
-                                                                {!searchQuery && (
-                                                                    <div className="cursor-grab text-slate-300 hover:text-slate-500">
-                                                                        <GripVertical className="w-4 h-4" />
-                                                                    </div>
-                                                                )}
-                                                                <span>{servico.nome}</span>
-                                                            </div>
-                                                        }
-                                                        count={servicoGrupos.length}
-                                                        level={1}
-                                                        icon={Wrench}
-                                                        actions={
-                                                            <div className="flex items-center gap-1">
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); openModal('servicos', servico); }}
-                                                                    className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                                                    title="Editar serviço"
-                                                                >
-                                                                    <Edit2 className="w-4 h-4" />
-                                                                </button>
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); handleDelete('servicos', servico.id); }}
-                                                                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                                                    title="Excluir serviço"
-                                                                >
-                                                                    <Trash2 className="w-4 h-4" />
-                                                                </button>
-                                                            </div>
-                                                        }
+                                                return (
+                                                    <div
+                                                        key={`${fase.id}-${servico.id}`}
+                                                        draggable={!searchQuery}
+                                                        onDragStart={(e) => handleDragStart(e, 'servico', servico.id)}
+                                                        onDragOver={handleDragOver}
+                                                        onDrop={(e) => handleDrop(e, servico.id, 'servico')}
+                                                        className={`${draggedItem?.id === servico.id ? 'opacity-50 bg-slate-50' : ''} transition-colors rounded-lg`}
+                                                        onClick={(e) => e.stopPropagation()}
                                                     >
-                                                        {/* Grupos de Insumo (Read-only view inside service) */}
-                                                        {servicoGrupos.length > 0 ? (
-                                                            <div className="pl-12 pr-4 py-2">
-                                                                {servicoGrupos.map(grupo => {
-                                                                    const grupoMateriais = materiaisByGrupoId.get(grupo.id) || [];
-                                                                    return (
-                                                                        <TreeItem
-                                                                            key={grupo.id}
-                                                                            title={grupo.nome}
-                                                                            count={grupoMateriais.length}
-                                                                            level={2}
-                                                                            icon={Boxes}
-                                                                        >
-                                                                            <div className="pl-12 pr-4 py-2 grid grid-cols-1 gap-2">
-                                                                                {grupoMateriais.map(material => (
-                                                                                    <div key={material.id} className="flex items-center justify-between p-2 bg-white rounded border border-slate-100">
-                                                                                        <div className="flex items-center gap-2">
-                                                                                            <Package className="w-3 h-3 text-emerald-500" />
-                                                                                            <span className="text-sm text-slate-700">{material.nome}</span>
+                                                        <TreeItem
+                                                            title={
+                                                                <div className="flex items-center gap-3 flex-wrap">
+                                                                    {!searchQuery && (
+                                                                        <div className="cursor-grab text-slate-300 hover:text-slate-500">
+                                                                            <GripVertical className="w-4 h-4" />
+                                                                        </div>
+                                                                    )}
+                                                                    <span>{servico.nome}</span>
+                                                                </div>
+                                                            }
+                                                            count={servicoGrupos.length}
+                                                            level={1}
+                                                            icon={Wrench}
+                                                            actions={
+                                                                <div className="flex items-center gap-1">
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); openModal('servicos', servico); }}
+                                                                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                                        title="Editar serviço"
+                                                                    >
+                                                                        <Edit2 className="w-4 h-4" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); handleDelete('servicos', servico.id); }}
+                                                                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                                        title="Excluir serviço"
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4" />
+                                                                    </button>
+                                                                </div>
+                                                            }
+                                                        >
+                                                            {/* Grupos de Insumo (Read-only view inside service) */}
+                                                            {servicoGrupos.length > 0 ? (
+                                                                <div className="pl-12 pr-4 py-2">
+                                                                    {servicoGrupos.map(grupo => {
+                                                                        const grupoMateriais = materiaisByGrupoId.get(grupo.id) || [];
+                                                                        return (
+                                                                            <TreeItem
+                                                                                key={grupo.id}
+                                                                                title={grupo.nome}
+                                                                                count={grupoMateriais.length}
+                                                                                level={2}
+                                                                                icon={Boxes}
+                                                                            >
+                                                                                <div className="pl-12 pr-4 py-2 grid grid-cols-1 gap-2">
+                                                                                    {grupoMateriais.map(material => (
+                                                                                        <div key={material.id} className="flex items-center justify-between p-2 bg-white rounded border border-slate-100">
+                                                                                            <div className="flex items-center gap-2">
+                                                                                                <Package className="w-3 h-3 text-emerald-500" />
+                                                                                                <span className="text-sm text-slate-700">{material.nome}</span>
+                                                                                            </div>
+                                                                                            <span className="text-xs text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{material.unidade}</span>
                                                                                         </div>
-                                                                                        <span className="text-xs text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{material.unidade}</span>
-                                                                                    </div>
-                                                                                ))}
-                                                                            </div>
-                                                                        </TreeItem>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        ) : (
-                                                            <div className="pl-12 py-2 text-xs text-slate-400 italic">Nenhum grupo vinculado.</div>
-                                                        )}
-                                                    </TreeItem>
-                                                </div>
-                                            );
-                                        })
-                                    ) : (
-                                        <div className="p-4 text-center text-slate-400 italic text-sm">
-                                            Nenhum serviço cadastrado nesta fase.
-                                        </div>
-                                    )}
-                                </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </TreeItem>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="pl-12 py-2 text-xs text-slate-400 italic">Nenhum grupo vinculado.</div>
+                                                            )}
+                                                        </TreeItem>
+                                                    </div>
+                                                );
+                                            })
+                                        ) : (
+                                            <div className="p-4 text-center text-slate-400 italic text-sm">
+                                                Nenhum serviço cadastrado nesta fase.
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         );
                     })}
