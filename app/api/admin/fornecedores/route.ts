@@ -12,7 +12,9 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 // Verificar se é admin
 async function verifyAdmin(request: NextRequest) {
     const authHeader = request.headers.get('authorization');
-    const token = authHeader?.replace('Bearer ', '') || request.cookies.get('sb-access-token')?.value;
+    const token = authHeader?.replace('Bearer ', '')
+        || request.cookies.get('token')?.value          // cookie setado pelo login page
+        || request.cookies.get('sb-access-token')?.value; // fallback legado
 
     if (!token) {
         return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 });

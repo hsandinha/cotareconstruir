@@ -3,7 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
-    const token = authHeader?.replace('Bearer ', '') || req.cookies.get('sb-access-token')?.value;
+    const token = authHeader?.replace('Bearer ', '') || req.cookies.get('token')?.value || req.cookies.get('sb-access-token')?.value;
     if (!token || !supabaseAdmin) return null;
     const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !user) return null;

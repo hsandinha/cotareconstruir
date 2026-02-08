@@ -70,10 +70,16 @@ export default function FornecedorDashboard() {
                 }
 
                 // Buscar estatísticas via API routes (bypass RLS)
-                const { data: { session } } = await supabase.auth.getSession();
                 const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-                if (session?.access_token) {
-                    authHeaders['Authorization'] = `Bearer ${session.access_token}`;
+                try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    if (session?.access_token) {
+                        authHeaders['Authorization'] = `Bearer ${session.access_token}`;
+                    }
+                } catch (e) { /* ignore */ }
+                if (!authHeaders['Authorization'] && typeof window !== 'undefined') {
+                    const token = localStorage.getItem('token');
+                    if (token) authHeaders['Authorization'] = `Bearer ${token}`;
                 }
 
                 const [cotacoesRes, pedidosRes, materiaisRes] = await Promise.all([

@@ -77,121 +77,91 @@ export function SupplierProfileSection() {
         setProfileComplete(Math.round((filled / fields.length) * 100));
     }, [company, manager]);
 
-    // Carregar perfil
+    // Helper para obter headers com token
+    const getAuthHeaders = async (): Promise<Record<string, string>> => {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.access_token) {
+                headers['Authorization'] = `Bearer ${session.access_token}`;
+                return headers;
+            }
+        } catch (e) {
+            console.warn('Erro ao obter sessão:', e);
+        }
+        if (typeof window !== 'undefined') {
+            const token = localStorage.getItem('token');
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+        }
+        return headers;
+    };
+
+    // Carregar perfil via API (users + fornecedores combinados)
     useEffect(() => {
-        if (!initialized) return;
+        if (!initialized || !user) return;
 
         const loadProfile = async () => {
-            if (user) {
-                setUserUid(user.id);
-                try {
-                    if (profile) {
-                        setCompany({
-                            razaoSocial: profile.company_name || profile.razao_social || "",
-                            cnpj: formatCnpjBr(profile.cnpj || ""),
-                            inscricaoEstadual: profile.state_registration || profile.inscricao_estadual || "",
-                            telefone: formatPhoneBr(profile.phone || profile.telefone || ""),
-                            cep: formatCepBr(profile.cep || ""),
-                            logradouro: profile.endereco || profile.logradouro || profile.address || "",
-                            numero: profile.numero || "",
-                            complemento: profile.complemento || "",
-                            bairro: profile.bairro || "",
-                            cidade: profile.cidade || "",
-                            estado: profile.estado || "",
-                        });
-
-                        setManager({
-                            nome: profile.manager_name || profile.nome || "",
-                            cargo: profile.manager_role || "",
-                            email: profile.email || user.email || "",
-                            whatsapp: formatPhoneBr(profile.whatsapp || ""),
-                        });
-
-                        setPreferences({
-                            regioesAtendimento: profile.operating_regions || profile.regioes_atendimento || "",
-                            categoriasMateriais: profile.operating_categories || "",
-                        });
-
-                        // Buscar dados do fornecedor se existir fornecedor_id
-                        if (profile.fornecedor_id) {
-                            setFornecedorId(profile.fornecedor_id);
-                            const { data: gruposData } = await supabase
-                                .from('fornecedor_grupo')
-                                .select('grupo_id')
-                                .eq('fornecedor_id', profile.fornecedor_id);
-
-                            if (gruposData) {
-                                setSupplierGroups(gruposData.map(g => g.grupo_id));
-                            }
-                        }
-                    }
-                } catch (error) {
-                    console.error("Erro ao carregar perfil:", error);
+            setUserUid(user.id);
+            try {
+                const headers = await getAuthHeaders();
+                if (!headers['Authorization']) {
+                    setLoading(false);
+                    return;
                 }
+
+                const res = await fetch('/api/supplier/profile', { headers });
+                if (!res.ok) {
+                    console.error('Erro ao carregar perfil via API:', await res.text());
+                    setLoading(false);
+                    return;
+                }
+
+                const data = await res.json();
+                const { userProfile: up, fornecedor: f, supplierGroups: sg, allGroups: ag, materiaisByGrupo: mbg } = data;
+
+                // Prioridade: dados do fornecedor > dados do user
+                setCompany({
+                    razaoSocial: f?.razao_social || up?.company_name || "",
+                    cnpj: formatCnpjBr(f?.cnpj || up?.cnpj || ""),
+                    inscricaoEstadual: f?.inscricao_estadual || up?.state_registration || "",
+                    telefone: formatPhoneBr(f?.telefone || up?.phone || up?.telefone || ""),
+                    cep: formatCepBr(f?.cep || up?.cep || ""),
+                    logradouro: f?.logradouro || up?.endereco || up?.address || "",
+                    numero: f?.numero || up?.numero || "",
+                    complemento: f?.complemento || up?.complemento || "",
+                    bairro: f?.bairro || up?.bairro || "",
+                    cidade: f?.cidade || up?.cidade || "",
+                    estado: f?.estado || up?.estado || "",
+                });
+
+                setManager({
+                    nome: f?.contato || up?.manager_name || up?.nome || "",
+                    cargo: up?.manager_role || "",
+                    email: f?.email || up?.email || user.email || "",
+                    whatsapp: formatPhoneBr(f?.whatsapp || up?.whatsapp || ""),
+                });
+
+                setPreferences({
+                    regioesAtendimento: up?.operating_regions || "",
+                    categoriasMateriais: up?.operating_categories || "",
+                });
+
+                if (up?.fornecedor_id) {
+                    setFornecedorId(up.fornecedor_id);
+                }
+
+                setSupplierGroups(sg || []);
+                setAvailableGroups(ag || []);
+                setMateriaisByGrupo(mbg || {});
+
+            } catch (error) {
+                console.error("Erro ao carregar perfil:", error);
             }
             setLoading(false);
         };
 
         loadProfile();
-    }, [user, profile, initialized]);
-
-    // Carregar grupos de insumo disponíveis e materiais por grupo
-    useEffect(() => {
-        const loadGroupsAndMaterials = async () => {
-            // Carregar grupos
-            const { data: groups } = await supabase
-                .from('grupos_insumo')
-                .select('id, nome')
-                .order('nome');
-
-            if (groups) {
-                setAvailableGroups(groups);
-            }
-
-            // Carregar material_grupo junction
-            const allMG: any[] = [];
-            let page = 0;
-            const pageSize = 1000;
-            while (true) {
-                const { data: chunk } = await supabase
-                    .from('material_grupo')
-                    .select('material_id, grupo_id')
-                    .range(page * pageSize, (page + 1) * pageSize - 1);
-                if (!chunk || chunk.length === 0) break;
-                allMG.push(...chunk);
-                if (chunk.length < pageSize) break;
-                page++;
-            }
-
-            // Carregar materiais (nome e unidade)
-            const allMat: any[] = [];
-            page = 0;
-            while (true) {
-                const { data: chunk } = await supabase
-                    .from('materiais')
-                    .select('id, nome, unidade')
-                    .order('nome')
-                    .range(page * pageSize, (page + 1) * pageSize - 1);
-                if (!chunk || chunk.length === 0) break;
-                allMat.push(...chunk);
-                if (chunk.length < pageSize) break;
-                page++;
-            }
-
-            // Build materiaisByGrupo map
-            const matMap = new Map(allMat.map(m => [m.id, m]));
-            const byGrupo: Record<string, Array<{ id: string; nome: string; unidade: string }>> = {};
-            allMG.forEach(mg => {
-                const mat = matMap.get(mg.material_id);
-                if (mat) {
-                    if (!byGrupo[mg.grupo_id]) byGrupo[mg.grupo_id] = [];
-                    byGrupo[mg.grupo_id].push({ id: mat.id, nome: mat.nome, unidade: mat.unidade });
-                }
-            });
-            setMateriaisByGrupo(byGrupo);
-        };
-        loadGroupsAndMaterials();
-    }, []);
+    }, [user, initialized]);
 
     const handleConsultCNPJ = async () => {
         const clean = company.cnpj.replace(/\D/g, '');
@@ -274,34 +244,22 @@ export function SupplierProfileSection() {
 
         setSaving(true);
         try {
-            await supabase
-                .from('users')
-                .update({
-                    company_name: company.razaoSocial,
-                    cnpj: company.cnpj.replace(/\D/g, ''),
-                    state_registration: company.inscricaoEstadual,
-                    phone: company.telefone.replace(/\D/g, ''),
-                    manager_name: manager.nome,
-                    manager_role: manager.cargo,
-                    email: manager.email,
-                    whatsapp: manager.whatsapp.replace(/\D/g, ''),
-                    cep: company.cep.replace(/\D/g, ''),
-                    endereco: company.logradouro,
-                    numero: company.numero,
-                    bairro: company.bairro,
-                    cidade: company.cidade,
-                    estado: company.estado,
-                    complemento: company.complemento,
-                    operating_regions: preferences.regioesAtendimento,
-                    operating_categories: preferences.categoriasMateriais,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', userUid);
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/supplier/profile', {
+                method: 'PUT',
+                headers,
+                body: JSON.stringify({ company, manager, preferences }),
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Erro ao salvar');
+            }
 
             showToast("success", "Perfil atualizado com sucesso!");
-        } catch (error) {
+        } catch (error: any) {
             console.error("Erro ao salvar:", error);
-            showToast("error", "Erro ao atualizar perfil.");
+            showToast("error", error.message || "Erro ao atualizar perfil.");
         } finally {
             setSaving(false);
         }
@@ -325,19 +283,21 @@ export function SupplierProfileSection() {
 
         setSavingGroups(true);
         try {
-            await supabase.from('fornecedor_grupo').delete().eq('fornecedor_id', fornecedorId);
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/supplier/profile', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ fornecedorId, groups: supplierGroups }),
+            });
 
-            if (supplierGroups.length > 0) {
-                const insertData = supplierGroups.map(grupoId => ({
-                    fornecedor_id: fornecedorId,
-                    grupo_id: grupoId
-                }));
-                await supabase.from('fornecedor_grupo').insert(insertData);
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Erro ao salvar grupos');
             }
 
             showToast("success", "Grupos atualizados com sucesso!");
-        } catch (error) {
-            showToast("error", "Erro ao atualizar grupos.");
+        } catch (error: any) {
+            showToast("error", error.message || "Erro ao atualizar grupos.");
         } finally {
             setSavingGroups(false);
         }

@@ -6,13 +6,29 @@ import { Search, Edit2, Trash2, X, Save, Package, CreditCard, Tags, UserPlus, Us
 import { createUserAccount, resetUserPassword } from '@/lib/userAccountService';
 import { useToast } from '@/components/ToastProvider';
 
-// Helper para obter headers com token
+// Helper para obter headers com token (com fallback para localStorage)
 async function getAuthHeaders(): Promise<Record<string, string>> {
-    const { data: { session } } = await supabase.auth.getSession();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
+
+    // Tentar Supabase session primeiro
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`;
+            return headers;
+        }
+    } catch (e) {
+        console.warn('Erro ao obter sessão Supabase:', e);
     }
+
+    // Fallback: localStorage (setado pelo login)
+    if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('token');
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+    }
+
     return headers;
 }
 
@@ -152,8 +168,16 @@ export default function FornecedoresManagement() {
             setLoading(true);
 
             const headers = await getAuthHeaders();
+            // Se não tem token, não faz a requisição (ex: logout em andamento)
+            if (!headers['Authorization']) {
+                return;
+            }
             const res = await fetch('/api/admin/fornecedores', { headers });
             if (!res.ok) {
+                // Se 401, pode ser logout em andamento — não logar erro ruidoso
+                if (res.status === 401) {
+                    return;
+                }
                 const err = await res.json();
                 throw new Error(err.error || 'Erro ao carregar');
             }
