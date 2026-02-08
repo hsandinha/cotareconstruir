@@ -33,6 +33,10 @@ export function SupplierProfileSection() {
     const [supplierGroups, setSupplierGroups] = useState<string[]>([]);
     const [savingGroups, setSavingGroups] = useState(false);
 
+    // Materiais por grupo (para preview)
+    const [materiaisByGrupo, setMateriaisByGrupo] = useState<Record<string, Array<{ id: string; nome: string; unidade: string }>>>({});
+    const [expandedGroupPreview, setExpandedGroupPreview] = useState<string | null>(null);
+
     // Dados da empresa
     const [company, setCompany] = useState({
         razaoSocial: "",
@@ -131,9 +135,10 @@ export function SupplierProfileSection() {
         loadProfile();
     }, [user, profile, initialized]);
 
-    // Carregar grupos de insumo disponíveis
+    // Carregar grupos de insumo disponíveis e materiais por grupo
     useEffect(() => {
-        const loadGroups = async () => {
+        const loadGroupsAndMaterials = async () => {
+            // Carregar grupos
             const { data: groups } = await supabase
                 .from('grupos_insumo')
                 .select('id, nome')
@@ -142,8 +147,50 @@ export function SupplierProfileSection() {
             if (groups) {
                 setAvailableGroups(groups);
             }
+
+            // Carregar material_grupo junction
+            const allMG: any[] = [];
+            let page = 0;
+            const pageSize = 1000;
+            while (true) {
+                const { data: chunk } = await supabase
+                    .from('material_grupo')
+                    .select('material_id, grupo_id')
+                    .range(page * pageSize, (page + 1) * pageSize - 1);
+                if (!chunk || chunk.length === 0) break;
+                allMG.push(...chunk);
+                if (chunk.length < pageSize) break;
+                page++;
+            }
+
+            // Carregar materiais (nome e unidade)
+            const allMat: any[] = [];
+            page = 0;
+            while (true) {
+                const { data: chunk } = await supabase
+                    .from('materiais')
+                    .select('id, nome, unidade')
+                    .order('nome')
+                    .range(page * pageSize, (page + 1) * pageSize - 1);
+                if (!chunk || chunk.length === 0) break;
+                allMat.push(...chunk);
+                if (chunk.length < pageSize) break;
+                page++;
+            }
+
+            // Build materiaisByGrupo map
+            const matMap = new Map(allMat.map(m => [m.id, m]));
+            const byGrupo: Record<string, Array<{ id: string; nome: string; unidade: string }>> = {};
+            allMG.forEach(mg => {
+                const mat = matMap.get(mg.material_id);
+                if (mat) {
+                    if (!byGrupo[mg.grupo_id]) byGrupo[mg.grupo_id] = [];
+                    byGrupo[mg.grupo_id].push({ id: mat.id, nome: mat.nome, unidade: mat.unidade });
+                }
+            });
+            setMateriaisByGrupo(byGrupo);
         };
-        loadGroups();
+        loadGroupsAndMaterials();
     }, []);
 
     const handleConsultCNPJ = async () => {
@@ -651,21 +698,52 @@ export function SupplierProfileSection() {
                                         {availableGroups.filter(g => !supplierGroups.includes(g.id)).length} grupos
                                     </span>
                                 </div>
-                                <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
+                                <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
                                     {availableGroups
                                         .filter(group => !supplierGroups.includes(group.id))
-                                        .map(group => (
-                                            <button
-                                                key={group.id}
-                                                onClick={() => toggleGroup(group.id)}
-                                                className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white hover:border-emerald-400 hover:bg-emerald-50 transition-all group"
-                                            >
-                                                <span className="text-sm font-medium text-slate-700 group-hover:text-emerald-700">
-                                                    {group.nome}
-                                                </span>
-                                                <Plus className="h-4 w-4 text-slate-400 group-hover:text-emerald-600" />
-                                            </button>
-                                        ))}
+                                        .map(group => {
+                                            const matCount = materiaisByGrupo[group.id]?.length || 0;
+                                            const isExpanded = expandedGroupPreview === group.id;
+                                            return (
+                                                <div key={group.id} className="border border-slate-200 rounded-xl bg-white overflow-hidden">
+                                                    <div className="flex items-center justify-between p-3 hover:bg-emerald-50 transition-all">
+                                                        <button
+                                                            onClick={() => setExpandedGroupPreview(isExpanded ? null : group.id)}
+                                                            className="flex-1 text-left flex items-center gap-2"
+                                                        >
+                                                            <span className="text-sm font-medium text-slate-700">
+                                                                {group.nome}
+                                                            </span>
+                                                            <span className="text-xs text-slate-400">({matCount})</span>
+                                                            {matCount > 0 && (
+                                                                isExpanded
+                                                                    ? <ChevronUp className="h-3 w-3 text-slate-400" />
+                                                                    : <ChevronDown className="h-3 w-3 text-slate-400" />
+                                                            )}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => toggleGroup(group.id)}
+                                                            className="p-1 rounded-lg hover:bg-emerald-100 transition-all"
+                                                        >
+                                                            <Plus className="h-4 w-4 text-slate-400 hover:text-emerald-600" />
+                                                        </button>
+                                                    </div>
+                                                    {isExpanded && matCount > 0 && (
+                                                        <div className="border-t border-slate-100 px-3 py-2 bg-slate-50 max-h-40 overflow-y-auto">
+                                                            {materiaisByGrupo[group.id].slice(0, 50).map(mat => (
+                                                                <div key={mat.id} className="flex items-center justify-between py-1 text-xs text-slate-600">
+                                                                    <span>{mat.nome}</span>
+                                                                    <span className="text-slate-400 ml-2">{mat.unidade}</span>
+                                                                </div>
+                                                            ))}
+                                                            {matCount > 50 && (
+                                                                <p className="text-xs text-slate-400 pt-1">... e mais {matCount - 50} materiais</p>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
                                     {availableGroups.filter(g => !supplierGroups.includes(g.id)).length === 0 && (
                                         <div className="text-center py-8 text-slate-400">
                                             <p className="text-sm">Todos os grupos foram selecionados</p>
@@ -682,26 +760,54 @@ export function SupplierProfileSection() {
                                         {supplierGroups.length}
                                     </span>
                                 </div>
-                                <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
+                                <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
                                     {availableGroups
                                         .filter(group => supplierGroups.includes(group.id))
-                                        .map(group => (
-                                            <div
-                                                key={group.id}
-                                                className="flex items-center justify-between p-3 rounded-xl border-2 border-emerald-500 bg-emerald-50"
-                                            >
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-2 h-2 rounded-full bg-emerald-600"></div>
-                                                    <span className="text-sm font-semibold text-slate-900">{group.nome}</span>
-                                                </div>
-                                                <button
-                                                    onClick={() => toggleGroup(group.id)}
-                                                    className="p-1.5 rounded-lg bg-white border border-red-200 hover:bg-red-50 hover:border-red-400 transition-all"
+                                        .map(group => {
+                                            const matCount = materiaisByGrupo[group.id]?.length || 0;
+                                            const isExpanded = expandedGroupPreview === `selected-${group.id}`;
+                                            return (
+                                                <div
+                                                    key={group.id}
+                                                    className="border-2 border-emerald-500 bg-emerald-50 rounded-xl overflow-hidden"
                                                 >
-                                                    <X className="w-4 h-4 text-red-600" />
-                                                </button>
-                                            </div>
-                                        ))}
+                                                    <div className="flex items-center justify-between p-3">
+                                                        <button
+                                                            onClick={() => setExpandedGroupPreview(isExpanded ? null : `selected-${group.id}`)}
+                                                            className="flex-1 text-left flex items-center gap-2"
+                                                        >
+                                                            <div className="w-2 h-2 rounded-full bg-emerald-600"></div>
+                                                            <span className="text-sm font-semibold text-slate-900">{group.nome}</span>
+                                                            <span className="text-xs text-emerald-700">({matCount} materiais)</span>
+                                                            {matCount > 0 && (
+                                                                isExpanded
+                                                                    ? <ChevronUp className="h-3 w-3 text-emerald-600" />
+                                                                    : <ChevronDown className="h-3 w-3 text-emerald-600" />
+                                                            )}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => toggleGroup(group.id)}
+                                                            className="p-1.5 rounded-lg bg-white border border-red-200 hover:bg-red-50 hover:border-red-400 transition-all"
+                                                        >
+                                                            <X className="w-4 h-4 text-red-600" />
+                                                        </button>
+                                                    </div>
+                                                    {isExpanded && matCount > 0 && (
+                                                        <div className="border-t border-emerald-200 px-3 py-2 bg-white max-h-40 overflow-y-auto">
+                                                            {materiaisByGrupo[group.id].slice(0, 50).map(mat => (
+                                                                <div key={mat.id} className="flex items-center justify-between py-1 text-xs text-slate-600">
+                                                                    <span>{mat.nome}</span>
+                                                                    <span className="text-slate-400 ml-2">{mat.unidade}</span>
+                                                                </div>
+                                                            ))}
+                                                            {matCount > 50 && (
+                                                                <p className="text-xs text-slate-400 pt-1">... e mais {matCount - 50} materiais</p>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
                                     {supplierGroups.length === 0 && (
                                         <div className="text-center py-12">
                                             <Package className="w-12 h-12 mx-auto text-slate-300 mb-3" />

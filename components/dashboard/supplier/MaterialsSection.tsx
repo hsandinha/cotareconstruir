@@ -23,7 +23,6 @@ interface MaterialBase {
     unidade: string;
     gruposInsumoIds: string[];
     descricao?: string;
-    fabricante?: string;
 }
 
 interface FornecedorMaterial {
@@ -31,7 +30,7 @@ interface FornecedorMaterial {
     preco: number;
     estoque: number;
     ativo: boolean;
-    dataAtualizacao: string;
+    updatedAt: string;
 }
 
 interface GrupoInsumo {
@@ -76,21 +75,38 @@ export function SupplierMaterialsSection() {
             if (!initialized) return;
 
             if (user) {
-                // Buscar fornecedor vinculado ao usuário
-                const { data: userData, error: userError } = await supabase
+                let fId: string | null = null;
+
+                // Primeiro tenta via users.fornecedor_id
+                const { data: userData } = await supabase
                     .from('users')
                     .select('fornecedor_id')
                     .eq('id', user.id)
                     .single();
 
                 if (userData?.fornecedor_id) {
-                    setFornecedorId(userData.fornecedor_id);
+                    fId = userData.fornecedor_id;
+                } else {
+                    // Fallback: buscar na tabela fornecedores por user_id
+                    const { data: fornecedorData } = await supabase
+                        .from('fornecedores')
+                        .select('id')
+                        .eq('user_id', user.id)
+                        .single();
+
+                    if (fornecedorData) {
+                        fId = fornecedorData.id;
+                    }
+                }
+
+                if (fId) {
+                    setFornecedorId(fId);
 
                     // Buscar grupos do fornecedor na tabela de relacionamento
-                    const { data: gruposData, error: gruposError } = await supabase
+                    const { data: gruposData } = await supabase
                         .from('fornecedor_grupo')
                         .select('grupo_id')
-                        .eq('fornecedor_id', userData.fornecedor_id);
+                        .eq('fornecedor_id', fId);
 
                     if (gruposData) {
                         setFornecedorGrupoIds(gruposData.map(g => g.grupo_id));
@@ -117,23 +133,61 @@ export function SupplierMaterialsSection() {
                     setGrupos(gruposData);
                 }
 
-                // Carregar materiais
-                const { data: materiaisData, error: materiaisError } = await supabase
-                    .from('materiais')
-                    .select('id, nome, unidade, grupos_insumo_ids, descricao, fabricante')
-                    .order('nome', { ascending: true });
+                // Carregar materiais (colunas reais do schema)
+                const allMateriais: any[] = [];
+                let page = 0;
+                const pageSize = 1000;
+                while (true) {
+                    const { data: chunk, error: materiaisError } = await supabase
+                        .from('materiais')
+                        .select('id, nome, unidade, descricao')
+                        .order('nome', { ascending: true })
+                        .range(page * pageSize, (page + 1) * pageSize - 1);
 
-                if (materiaisData) {
-                    const mappedMateriais = materiaisData.map(m => ({
-                        id: m.id,
-                        nome: m.nome,
-                        unidade: m.unidade,
-                        gruposInsumoIds: m.grupos_insumo_ids || [],
-                        descricao: m.descricao,
-                        fabricante: m.fabricante
-                    }));
-                    setMateriaisBase(mappedMateriais);
+                    if (materiaisError) {
+                        console.error('Erro ao carregar materiais:', materiaisError);
+                        break;
+                    }
+                    if (!chunk || chunk.length === 0) break;
+                    allMateriais.push(...chunk);
+                    if (chunk.length < pageSize) break;
+                    page++;
                 }
+
+                // Carregar junction table material_grupo para mapear material -> grupos
+                const allMaterialGrupo: any[] = [];
+                page = 0;
+                while (true) {
+                    const { data: chunk, error: mgError } = await supabase
+                        .from('material_grupo')
+                        .select('material_id, grupo_id')
+                        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+                    if (mgError) {
+                        console.error('Erro ao carregar material_grupo:', mgError);
+                        break;
+                    }
+                    if (!chunk || chunk.length === 0) break;
+                    allMaterialGrupo.push(...chunk);
+                    if (chunk.length < pageSize) break;
+                    page++;
+                }
+
+                // Build lookup: material_id -> grupo_ids[]
+                const materialGrupoMap: Record<string, string[]> = {};
+                allMaterialGrupo.forEach(mg => {
+                    if (!materialGrupoMap[mg.material_id]) materialGrupoMap[mg.material_id] = [];
+                    materialGrupoMap[mg.material_id].push(mg.grupo_id);
+                });
+
+                const mappedMateriais = allMateriais.map(m => ({
+                    id: m.id,
+                    nome: m.nome,
+                    unidade: m.unidade,
+                    gruposInsumoIds: materialGrupoMap[m.id] || [],
+                    descricao: m.descricao
+                }));
+                setMateriaisBase(mappedMateriais);
             } catch (error) {
                 console.error("Erro ao carregar dados base:", error);
             }
@@ -170,7 +224,7 @@ export function SupplierMaterialsSection() {
                         preco: item.preco,
                         estoque: item.estoque,
                         ativo: item.ativo,
-                        dataAtualizacao: item.data_atualizacao
+                        updatedAt: item.updated_at
                     });
                 });
                 setFornecedorMateriais(materiaisMap);
@@ -292,7 +346,7 @@ export function SupplierMaterialsSection() {
                     preco: parseFloat(editPreco) || 0,
                     estoque: parseInt(editEstoque) || 0,
                     ativo: true,
-                    data_atualizacao: new Date().toISOString()
+                    updated_at: new Date().toISOString()
                 }, { onConflict: 'fornecedor_id,material_id' });
 
             if (error) throw error;
@@ -305,7 +359,7 @@ export function SupplierMaterialsSection() {
                     preco: parseFloat(editPreco) || 0,
                     estoque: parseInt(editEstoque) || 0,
                     ativo: true,
-                    dataAtualizacao: new Date().toISOString()
+                    updatedAt: new Date().toISOString()
                 });
                 return newMap;
             });
@@ -329,12 +383,11 @@ export function SupplierMaterialsSection() {
                 .from('solicitacoes_materiais')
                 .insert({
                     fornecedor_id: fornecedorId,
-                    user_id: user?.id,
-                    nome_material: requestMaterialName,
+                    nome: requestMaterialName,
+                    unidade: 'unid',
                     descricao: requestMaterialDesc,
                     grupo_sugerido: requestGrupo,
-                    status: "pendente",
-                    created_at: new Date().toISOString()
+                    status: 'pendente'
                 });
 
             if (error) throw error;
@@ -549,9 +602,6 @@ export function SupplierMaterialsSection() {
                                                     <p className="text-sm font-medium text-gray-900">{material.nome}</p>
                                                     {material.descricao && (
                                                         <p className="text-xs text-gray-500 mt-0.5">{material.descricao}</p>
-                                                    )}
-                                                    {material.fabricante && (
-                                                        <p className="text-xs text-blue-600 mt-0.5">{material.fabricante}</p>
                                                     )}
                                                 </div>
                                             </td>
