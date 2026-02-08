@@ -12,7 +12,7 @@ import {
     CurrencyDollarIcon,
     DocumentTextIcon
 } from "@heroicons/react/24/outline";
-import { supabase } from "../../../lib/supabase";
+import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "../../../lib/useAuth";
 
 type SaleStatus = "pending" | "responded" | "negotiating" | "approved" | "completed" | "cancelled";
@@ -105,7 +105,7 @@ export function SupplierSalesSection() {
         try {
             const { data, error } = await supabase
                 .from('pedidos')
-                .select('*')
+                .select('*, pedido_itens(*), cotacao:cotacoes(*, obra:obras(nome, bairro, cidade, estado))')
                 .eq('fornecedor_id', fornecedorId)
                 .order('created_at', { ascending: false });
 
@@ -114,27 +114,38 @@ export function SupplierSalesSection() {
                 setOrders([]);
             } else {
                 // Map Supabase data to SaleOrder format
-                const mappedOrders: SaleOrder[] = (data || []).map((pedido) => ({
-                    id: pedido.id,
-                    quotationId: pedido.cotacao_id || '',
-                    clientCode: pedido.user_id || '',
-                    clientName: pedido.endereco_entrega?.clientName || '',
-                    workName: pedido.endereco_entrega?.workName || 'Obra sem nome',
-                    location: {
-                        neighborhood: pedido.endereco_entrega?.neighborhood || '',
-                        city: pedido.endereco_entrega?.city || '',
-                        state: pedido.endereco_entrega?.state || '',
-                        fullAddress: pedido.endereco_entrega?.fullAddress || ''
-                    },
-                    deliverySchedule: pedido.endereco_entrega?.deliverySchedule,
-                    items: pedido.endereco_entrega?.items || [],
-                    clientDetails: pedido.endereco_entrega?.clientDetails,
-                    status: mapSupabaseStatus(pedido.status),
-                    createdAt: pedido.created_at,
-                    deadline: pedido.data_previsao_entrega,
-                    totalValue: pedido.valor_total,
-                    proposal: pedido.endereco_entrega?.proposal
-                }));
+                const mappedOrders: SaleOrder[] = (data || []).map((pedido) => {
+                    const obra = pedido.cotacao?.obra;
+                    const extraData = pedido.endereco_entrega || {};
+                    return {
+                        id: pedido.id,
+                        quotationId: pedido.cotacao_id || '',
+                        clientCode: pedido.user_id || '',
+                        clientName: extraData.clientDetails?.name || '',
+                        workName: obra?.nome || extraData.workName || 'Obra sem nome',
+                        location: {
+                            neighborhood: obra?.bairro || '',
+                            city: obra?.cidade || '',
+                            state: obra?.estado || '',
+                            fullAddress: [obra?.bairro, obra?.cidade, obra?.estado].filter(Boolean).join(', ')
+                        },
+                        deliverySchedule: extraData.deliverySchedule,
+                        items: (pedido.pedido_itens || []).map((item: any) => ({
+                            id: item.id,
+                            name: item.nome,
+                            quantity: item.quantidade,
+                            unit: item.unidade,
+                            unitPrice: item.preco_unitario,
+                            total: item.subtotal
+                        })),
+                        clientDetails: extraData.clientDetails,
+                        status: mapSupabaseStatus(pedido.status),
+                        createdAt: pedido.created_at,
+                        deadline: pedido.data_previsao_entrega,
+                        totalValue: pedido.valor_total,
+                        proposal: extraData.proposal
+                    };
+                });
                 setOrders(mappedOrders);
             }
         } catch (err) {
@@ -180,28 +191,44 @@ export function SupplierSalesSection() {
             return;
         }
 
-        const fornecedorId = user.id;
+        // Buscar fornecedor_id real do usuário
+        const initFornecedor = async () => {
+            const { data: fornecedorData } = await supabase
+                .from('fornecedores')
+                .select('id')
+                .eq('user_id', user.id)
+                .single();
 
-        // Initial fetch
-        fetchOrders(fornecedorId);
+            if (!fornecedorData) {
+                setOrders([]);
+                setLoading(false);
+                return;
+            }
 
-        // Set up realtime subscription
-        const channel = supabase
-            .channel('orders-changes')
-            .on('postgres_changes', {
-                event: '*',
-                schema: 'public',
-                table: 'pedidos',
-                filter: `fornecedor_id=eq.${fornecedorId}`
-            }, () => {
-                // Refetch orders when any change occurs
-                fetchOrders(fornecedorId);
-            })
-            .subscribe();
+            const fornecedorId = fornecedorData.id;
 
-        return () => {
-            channel.unsubscribe();
+            // Initial fetch
+            fetchOrders(fornecedorId);
+
+            // Set up realtime subscription
+            const channel = supabase
+                .channel('orders-changes')
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'pedidos',
+                    filter: `fornecedor_id=eq.${fornecedorId}`
+                }, () => {
+                    fetchOrders(fornecedorId);
+                })
+                .subscribe();
+
+            return () => {
+                channel.unsubscribe();
+            };
         };
+
+        initFornecedor();
     }, [user, authLoading, fetchOrders]);
 
     const filteredOrders = orders.filter(order => {

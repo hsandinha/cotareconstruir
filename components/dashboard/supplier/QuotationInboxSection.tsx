@@ -11,39 +11,42 @@ export function SupplierQuotationInboxSection() {
     const [loading, setLoading] = useState(true);
     const [isInactive, setIsInactive] = useState(false);
     const [selectedQuotation, setSelectedQuotation] = useState<any | null>(null);
+    const [fornecedorId, setFornecedorId] = useState<string | null>(null);
     const [filters, setFilters] = useState({
         regions: [] as string[],
         categories: [] as string[]
     });
 
     useEffect(() => {
-        const loadUserPreferences = async () => {
-            if (!initialized) return;
+        const loadFornecedorData = async () => {
+            if (!initialized || !user) return;
 
-            if (user) {
-                // Fetch user preferences
-                const { data: userData, error } = await supabase
-                    .from('users')
-                    .select('is_active, operating_regions, operating_categories')
-                    .eq('id', user.id)
-                    .single();
+            // Buscar fornecedor vinculado ao user
+            const { data: fornecedorData, error } = await supabase
+                .from('fornecedores')
+                .select('id, status, regioes_atendimento')
+                .eq('user_id', user.id)
+                .single();
 
-                if (userData) {
-                    // Check if user is active
-                    if (userData.is_active === false) {
-                        setIsInactive(true);
-                        setLoading(false);
-                        return;
-                    }
-
-                    setFilters({
-                        regions: userData.operating_regions ? userData.operating_regions.split(',').map((s: string) => s.trim().toLowerCase()) : [],
-                        categories: userData.operating_categories ? userData.operating_categories.split(',').map((s: string) => s.trim().toLowerCase()) : []
-                    });
-                }
+            if (error || !fornecedorData) {
+                setIsInactive(true);
+                setLoading(false);
+                return;
             }
+
+            if (fornecedorData.status === 'suspended') {
+                setIsInactive(true);
+                setLoading(false);
+                return;
+            }
+
+            setFornecedorId(fornecedorData.id);
+            setFilters({
+                regions: (fornecedorData.regioes_atendimento || []).map((r: string) => r.toLowerCase()),
+                categories: []
+            });
         };
-        loadUserPreferences();
+        loadFornecedorData();
     }, [user, initialized]);
 
     useEffect(() => {
@@ -51,23 +54,35 @@ export function SupplierQuotationInboxSection() {
         const fetchQuotations = async () => {
             const { data, error } = await supabase
                 .from('cotacoes')
-                .select('*')
-                .eq('status', 'pending');
+                .select('*, cotacao_itens(*), obra:obras(nome, bairro, cidade, estado)')
+                .eq('status', 'enviada');
 
             if (data) {
                 let items = data.map(doc => ({
                     id: doc.id,
-                    ...doc,
+                    user_id: doc.user_id,
+                    obra_id: doc.obra_id,
+                    status: doc.status,
                     clientCode: "Cliente " + (doc.user_id ? doc.user_id.substring(0, 5) : "Anon"),
-                    locationRaw: doc.location || "",
-                    location: "Bairro: " + (doc.location || "Não informado"),
+                    locationRaw: doc.obra?.cidade || "",
+                    location: doc.obra ? `${doc.obra.bairro || ''}, ${doc.obra.cidade || ''} - ${doc.obra.estado || ''}` : "Não informado",
                     receivedAt: doc.created_at ? new Date(doc.created_at).toLocaleString() : "N/A",
-                    deadline: "Em 2 dias", // Placeholder
-                    itemsCount: doc.total_items || (doc.items ? doc.items.length : 0),
+                    deadline: doc.data_validade ? new Date(doc.data_validade).toLocaleDateString('pt-BR') : "Sem prazo",
+                    itemsCount: doc.cotacao_itens?.length || 0,
+                    items: (doc.cotacao_itens || []).map((item: any) => ({
+                        id: item.id,
+                        descricao: item.nome,
+                        quantidade: item.quantidade,
+                        unidade: item.unidade,
+                        observacao: item.observacao,
+                        grupo: item.grupo,
+                        fase_nome: item.fase_nome,
+                        servico_nome: item.servico_nome
+                    })),
                     urgency: "Média"
                 }));
 
-                // Apply filters if set
+                // Filtrar por região se configurado
                 if (filters.regions.length > 0) {
                     items = items.filter(item => {
                         const loc = item.locationRaw.toLowerCase();
@@ -91,10 +106,9 @@ export function SupplierQuotationInboxSection() {
                     event: '*',
                     schema: 'public',
                     table: 'cotacoes',
-                    filter: 'status=eq.pending'
+                    filter: 'status=eq.enviada'
                 },
                 (payload) => {
-                    // Refetch quotations on any change
                     fetchQuotations();
                 }
             )
@@ -107,9 +121,10 @@ export function SupplierQuotationInboxSection() {
 
     const getStatusColor = (status: string) => {
         switch (status) {
-            case 'pending': return 'bg-yellow-100 text-yellow-800';
-            case 'responded': return 'bg-green-100 text-green-800';
-            case 'expired': return 'bg-red-100 text-red-800';
+            case 'enviada': return 'bg-yellow-100 text-yellow-800';
+            case 'respondida': return 'bg-green-100 text-green-800';
+            case 'fechada': return 'bg-blue-100 text-blue-800';
+            case 'cancelada': return 'bg-red-100 text-red-800';
             default: return 'bg-gray-100 text-gray-800';
         }
     };
@@ -174,7 +189,7 @@ export function SupplierQuotationInboxSection() {
                         <div className="text-sm text-gray-500">Respondidas</div>
                     </div>
                     <div className="text-center">
-                        <div className="text-2xl font-bold text-yellow-600">{quotations.filter(q => q.status === 'pending').length}</div>
+                        <div className="text-2xl font-bold text-yellow-600">{quotations.filter(q => q.status === 'enviada').length}</div>
                         <div className="text-sm text-gray-500">Pendentes</div>
                     </div>
                     <div className="text-center">
@@ -205,7 +220,7 @@ export function SupplierQuotationInboxSection() {
                                     <div className="flex items-center space-x-3 mb-2">
                                         <h4 className="text-base font-medium text-gray-900">{quotation.clientCode}</h4>
                                         <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(quotation.status)}`}>
-                                            {quotation.status === 'pending' ? 'Pendente' : quotation.status}
+                                            {quotation.status === 'enviada' ? 'Pendente' : quotation.status === 'respondida' ? 'Respondida' : quotation.status}
                                         </span>
                                         <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getUrgencyColor(quotation.urgency)}`}>
                                             {quotation.urgency}
@@ -241,7 +256,7 @@ export function SupplierQuotationInboxSection() {
                                     >
                                         Visualizar
                                     </button>
-                                    {quotation.status === 'pending' && (
+                                    {quotation.status === 'enviada' && (
                                         <button
                                             onClick={() => setSelectedQuotation(quotation)}
                                             className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700"

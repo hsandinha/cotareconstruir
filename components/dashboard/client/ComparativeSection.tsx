@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { ArrowDownOnSquareIcon, ChatBubbleLeftRightIcon, StarIcon } from "@heroicons/react/24/outline";
 import { ChatInterface } from "../../ChatInterface";
 import { ReviewModal } from "../../ReviewModal";
-import { supabase } from "../../../lib/supabase";
+import { supabase } from "@/lib/supabaseAuth";
 import { sendEmail } from "../../../app/actions/email";
 
 interface ClientComparativeSectionProps {
@@ -59,12 +59,12 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     // Map to expected format
                     setQuotation({
                         id: quotationData.id,
+                        obra_id: quotationData.obra_id,
                         status: quotationData.status,
-                        clientCode: quotationData.codigo_cliente,
-                        location: quotationData.localizacao,
+                        clientCode: quotationData.user_id,
                         items: quotationData.cotacao_itens?.map((item: any) => ({
                             id: item.id,
-                            descricao: item.descricao,
+                            descricao: item.nome,
                             quantidade: item.quantidade,
                             unidade: item.unidade,
                             observacao: item.observacao
@@ -78,11 +78,19 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     .select(`
                         *,
                         proposta_itens (*),
-                        fornecedor:users!propostas_fornecedor_id_fkey (
+                        fornecedor:fornecedores!propostas_fornecedor_id_fkey (
                             id,
-                            nome,
-                            empresa,
-                            email
+                            razao_social,
+                            nome_fantasia,
+                            cnpj,
+                            email,
+                            telefone,
+                            user_id,
+                            logradouro,
+                            numero,
+                            bairro,
+                            cidade,
+                            estado
                         )
                     `)
                     .eq('cotacao_id', orderId)
@@ -93,10 +101,17 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 const mappedProposals = proposalsData?.map((p: any) => ({
                     id: p.id,
                     supplierId: p.fornecedor_id,
-                    supplierName: p.fornecedor?.empresa || p.fornecedor?.nome || 'Fornecedor',
+                    supplierUserId: p.fornecedor?.user_id,
+                    supplierName: p.fornecedor?.nome_fantasia || p.fornecedor?.razao_social || 'Fornecedor',
+                    supplierDetails: {
+                        name: p.fornecedor?.nome_fantasia || p.fornecedor?.razao_social || 'Fornecedor',
+                        document: p.fornecedor?.cnpj || '',
+                        email: p.fornecedor?.email || '',
+                        phone: p.fornecedor?.telefone || '',
+                        address: [p.fornecedor?.logradouro, p.fornecedor?.numero, p.fornecedor?.bairro, p.fornecedor?.cidade, p.fornecedor?.estado].filter(Boolean).join(', ')
+                    },
                     totalValue: p.valor_total || 0,
-                    freightPrice: p.valor_frete || 0,
-                    validity: p.validade,
+                    validity: p.data_validade,
                     paymentMethod: p.condicoes_pagamento,
                     items: p.proposta_itens?.map((item: any) => ({
                         itemId: item.cotacao_item_id,
@@ -108,20 +123,24 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 setProposals(mappedProposals);
 
                 // 3. Fetch Orders if finished
-                if (status === "finished") {
+                if (status === "fechada") {
                     const { data: ordersData, error: ordersError } = await supabase
                         .from('pedidos')
                         .select(`
                             *,
                             pedido_itens (*),
-                            fornecedor:users!pedidos_fornecedor_id_fkey (
+                            fornecedor:fornecedores!pedidos_fornecedor_id_fkey (
                                 id,
-                                nome,
-                                empresa,
+                                razao_social,
+                                nome_fantasia,
+                                cnpj,
                                 email,
                                 telefone,
-                                endereco,
-                                cnpj
+                                logradouro,
+                                numero,
+                                bairro,
+                                cidade,
+                                estado
                             )
                         `)
                         .eq('cotacao_id', orderId);
@@ -131,25 +150,25 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     const mappedOrders = ordersData?.map((order: any) => ({
                         id: order.id,
                         supplierId: order.fornecedor_id,
-                        supplierName: order.fornecedor?.empresa || order.fornecedor?.nome || 'Fornecedor',
+                        supplierName: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social || 'Fornecedor',
                         supplierDetails: {
-                            name: order.fornecedor?.empresa || order.fornecedor?.nome,
+                            name: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social,
                             document: order.fornecedor?.cnpj,
                             email: order.fornecedor?.email,
                             phone: order.fornecedor?.telefone,
-                            address: order.fornecedor?.endereco
+                            address: [order.fornecedor?.logradouro, order.fornecedor?.numero, order.fornecedor?.bairro, order.fornecedor?.cidade, order.fornecedor?.estado].filter(Boolean).join(', ')
                         },
                         items: order.pedido_itens?.map((item: any) => ({
                             id: item.id,
-                            name: item.descricao,
-                            descricao: item.descricao,
+                            name: item.nome,
+                            descricao: item.nome,
                             quantity: item.quantidade,
                             quantidade: item.quantidade,
                             unitPrice: item.preco_unitario,
                             total: item.subtotal
                         })) || [],
-                        freight: order.valor_frete || 0,
-                        subtotal: order.valor_subtotal || 0,
+                        freight: 0,
+                        subtotal: order.valor_total || 0,
                         total: order.valor_total || 0,
                         status: order.status
                     })) || [];
@@ -182,12 +201,12 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     if (data) {
                         setQuotation({
                             id: data.id,
+                            obra_id: data.obra_id,
                             status: data.status,
-                            clientCode: data.codigo_cliente,
-                            location: data.localizacao,
+                            clientCode: data.user_id,
                             items: data.cotacao_itens?.map((item: any) => ({
                                 id: item.id,
-                                descricao: item.descricao,
+                                descricao: item.nome,
                                 quantidade: item.quantidade,
                                 unidade: item.unidade,
                                 observacao: item.observacao
@@ -209,7 +228,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         .select(`
                             *,
                             proposta_itens (*),
-                            fornecedor:users!propostas_fornecedor_id_fkey (id, nome, empresa, email)
+                            fornecedor:fornecedores!propostas_fornecedor_id_fkey (id, razao_social, nome_fantasia, email, user_id)
                         `)
                         .eq('cotacao_id', orderId)
                         .order('valor_total', { ascending: true });
@@ -218,10 +237,10 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         const mappedProposals = data.map((p: any) => ({
                             id: p.id,
                             supplierId: p.fornecedor_id,
-                            supplierName: p.fornecedor?.empresa || p.fornecedor?.nome || 'Fornecedor',
+                            supplierUserId: p.fornecedor?.user_id,
+                            supplierName: p.fornecedor?.nome_fantasia || p.fornecedor?.razao_social || 'Fornecedor',
                             totalValue: p.valor_total || 0,
-                            freightPrice: p.valor_frete || 0,
-                            validity: p.validade,
+                            validity: p.data_validade,
                             paymentMethod: p.condicoes_pagamento,
                             items: p.proposta_itens?.map((item: any) => ({
                                 itemId: item.cotacao_item_id,
@@ -236,7 +255,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
             .subscribe();
 
         let ordersChannel: ReturnType<typeof supabase.channel> | null = null;
-        if (status === "finished") {
+        if (status === "fechada") {
             ordersChannel = supabase
                 .channel(`orders-${orderId}`)
                 .on('postgres_changes',
@@ -247,7 +266,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             .select(`
                                 *,
                                 pedido_itens (*),
-                                fornecedor:users!pedidos_fornecedor_id_fkey (id, nome, empresa, email, telefone, endereco, cnpj)
+                                fornecedor:fornecedores!pedidos_fornecedor_id_fkey (id, razao_social, nome_fantasia, cnpj, email, telefone, logradouro, numero, bairro, cidade, estado)
                             `)
                             .eq('cotacao_id', orderId);
 
@@ -255,25 +274,25 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             const mappedOrders = data.map((order: any) => ({
                                 id: order.id,
                                 supplierId: order.fornecedor_id,
-                                supplierName: order.fornecedor?.empresa || order.fornecedor?.nome || 'Fornecedor',
+                                supplierName: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social || 'Fornecedor',
                                 supplierDetails: {
-                                    name: order.fornecedor?.empresa || order.fornecedor?.nome,
+                                    name: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social,
                                     document: order.fornecedor?.cnpj,
                                     email: order.fornecedor?.email,
                                     phone: order.fornecedor?.telefone,
-                                    address: order.fornecedor?.endereco
+                                    address: [order.fornecedor?.logradouro, order.fornecedor?.numero, order.fornecedor?.bairro, order.fornecedor?.cidade, order.fornecedor?.estado].filter(Boolean).join(', ')
                                 },
                                 items: order.pedido_itens?.map((item: any) => ({
                                     id: item.id,
-                                    name: item.descricao,
-                                    descricao: item.descricao,
+                                    name: item.nome,
+                                    descricao: item.nome,
                                     quantity: item.quantidade,
                                     quantidade: item.quantidade,
                                     unitPrice: item.preco_unitario,
                                     total: item.subtotal
                                 })) || [],
-                                freight: order.valor_frete || 0,
-                                subtotal: order.valor_subtotal || 0,
+                                freight: 0,
+                                subtotal: order.valor_total || 0,
                                 total: order.valor_total || 0,
                                 status: order.status
                             }));
@@ -294,21 +313,25 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
     }, [orderId, status]);
 
     useEffect(() => {
-        if (quotation?.status === 'finished' && orderId) {
+        if (quotation?.status === 'fechada' && orderId) {
             const fetchOrders = async () => {
                 const { data, error } = await supabase
                     .from('pedidos')
                     .select(`
                         *,
                         pedido_itens (*),
-                        fornecedor:users!pedidos_fornecedor_id_fkey (
+                        fornecedor:fornecedores!pedidos_fornecedor_id_fkey (
                             id,
-                            nome,
-                            empresa,
+                            razao_social,
+                            nome_fantasia,
+                            cnpj,
                             email,
                             telefone,
-                            endereco,
-                            cnpj
+                            logradouro,
+                            numero,
+                            bairro,
+                            cidade,
+                            estado
                         )
                     `)
                     .eq('cotacao_id', orderId);
@@ -321,25 +344,25 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 const mappedOrders = data?.map((order: any) => ({
                     id: order.id,
                     supplierId: order.fornecedor_id,
-                    supplierName: order.fornecedor?.empresa || order.fornecedor?.nome || 'Fornecedor',
+                    supplierName: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social || 'Fornecedor',
                     supplierDetails: {
-                        name: order.fornecedor?.empresa || order.fornecedor?.nome,
+                        name: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social,
                         document: order.fornecedor?.cnpj,
                         email: order.fornecedor?.email,
                         phone: order.fornecedor?.telefone,
-                        address: order.fornecedor?.endereco
+                        address: [order.fornecedor?.logradouro, order.fornecedor?.numero, order.fornecedor?.bairro, order.fornecedor?.cidade, order.fornecedor?.estado].filter(Boolean).join(', ')
                     },
                     items: order.pedido_itens?.map((item: any) => ({
                         id: item.id,
-                        name: item.descricao,
-                        descricao: item.descricao,
+                        name: item.nome,
+                        descricao: item.nome,
                         quantity: item.quantidade,
                         quantidade: item.quantidade,
                         unitPrice: item.preco_unitario,
                         total: item.subtotal
                     })) || [],
-                    freight: order.valor_frete || 0,
-                    subtotal: order.valor_subtotal || 0,
+                    freight: 0,
+                    subtotal: order.valor_total || 0,
                     total: order.valor_total || 0,
                     status: order.status
                 })) || [];
@@ -354,7 +377,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         return <div className="p-12 text-center">Carregando mapa comparativo...</div>;
     }
 
-    if (quotation?.status === 'finished') {
+    if (quotation?.status === 'fechada') {
         return (
             <div className="space-y-6">
                 <div className="bg-green-50 border border-green-200 rounded-lg p-6 text-center">
@@ -378,12 +401,13 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                 </div>
                                 <div className="text-right">
                                     <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium
-                                        ${order.status === 'approved' ? 'bg-green-100 text-green-800' :
-                                            order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                        ${order.status === 'confirmado' ? 'bg-green-100 text-green-800' :
+                                            order.status === 'pendente' ? 'bg-yellow-100 text-yellow-800' :
                                                 'bg-gray-100 text-gray-800'}`}>
-                                        {order.status === 'pending' ? 'Aguardando Confirmação' :
-                                            order.status === 'approved' ? 'Confirmado pelo Fornecedor' :
-                                                order.status}
+                                        {order.status === 'pendente' ? 'Aguardando Confirmação' :
+                                            order.status === 'confirmado' ? 'Confirmado pelo Fornecedor' :
+                                                order.status === 'entregue' ? 'Entregue' :
+                                                    order.status}
                                     </span>
                                 </div>
                             </div>
@@ -565,49 +589,35 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
             // Fetch client details
             const { data: clientData, error: clientError } = await supabase
                 .from('users')
-                .select('*')
+                .select('nome, email, telefone, cpf_cnpj')
                 .eq('id', user.id)
                 .single();
 
             if (clientError) throw clientError;
 
             const clientDetails = {
-                name: clientData?.nome || clientData?.empresa || "Cliente",
-                document: clientData?.cnpj || clientData?.cpf || "",
+                name: clientData?.nome || "Cliente",
+                document: clientData?.cpf_cnpj || "",
                 email: clientData?.email || "",
-                phone: clientData?.telefone || "",
-                address: clientData?.endereco || ""
+                phone: clientData?.telefone || ""
             };
 
             // Create orders and update proposals for each supplier
             for (const [supplierId, items] of Object.entries(itemsBySupplier)) {
                 const proposal = proposals.find(p => p.supplierId === supplierId);
 
-                // Fetch supplier details
-                const { data: supplierData, error: supplierError } = await supabase
-                    .from('users')
-                    .select('*')
-                    .eq('id', supplierId)
-                    .single();
-
-                if (supplierError) {
-                    console.error("Error fetching supplier:", supplierError);
-                    continue;
-                }
-
-                const supplierDetails = {
-                    name: supplierData?.empresa || supplierData?.nome || "Fornecedor",
-                    document: supplierData?.cnpj || "",
-                    email: supplierData?.email || "",
-                    phone: supplierData?.telefone || supplierData?.whatsapp || "",
-                    address: supplierData?.endereco || ""
+                const supplierDetails = proposal?.supplierDetails || {
+                    name: proposal?.supplierName || 'Fornecedor',
+                    document: '',
+                    email: '',
+                    phone: '',
+                    address: ''
                 };
 
                 const supplierTotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
-                const freight = proposal?.freightPrice || 0;
-                const finalTotal = supplierTotal + freight;
+                const finalTotal = supplierTotal;
 
-                // Create order
+                // Create order (using only columns that exist in schema)
                 const { data: orderData, error: orderError } = await supabase
                     .from('pedidos')
                     .insert({
@@ -616,13 +626,14 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         user_id: user.id,
                         fornecedor_id: supplierId,
                         obra_id: quotation.obra_id,
-                        valor_subtotal: supplierTotal,
-                        valor_frete: freight,
                         valor_total: finalTotal,
-                        status: 'pending',
-                        dados_cliente: clientDetails,
-                        dados_fornecedor: supplierDetails,
-                        localizacao: quotation.location || {}
+                        status: 'pendente',
+                        endereco_entrega: {
+                            clientDetails,
+                            supplierDetails,
+                            items: items
+                        },
+                        observacoes: `Pedido gerado via mapa comparativo`
                     })
                     .select()
                     .single();
@@ -632,16 +643,14 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     continue;
                 }
 
-                // Create order items
+                // Create order items (using only columns that exist in schema)
                 const orderItems = items.map((item: any) => ({
                     pedido_id: orderData.id,
-                    cotacao_item_id: item.id,
-                    descricao: item.name,
+                    nome: item.name,
                     quantidade: item.quantity,
                     unidade: item.unit,
                     preco_unitario: item.unitPrice,
-                    subtotal: item.total,
-                    observacao: item.observation
+                    subtotal: item.total
                 }));
 
                 const { error: itemsError } = await supabase
@@ -656,22 +665,24 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 if (proposal?.id) {
                     await supabase
                         .from('propostas')
-                        .update({ status: 'accepted' })
+                        .update({ status: 'aceita' })
                         .eq('id', proposal.id);
                 }
 
-                // Create notification for the supplier
-                await supabase
-                    .from('notifications')
-                    .insert({
-                        user_id: supplierId,
-                        titulo: "Novo Pedido Recebido!",
-                        mensagem: "Você recebeu um novo pedido de compra.",
-                        tipo: "success",
-                        lida: false,
-                        relacionado_id: orderData.id,
-                        relacionado_tipo: "order"
-                    });
+                // Create notification for the supplier's user
+                const supplierUserId = proposal?.supplierUserId;
+                if (supplierUserId) {
+                    await supabase
+                        .from('notificacoes')
+                        .insert({
+                            user_id: supplierUserId,
+                            titulo: "Novo Pedido Recebido!",
+                            mensagem: "Você recebeu um novo pedido de compra.",
+                            tipo: "success",
+                            lida: false,
+                            link: '/dashboard/fornecedor'
+                        });
+                }
 
                 // Send email notification
                 if (supplierDetails.email) {
@@ -688,10 +699,10 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 }
             }
 
-            // Update quotation status to finished
+            // Update quotation status to fechada
             const { error: quotationError } = await supabase
                 .from('cotacoes')
-                .update({ status: 'finished' })
+                .update({ status: 'fechada' })
                 .eq('id', orderId);
 
             if (quotationError) {
@@ -710,7 +721,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
     if (view === "oc") {
         // If finished, use the orders data which contains full details
-        if (status === "finished" && orders.length > 0) {
+        if (status === "fechada" && orders.length > 0) {
             return (
                 <div className="space-y-6">
                     <div className="flex items-center justify-between">
@@ -818,7 +829,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     const proposal = proposals.find(p => p.supplierId === supplierId);
                     const supplierLabel = proposal?.supplierName || "Fornecedor";
                     const supplierTotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
-                    const freight = proposal?.freightPrice || 0;
+                    const freight = 0;
 
                     return (
                         <div key={supplierId} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -830,7 +841,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                 <div className="text-right">
                                     <p className="text-sm text-slate-500">Total Pedido</p>
                                     <p className="text-lg font-bold text-slate-900">R$ {(supplierTotal + freight).toFixed(2)}</p>
-                                    {status === "finished" && (
+                                    {status === "fechada" && (
                                         <button
                                             onClick={() => setReviewModal({ isOpen: true, supplierId, supplierName: supplierLabel })}
                                             className="mt-2 text-xs font-medium text-indigo-600 hover:text-indigo-800 flex items-center justify-end gap-1"

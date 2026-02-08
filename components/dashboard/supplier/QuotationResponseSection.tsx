@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { supabase } from "../../../lib/supabase";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "../../../lib/useAuth";
 
 interface SupplierQuotationResponseSectionProps {
@@ -11,13 +11,28 @@ interface SupplierQuotationResponseSectionProps {
 
 export function SupplierQuotationResponseSection({ quotation, onBack }: SupplierQuotationResponseSectionProps) {
     const { user, profile } = useAuth();
-    const [responses, setResponses] = useState<{ [key: number]: { preco: string, disponibilidade: string } }>({});
+    const [responses, setResponses] = useState<{ [key: string]: { preco: string, disponibilidade: string } }>({});
     const [paymentMethod, setPaymentMethod] = useState("");
     const [validity, setValidity] = useState("");
     const [observations, setObservations] = useState("");
     const [loading, setLoading] = useState(false);
+    const [fornecedorId, setFornecedorId] = useState<string | null>(null);
 
-    const handleResponseChange = (itemId: number, field: 'preco' | 'disponibilidade', value: string) => {
+    // Buscar fornecedor_id real do usuário
+    useEffect(() => {
+        const loadFornecedor = async () => {
+            if (!user) return;
+            const { data } = await supabase
+                .from('fornecedores')
+                .select('id')
+                .eq('user_id', user.id)
+                .single();
+            if (data) setFornecedorId(data.id);
+        };
+        loadFornecedor();
+    }, [user]);
+
+    const handleResponseChange = (itemId: string, field: 'preco' | 'disponibilidade', value: string) => {
         setResponses(prev => ({
             ...prev,
             [itemId]: {
@@ -28,11 +43,14 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
     };
 
     const handleSendProposal = async () => {
-        if (!user) return;
+        if (!user || !fornecedorId) {
+            alert("Fornecedor não encontrado. Verifique seu cadastro.");
+            return;
+        }
         setLoading(true);
 
         try {
-            const totalValue = quotation.items.reduce((total: number, item: any) => {
+            const totalValue = (quotation.items || []).reduce((total: number, item: any) => {
                 const response = responses[item.id];
                 if (response?.preco) {
                     return total + (parseFloat(response.preco) * item.quantidade);
@@ -50,12 +68,12 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
             const dataValidade = new Date();
             dataValidade.setDate(dataValidade.getDate() + (validityDays[validity] || 30));
 
-            // Inserir proposta
+            // Inserir proposta com fornecedor_id real (referencia fornecedores table)
             const { data: proposta, error: propostaError } = await supabase
                 .from('propostas')
                 .insert({
                     cotacao_id: quotation.id,
-                    fornecedor_id: user.id,
+                    fornecedor_id: fornecedorId,
                     status: 'enviada',
                     valor_total: totalValue,
                     prazo_entrega: null,
@@ -69,18 +87,22 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
 
             if (propostaError) throw propostaError;
 
-            // Inserir itens da proposta
-            const propostaItens = quotation.items.map((item: any) => {
+            // Inserir itens da proposta (cotacao_item_id são UUIDs reais)
+            const propostaItens = (quotation.items || []).map((item: any) => {
                 const response = responses[item.id] || { preco: '0', disponibilidade: 'indisponivel' };
                 const precoUnitario = parseFloat(response.preco) || 0;
 
+                // Mapear disponibilidade para valores válidos do CHECK constraint
+                const disponibilidadeMap: { [key: string]: string } = {
+                    'disponivel': 'disponivel',
+                    'sob_consulta': 'sob_consulta',
+                    'indisponivel': 'indisponivel'
+                };
+
                 // Mapear disponibilidade para prazo em dias
                 const prazoDiasMap: { [key: string]: number } = {
-                    'imediata': 0,
-                    '24h': 1,
-                    '48h': 2,
-                    '3-5-dias': 5,
-                    '5-10-dias': 10,
+                    'disponivel': 0,
+                    'sob_consulta': 5,
                     'indisponivel': -1
                 };
 
@@ -90,7 +112,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                     preco_unitario: precoUnitario,
                     quantidade: item.quantidade,
                     subtotal: precoUnitario * item.quantidade,
-                    disponibilidade: response.disponibilidade || 'indisponivel',
+                    disponibilidade: disponibilidadeMap[response.disponibilidade] || 'indisponivel',
                     prazo_dias: prazoDiasMap[response.disponibilidade] ?? -1,
                     observacao: null
                 };
@@ -102,19 +124,23 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
 
             if (itensError) throw itensError;
 
+            // Atualizar status da cotação para respondida
+            await supabase
+                .from('cotacoes')
+                .update({ status: 'respondida' })
+                .eq('id', quotation.id);
+
             // Criar notificação para o cliente
-            if (quotation.userId) {
+            if (quotation.user_id) {
                 await supabase
                     .from('notificacoes')
                     .insert({
-                        user_id: quotation.userId,
+                        user_id: quotation.user_id,
                         titulo: 'Nova Proposta Recebida',
                         mensagem: 'Um fornecedor enviou uma proposta para sua cotação.',
                         tipo: 'success',
                         lida: false,
-                        data_criacao: new Date().toISOString(),
-                        relacionado_id: quotation.id,
-                        relacionado_tipo: 'cotacao'
+                        link: '/dashboard/cliente'
                     });
             }
 
@@ -235,11 +261,8 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                                                 onChange={(e) => handleResponseChange(item.id, 'disponibilidade', e.target.value)}
                                             >
                                                 <option value="">Selecionar</option>
-                                                <option value="imediata">Imediata</option>
-                                                <option value="24h">24 horas</option>
-                                                <option value="48h">48 horas</option>
-                                                <option value="3-5-dias">3 a 5 dias</option>
-                                                <option value="5-10-dias">5 a 10 dias</option>
+                                                <option value="disponivel">Disponível</option>
+                                                <option value="sob_consulta">Sob Consulta</option>
                                                 <option value="indisponivel">Indisponível</option>
                                             </select>
                                         </td>

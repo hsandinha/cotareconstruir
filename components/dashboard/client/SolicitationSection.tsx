@@ -373,32 +373,50 @@ export function ClientSolicitationSection() {
 
         setLoading(true);
         try {
-            const { error } = await supabase
+            // Inserir cotação (apenas colunas do schema)
+            const { data: cotacaoData, error } = await supabase
                 .from('cotacoes')
                 .insert({
                     user_id: user.id,
                     obra_id: selectedObraId,
-                    items: items,
-                    status: "pending",
-                    total_items: items.length,
-                    location: {
-                        city: selectedObra?.cidade || "",
-                        neighborhood: selectedObra?.bairro || "",
-                    },
-                    created_at: new Date().toISOString(),
-                });
+                    status: 'enviada',
+                    data_envio: new Date().toISOString(),
+                })
+                .select()
+                .single();
 
             if (error) throw error;
 
-            // Notificar fornecedores
+            // Inserir itens na tabela cotacao_itens
+            const cotacaoItens = items.map(item => ({
+                cotacao_id: cotacaoData.id,
+                material_id: item.materialId || null,
+                nome: item.descricao,
+                quantidade: item.quantidade,
+                unidade: item.unidade,
+                grupo: item.categoria,
+                observacao: item.observacao || null,
+                fase_nome: item.faseNome || null,
+                servico_nome: item.servicoNome || null,
+            }));
+
+            const { error: itensError } = await supabase
+                .from('cotacao_itens')
+                .insert(cotacaoItens);
+
+            if (itensError) throw itensError;
+
+            // Notificar fornecedores da região
             if (selectedObra?.cidade) {
                 const { data: suppliersData } = await supabase
-                    .from('users')
-                    .select('email, operating_regions')
-                    .eq('role', 'supplier');
+                    .from('fornecedores')
+                    .select('email, regioes_atendimento')
+                    .eq('status', 'active');
 
                 const suppliers = (suppliersData || []).filter(s =>
-                    s.operating_regions?.includes(selectedObra.cidade!)
+                    s.regioes_atendimento?.some((r: string) =>
+                        r.toLowerCase().includes(selectedObra.cidade!.toLowerCase())
+                    )
                 );
 
                 await Promise.all(suppliers.map(async (supplier) => {

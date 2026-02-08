@@ -42,7 +42,7 @@ export function ClientOrderSection() {
         const fetchQuotations = async () => {
             const { data, error } = await supabase
                 .from('cotacoes')
-                .select('*')
+                .select('*, cotacao_itens(id)')
                 .eq('user_id', user.id);
 
             if (error) {
@@ -52,10 +52,11 @@ export function ClientOrderSection() {
                 const ordersData = (data || []).map(doc => {
                     return {
                         id: doc.id,
-                        workId: doc.work_id,
+                        workId: doc.obra_id,
                         date: doc.created_at ? new Date(doc.created_at).toLocaleDateString('pt-BR') : 'Data desconhecida',
                         timestamp: doc.created_at ? new Date(doc.created_at).getTime() : 0,
-                        items: doc.total_items || (doc.items ? doc.items.length : 0),
+                        items: doc.cotacao_itens?.length || 0,
+                        rawStatus: doc.status,
                         status: mapStatus(doc.status),
                         statusColor: mapStatusColor(doc.status),
                         totalEstimado: "-" // Placeholder
@@ -106,22 +107,23 @@ export function ClientOrderSection() {
                 {
                     event: '*',
                     schema: 'public',
-                    table: 'quotations',
+                    table: 'cotacoes',
                     filter: `user_id=eq.${user.id}`
                 },
                 async () => {
                     const { data } = await supabase
                         .from('cotacoes')
-                        .select('*')
+                        .select('*, cotacao_itens(id)')
                         .eq('user_id', user.id);
 
                     const ordersData = (data || []).map(doc => {
                         return {
                             id: doc.id,
-                            workId: doc.work_id,
+                            workId: doc.obra_id,
                             date: doc.created_at ? new Date(doc.created_at).toLocaleDateString('pt-BR') : 'Data desconhecida',
                             timestamp: doc.created_at ? new Date(doc.created_at).getTime() : 0,
-                            items: doc.total_items || (doc.items ? doc.items.length : 0),
+                            items: doc.cotacao_itens?.length || 0,
+                            rawStatus: doc.status,
                             status: mapStatus(doc.status),
                             statusColor: mapStatusColor(doc.status),
                             totalEstimado: "-"
@@ -141,18 +143,24 @@ export function ClientOrderSection() {
 
     const mapStatus = (status: string) => {
         switch (status) {
-            case 'pending': return 'Aguardando Fornecedores';
-            case 'received': return 'Propostas Recebidas';
-            case 'finished': return 'Finalizado';
+            case 'rascunho': return 'Rascunho';
+            case 'enviada': return 'Aguardando Fornecedores';
+            case 'em_analise': return 'Em Análise';
+            case 'respondida': return 'Propostas Recebidas';
+            case 'fechada': return 'Finalizado';
+            case 'cancelada': return 'Cancelado';
             default: return 'Em Análise';
         }
     };
 
     const mapStatusColor = (status: string) => {
         switch (status) {
-            case 'pending': return 'text-yellow-700 bg-yellow-50';
-            case 'received': return 'text-green-700 bg-green-50';
-            case 'finished': return 'text-gray-700 bg-gray-50';
+            case 'rascunho': return 'text-gray-700 bg-gray-50';
+            case 'enviada': return 'text-yellow-700 bg-yellow-50';
+            case 'em_analise': return 'text-blue-700 bg-blue-50';
+            case 'respondida': return 'text-green-700 bg-green-50';
+            case 'fechada': return 'text-gray-700 bg-gray-50';
+            case 'cancelada': return 'text-red-700 bg-red-50';
             default: return 'text-blue-700 bg-blue-50';
         }
     };
@@ -184,7 +192,7 @@ export function ClientOrderSection() {
                 </div>
 
                 {/* Mapa Comparativo */}
-                <ClientComparativeSection orderId={order.id} status={order.status} />
+                <ClientComparativeSection orderId={order.id} status={order.rawStatus} />
             </div>
         );
     }
