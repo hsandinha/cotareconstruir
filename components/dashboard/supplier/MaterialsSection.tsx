@@ -49,13 +49,14 @@ export function SupplierMaterialsSection() {
     const [materiaisBase, setMateriaisBase] = useState<MaterialBase[]>([]);
     const [grupos, setGrupos] = useState<GrupoInsumo[]>([]);
     const [fornecedorGrupoIds, setFornecedorGrupoIds] = useState<string[]>([]);
+    const [loadingMateriais, setLoadingMateriais] = useState(true);
 
     // Materiais do fornecedor (preços e estoque)
     const [fornecedorMateriais, setFornecedorMateriais] = useState<Map<string, FornecedorMaterial>>(new Map());
 
     // Filtros
     const [filterGrupo, setFilterGrupo] = useState<string>("all");
-    const [filterStatus, setFilterStatus] = useState<"all" | "configured" | "pending">("all");
+    const [filterStatus, setFilterStatus] = useState<"all" | "active" | "inactive" | "pending">("all");
 
     // Edição inline
     const [editingMaterial, setEditingMaterial] = useState<string | null>(null);
@@ -122,6 +123,7 @@ export function SupplierMaterialsSection() {
     // Carregar materiais base e grupos
     useEffect(() => {
         const loadBaseData = async () => {
+            setLoadingMateriais(true);
             try {
                 // Carregar grupos
                 const { data: gruposData, error: gruposError } = await supabase
@@ -190,6 +192,8 @@ export function SupplierMaterialsSection() {
                 setMateriaisBase(mappedMateriais);
             } catch (error) {
                 console.error("Erro ao carregar dados base:", error);
+            } finally {
+                setLoadingMateriais(false);
             }
         };
 
@@ -264,8 +268,16 @@ export function SupplierMaterialsSection() {
         }
 
         // Filtro por status
-        if (filterStatus === "configured") {
-            result = result.filter(m => fornecedorMateriais.has(m.id));
+        if (filterStatus === "active") {
+            result = result.filter(m => {
+                const c = fornecedorMateriais.get(m.id);
+                return c && c.ativo !== false;
+            });
+        } else if (filterStatus === "inactive") {
+            result = result.filter(m => {
+                const c = fornecedorMateriais.get(m.id);
+                return c && c.ativo === false;
+            });
         } else if (filterStatus === "pending") {
             result = result.filter(m => !fornecedorMateriais.has(m.id));
         }
@@ -303,9 +315,16 @@ export function SupplierMaterialsSection() {
     // Stats
     const stats = useMemo(() => {
         const total = materiaisDisponiveis.length;
-        const configurados = materiaisDisponiveis.filter(m => fornecedorMateriais.has(m.id)).length;
-        const pendentes = total - configurados;
-        return { total, configurados, pendentes };
+        const ativos = materiaisDisponiveis.filter(m => {
+            const c = fornecedorMateriais.get(m.id);
+            return c && c.ativo !== false;
+        }).length;
+        const inativos = materiaisDisponiveis.filter(m => {
+            const c = fornecedorMateriais.get(m.id);
+            return c && c.ativo === false;
+        }).length;
+        const pendentes = total - ativos - inativos;
+        return { total, ativos, inativos, pendentes };
     }, [materiaisDisponiveis, fornecedorMateriais]);
 
     // Grupos disponíveis para o fornecedor
@@ -368,6 +387,60 @@ export function SupplierMaterialsSection() {
         } catch (error) {
             console.error("Erro ao salvar:", error);
             alert("Erro ao salvar. Tente novamente.");
+        }
+    };
+
+    const toggleAtivoMaterial = async (materialId: string, novoAtivo: boolean) => {
+        if (!fornecedorId) return;
+
+        try {
+            if (novoAtivo === false && !fornecedorMateriais.has(materialId)) {
+                // Inativar material que ainda não foi configurado → cria registro com ativo=false
+                const { error } = await supabase
+                    .from('fornecedor_materiais')
+                    .upsert({
+                        fornecedor_id: fornecedorId,
+                        material_id: materialId,
+                        preco: 0,
+                        estoque: 0,
+                        ativo: false,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'fornecedor_id,material_id' });
+
+                if (error) throw error;
+
+                setFornecedorMateriais(prev => {
+                    const newMap = new Map(prev);
+                    newMap.set(materialId, {
+                        materialId,
+                        preco: 0,
+                        estoque: 0,
+                        ativo: false,
+                        updatedAt: new Date().toISOString()
+                    });
+                    return newMap;
+                });
+            } else {
+                const { error } = await supabase
+                    .from('fornecedor_materiais')
+                    .update({ ativo: novoAtivo, updated_at: new Date().toISOString() })
+                    .eq('fornecedor_id', fornecedorId)
+                    .eq('material_id', materialId);
+
+                if (error) throw error;
+
+                setFornecedorMateriais(prev => {
+                    const newMap = new Map(prev);
+                    const existing = newMap.get(materialId);
+                    if (existing) {
+                        newMap.set(materialId, { ...existing, ativo: novoAtivo, updatedAt: new Date().toISOString() });
+                    }
+                    return newMap;
+                });
+            }
+        } catch (error) {
+            console.error('Erro ao alterar status:', error);
+            alert('Erro ao alterar status. Tente novamente.');
         }
     };
 
@@ -453,15 +526,15 @@ export function SupplierMaterialsSection() {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-blue-100 rounded-lg">
                             <Squares2X2Icon className="h-5 w-5 text-blue-600" />
                         </div>
                         <div>
-                            <p className="text-sm text-gray-500 font-medium">Total de Materiais</p>
-                            <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+                            <p className="text-sm text-gray-500 font-medium">Total</p>
+                            <p className="text-2xl font-bold text-gray-900">{loadingMateriais ? '...' : stats.total}</p>
                         </div>
                     </div>
                 </div>
@@ -471,8 +544,8 @@ export function SupplierMaterialsSection() {
                             <CheckCircleIcon className="h-5 w-5 text-green-600" />
                         </div>
                         <div>
-                            <p className="text-sm text-gray-500 font-medium">Configurados</p>
-                            <p className="text-2xl font-bold text-green-600">{stats.configurados}</p>
+                            <p className="text-sm text-gray-500 font-medium">Ativos</p>
+                            <p className="text-2xl font-bold text-green-600">{loadingMateriais ? '...' : stats.ativos}</p>
                         </div>
                     </div>
                 </div>
@@ -483,7 +556,18 @@ export function SupplierMaterialsSection() {
                         </div>
                         <div>
                             <p className="text-sm text-gray-500 font-medium">Pendentes</p>
-                            <p className="text-2xl font-bold text-amber-600">{stats.pendentes}</p>
+                            <p className="text-2xl font-bold text-amber-600">{loadingMateriais ? '...' : stats.pendentes}</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-red-100 rounded-lg">
+                            <XMarkIcon className="h-5 w-5 text-red-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-500 font-medium">Inativos</p>
+                            <p className="text-2xl font-bold text-red-500">{loadingMateriais ? '...' : stats.inativos}</p>
                         </div>
                     </div>
                 </div>
@@ -523,8 +607,9 @@ export function SupplierMaterialsSection() {
                         className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                         <option value="all">Todos os Status</option>
-                        <option value="configured">Configurados</option>
+                        <option value="active">Ativos</option>
                         <option value="pending">Pendentes</option>
+                        <option value="inactive">Inativos</option>
                     </select>
                 </div>
             </div>
@@ -583,7 +668,17 @@ export function SupplierMaterialsSection() {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {materiaisFiltrados.length === 0 ? (
+                            {loadingMateriais ? (
+                                Array.from({ length: 6 }).map((_, i) => (
+                                    <tr key={i}>
+                                        {Array.from({ length: 7 }).map((_, j) => (
+                                            <td key={j} className="px-6 py-4">
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: j === 0 ? '60%' : '40%' }}></div>
+                                            </td>
+                                        ))}
+                                    </tr>
+                                ))
+                            ) : materiaisFiltrados.length === 0 ? (
                                 <tr>
                                     <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                                         Nenhum material encontrado
@@ -594,12 +689,14 @@ export function SupplierMaterialsSection() {
                                     const config = fornecedorMateriais.get(material.id);
                                     const isEditing = editingMaterial === material.id;
                                     const isConfigured = !!config;
+                                    const isInativo = config?.ativo === false;
+                                    const isAtivo = isConfigured && !isInativo;
 
                                     return (
-                                        <tr key={material.id} className={`hover:bg-gray-50 ${!isConfigured ? 'bg-amber-50/30' : ''}`}>
+                                        <tr key={material.id} className={`hover:bg-gray-50 ${isInativo ? 'bg-red-50/30 opacity-60' : !isConfigured ? 'bg-amber-50/30' : ''}`}>
                                             <td className="px-6 py-4">
                                                 <div>
-                                                    <p className="text-sm font-medium text-gray-900">{material.nome}</p>
+                                                    <p className={`text-sm font-medium ${isInativo ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{material.nome}</p>
                                                     {material.descricao && (
                                                         <p className="text-xs text-gray-500 mt-0.5">{material.descricao}</p>
                                                     )}
@@ -632,8 +729,8 @@ export function SupplierMaterialsSection() {
                                                         autoFocus
                                                     />
                                                 ) : (
-                                                    <span className={`text-sm ${isConfigured ? 'font-medium text-gray-900' : 'text-gray-400'}`}>
-                                                        {isConfigured ? `R$ ${config.preco.toFixed(2)}` : '-'}
+                                                    <span className={`text-sm ${isAtivo ? 'font-medium text-gray-900' : 'text-gray-400'}`}>
+                                                        {isConfigured && !isInativo ? `R$ ${config.preco.toFixed(2)}` : '-'}
                                                     </span>
                                                 )}
                                             </td>
@@ -647,16 +744,21 @@ export function SupplierMaterialsSection() {
                                                         min="0"
                                                     />
                                                 ) : (
-                                                    <span className={`text-sm ${isConfigured ? 'font-medium text-gray-900' : 'text-gray-400'}`}>
-                                                        {isConfigured ? config.estoque : '-'}
+                                                    <span className={`text-sm ${isAtivo ? 'font-medium text-gray-900' : 'text-gray-400'}`}>
+                                                        {isConfigured && !isInativo ? config.estoque : '-'}
                                                     </span>
                                                 )}
                                             </td>
                                             <td className="px-6 py-4">
-                                                {isConfigured ? (
+                                                {isInativo ? (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                        <XMarkIcon className="h-3.5 w-3.5" />
+                                                        Inativo
+                                                    </span>
+                                                ) : isAtivo ? (
                                                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                                         <CheckCircleIcon className="h-3.5 w-3.5" />
-                                                        Configurado
+                                                        Ativo
                                                     </span>
                                                 ) : (
                                                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
@@ -684,12 +786,33 @@ export function SupplierMaterialsSection() {
                                                         </button>
                                                     </div>
                                                 ) : (
-                                                    <button
-                                                        onClick={() => startEditing(material.id)}
-                                                        className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                                                    >
-                                                        {isConfigured ? 'Editar' : 'Configurar'}
-                                                    </button>
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        {!isInativo && (
+                                                            <button
+                                                                onClick={() => startEditing(material.id)}
+                                                                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                                                            >
+                                                                {isAtivo ? 'Editar' : 'Configurar'}
+                                                            </button>
+                                                        )}
+                                                        {isInativo ? (
+                                                            <button
+                                                                onClick={() => toggleAtivoMaterial(material.id, true)}
+                                                                className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors"
+                                                                title="Reativar material"
+                                                            >
+                                                                Ativar
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => toggleAtivoMaterial(material.id, false)}
+                                                                className="px-3 py-1.5 bg-white text-red-600 text-xs font-medium rounded-lg border border-red-200 hover:bg-red-50 transition-colors"
+                                                                title="Não ofereço este material"
+                                                            >
+                                                                Inativar
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </td>
                                         </tr>
