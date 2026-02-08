@@ -172,7 +172,7 @@ export async function GET(req: NextRequest) {
 
             const [obrasRes, usersRes] = await Promise.all([
                 obraIds.length > 0
-                    ? supabaseAdmin.from('obras').select('id, nome, bairro, cidade, estado').in('id', obraIds)
+                    ? supabaseAdmin.from('obras').select('id, nome, cep, logradouro, numero, complemento, bairro, cidade, estado, horario_entrega, restricoes_entrega').in('id', obraIds)
                     : Promise.resolve({ data: [] }),
                 userIds.length > 0
                     ? supabaseAdmin.from('users').select('id, nome, email').in('id', userIds)

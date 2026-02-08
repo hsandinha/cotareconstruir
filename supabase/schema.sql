@@ -158,6 +158,10 @@ CREATE TABLE public.obras (
     data_inicio DATE,
     data_previsao_fim DATE,
     
+    -- Entrega
+    horario_entrega JSONB, -- {segunda: {enabled, startTime, endTime}, ...}
+    restricoes_entrega TEXT,
+    
     status TEXT DEFAULT 'ativa' CHECK (status IN ('ativa', 'pausada', 'concluida', 'cancelada')),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -317,6 +321,7 @@ CREATE TABLE public.propostas (
     status TEXT DEFAULT 'pendente' CHECK (status IN ('pendente', 'enviada', 'aceita', 'recusada', 'expirada')),
     
     valor_total DECIMAL(12,2),
+    valor_frete DECIMAL(12,2) DEFAULT 0,
     prazo_entrega INTEGER, -- dias
     condicoes_pagamento TEXT,
     observacoes TEXT,

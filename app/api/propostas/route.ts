@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
             const {
                 cotacao_id,
                 valor_total,
+                valor_frete,
                 condicoes_pagamento,
                 observacoes,
                 data_validade,
@@ -92,6 +93,7 @@ export async function POST(req: NextRequest) {
                     fornecedor_id: fornecedorId,
                     status: 'enviada',
                     valor_total: valor_total || 0,
+                    valor_frete: valor_frete || 0,
                     prazo_entrega: null,
                     condicoes_pagamento: condicoes_pagamento || null,
                     observacoes: observacoes || null,

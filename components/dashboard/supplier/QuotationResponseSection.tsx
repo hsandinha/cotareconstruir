@@ -25,7 +25,19 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
     const [paymentMethod, setPaymentMethod] = useState("");
     const [validity, setValidity] = useState("");
     const [observations, setObservations] = useState("");
+    const [freightValue, setFreightValue] = useState("");
     const [loading, setLoading] = useState(false);
+
+    // Mapeamento de dias da semana
+    const dayLabels: Record<string, string> = {
+        segunda: "Segunda-feira",
+        terca: "Terça-feira",
+        quarta: "Quarta-feira",
+        quinta: "Quinta-feira",
+        sexta: "Sexta-feira",
+        sabado: "Sábado",
+        domingo: "Domingo",
+    };
 
     const handleResponseChange = (itemId: string, field: 'preco' | 'disponibilidade', value: string) => {
         setResponses(prev => ({
@@ -91,6 +103,9 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                 };
             });
 
+            // Calcular valor do frete
+            const freteVal = parseFloat(freightValue) || 0;
+
             // Send via API route (bypasses RLS)
             const headers = await getAuthHeaders();
             const res = await fetch('/api/propostas', {
@@ -99,7 +114,8 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                 body: JSON.stringify({
                     action: 'create',
                     cotacao_id: quotation.id,
-                    valor_total: totalValue,
+                    valor_total: totalValue + freteVal,
+                    valor_frete: freteVal,
                     condicoes_pagamento: paymentMethod,
                     observacoes: observations,
                     data_validade: dataValidade.toISOString(),
@@ -161,6 +177,56 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                     </div>
                 </div>
             </div>
+
+            {/* Informações de Entrega da Obra */}
+            {quotation.obraHorarioEntrega && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                    <h4 className="text-base font-medium text-blue-900 mb-4 flex items-center gap-2">
+                        <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
+                        </svg>
+                        Informações de Entrega da Obra
+                    </h4>
+
+                    <div>
+                        {/* Dias e Horários de Entrega */}
+                        <div>
+                            <span className="text-sm font-medium text-blue-800">Dias e Horários Disponíveis para Entrega:</span>
+                            <div className="mt-1 space-y-1">
+                                {Object.entries(quotation.obraHorarioEntrega).map(([day, schedule]: [string, any]) => {
+                                    if (!schedule?.enabled) return null;
+                                    return (
+                                        <div key={day} className="flex items-center gap-2 text-sm text-blue-900">
+                                            <svg className="h-4 w-4 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                            </svg>
+                                            <span className="font-medium min-w-[110px]">{dayLabels[day] || day}:</span>
+                                            <span>{schedule.startTime} às {schedule.endTime}</span>
+                                        </div>
+                                    );
+                                })}
+                                {Object.values(quotation.obraHorarioEntrega).every((s: any) => !s?.enabled) && (
+                                    <p className="text-sm text-blue-700 italic">Nenhum horário específico definido</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Restrições de Entrega */}
+                    {quotation.obraRestricoesEntrega && (
+                        <div className="mt-4 pt-4 border-t border-blue-200">
+                            <span className="text-sm font-medium text-blue-800">Restrições de Entrega:</span>
+                            <p className="mt-1 text-sm text-blue-900">{quotation.obraRestricoesEntrega}</p>
+                        </div>
+                    )}
+
+                    <div className="mt-4 pt-4 border-t border-blue-200">
+                        <p className="text-xs text-blue-600 italic">
+                            ⚠️ Os dias e horários acima são os definidos pelo cliente para recebimento de materiais na obra. Considere essas informações ao calcular o valor do frete.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* Alerta de segurança */}
             <div className="bg-red-50 border border-red-200 rounded-md p-4">
@@ -256,6 +322,56 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                             </tr>
                         </tfoot>
                     </table>
+                </div>
+            </div>
+
+            {/* Frete */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <h4 className="text-base font-medium text-gray-900 mb-4 flex items-center gap-2">
+                    <svg className="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
+                    </svg>
+                    Frete
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Valor do Frete (R$)</label>
+                        <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="0,00"
+                            value={freightValue}
+                            onChange={(e) => setFreightValue(e.target.value)}
+                            className="w-full px-3 py-2 text-gray-900 placeholder:text-gray-500 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">Informe 0 para frete grátis (CIF)</p>
+                    </div>
+                    <div className="flex items-end">
+                        <div className="bg-gray-50 rounded-md p-3 w-full">
+                            <div className="text-xs text-gray-500 mb-1">Resumo de Valores</div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-gray-600">Materiais:</span>
+                                <span className="font-medium">R$ {quotation.items ? quotation.items.reduce((total: number, item: any) => {
+                                    const response = responses[item.id];
+                                    if (response?.preco) return total + (parseFloat(response.preco) * item.quantidade);
+                                    return total;
+                                }, 0).toFixed(2) : '0.00'}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-gray-600">Frete:</span>
+                                <span className="font-medium">R$ {freightValue ? parseFloat(freightValue).toFixed(2) : '0.00'}</span>
+                            </div>
+                            <div className="flex justify-between text-sm font-bold border-t border-gray-200 mt-2 pt-2">
+                                <span className="text-gray-900">Total Geral:</span>
+                                <span className="text-green-700">R$ {((quotation.items ? quotation.items.reduce((total: number, item: any) => {
+                                    const response = responses[item.id];
+                                    if (response?.preco) return total + (parseFloat(response.preco) * item.quantidade);
+                                    return total;
+                                }, 0) : 0) + (parseFloat(freightValue) || 0)).toFixed(2)}</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 

@@ -66,6 +66,18 @@ export function SupplierQuotationInboxSection() {
                     clientCode: cliente?.nome || ("Cliente " + (doc.user_id ? doc.user_id.substring(0, 5) : "Anon")),
                     locationRaw: obra?.cidade || "",
                     location: obra ? `${obra.bairro || ''}, ${obra.cidade || ''} - ${obra.estado || ''}` : "Não informado",
+                    // Dados completos da obra para exibição na resposta
+                    obraEndereco: obra ? {
+                        logradouro: obra.logradouro || '',
+                        numero: obra.numero || '',
+                        complemento: obra.complemento || '',
+                        bairro: obra.bairro || '',
+                        cidade: obra.cidade || '',
+                        estado: obra.estado || '',
+                        cep: obra.cep || ''
+                    } : null,
+                    obraHorarioEntrega: obra?.horario_entrega || null,
+                    obraRestricoesEntrega: obra?.restricoes_entrega || null,
                     receivedAt: doc.created_at ? new Date(doc.created_at).toLocaleString() : "N/A",
                     deadline: doc.data_validade ? new Date(doc.data_validade).toLocaleDateString('pt-BR') : "Sem prazo",
                     itemsCount: doc.cotacao_itens?.length || 0,
