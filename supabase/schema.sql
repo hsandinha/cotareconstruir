@@ -680,6 +680,24 @@ CREATE POLICY fornecedor_grupo_delete ON public.fornecedor_grupo FOR DELETE USIN
     EXISTS (SELECT 1 FROM public.fornecedores f JOIN public.users u ON f.user_id = u.id WHERE f.id = fornecedor_id AND u.id = auth.uid())
 );
 
+-- FORNECEDOR_MATERIAIS: fornecedor pode ver e gerenciar seus próprios materiais
+CREATE POLICY fornecedor_materiais_select ON public.fornecedor_materiais FOR SELECT TO authenticated USING (
+    is_admin() OR 
+    EXISTS (SELECT 1 FROM public.fornecedores f WHERE f.id = fornecedor_id AND f.user_id = auth.uid())
+);
+CREATE POLICY fornecedor_materiais_insert ON public.fornecedor_materiais FOR INSERT WITH CHECK (
+    is_admin() OR 
+    EXISTS (SELECT 1 FROM public.fornecedores f WHERE f.id = fornecedor_id AND f.user_id = auth.uid())
+);
+CREATE POLICY fornecedor_materiais_update ON public.fornecedor_materiais FOR UPDATE USING (
+    is_admin() OR 
+    EXISTS (SELECT 1 FROM public.fornecedores f WHERE f.id = fornecedor_id AND f.user_id = auth.uid())
+);
+CREATE POLICY fornecedor_materiais_delete ON public.fornecedor_materiais FOR DELETE USING (
+    is_admin() OR 
+    EXISTS (SELECT 1 FROM public.fornecedores f WHERE f.id = fornecedor_id AND f.user_id = auth.uid())
+);
+
 -- OBRAS: usuário vê suas obras, admin vê todas
 CREATE POLICY obras_select ON public.obras FOR SELECT USING (user_id = auth.uid() OR is_admin());
 CREATE POLICY obras_insert ON public.obras FOR INSERT WITH CHECK (user_id = auth.uid() OR is_admin());

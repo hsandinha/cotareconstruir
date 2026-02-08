@@ -200,29 +200,23 @@ export function SupplierMaterialsSection() {
         loadBaseData();
     }, []);
 
-    // Carregar materiais configurados pelo fornecedor
+    // Carregar materiais configurados pelo fornecedor (via API para bypass RLS)
     useEffect(() => {
         if (!fornecedorId) return;
 
         const loadFornecedorMateriais = async () => {
             try {
-                const { data: materiaisData, error } = await supabase
-                    .from('fornecedor_materiais')
-                    .select('*')
-                    .eq('fornecedor_id', fornecedorId);
+                const res = await fetch(`/api/fornecedor-materiais?fornecedor_id=${fornecedorId}`);
+                const json = await res.json();
 
-                if (error) {
-                    console.error("Erro ao carregar materiais do fornecedor:", error);
-                    // Se der erro de permissão, apenas inicializa vazio
-                    if (error.code === 'PGRST301') {
-                        console.warn('Sem permissão para acessar materiais. Inicializando vazio.');
-                        setFornecedorMateriais(new Map());
-                    }
+                if (!res.ok) {
+                    console.error('Erro ao carregar materiais do fornecedor:', json.error);
+                    setFornecedorMateriais(new Map());
                     return;
                 }
 
                 const materiaisMap = new Map<string, FornecedorMaterial>();
-                materiaisData?.forEach(item => {
+                json.data?.forEach((item: any) => {
                     materiaisMap.set(item.material_id, {
                         materialId: item.material_id,
                         preco: item.preco,
@@ -233,7 +227,7 @@ export function SupplierMaterialsSection() {
                 });
                 setFornecedorMateriais(materiaisMap);
             } catch (error: any) {
-                console.error("Erro ao carregar materiais do fornecedor:", error);
+                console.error('Erro ao carregar materiais do fornecedor:', error);
                 setFornecedorMateriais(new Map());
             }
         };
@@ -357,18 +351,23 @@ export function SupplierMaterialsSection() {
         if (!fornecedorId || !editingMaterial) return;
 
         try {
-            const { error } = await supabase
-                .from('fornecedor_materiais')
-                .upsert({
+            const res = await fetch('/api/fornecedor-materiais', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'upsert',
                     fornecedor_id: fornecedorId,
                     material_id: editingMaterial,
                     preco: parseFloat(editPreco) || 0,
                     estoque: parseInt(editEstoque) || 0,
-                    ativo: true,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'fornecedor_id,material_id' });
+                    ativo: true
+                })
+            });
 
-            if (error) throw error;
+            if (!res.ok) {
+                const json = await res.json();
+                throw new Error(json.error || 'Erro ao salvar');
+            }
 
             // Atualiza o mapa local
             setFornecedorMateriais(prev => {
@@ -394,50 +393,36 @@ export function SupplierMaterialsSection() {
         if (!fornecedorId) return;
 
         try {
-            if (novoAtivo === false && !fornecedorMateriais.has(materialId)) {
-                // Inativar material que ainda não foi configurado → cria registro com ativo=false
-                const { error } = await supabase
-                    .from('fornecedor_materiais')
-                    .upsert({
-                        fornecedor_id: fornecedorId,
-                        material_id: materialId,
-                        preco: 0,
-                        estoque: 0,
-                        ativo: false,
-                        updated_at: new Date().toISOString()
-                    }, { onConflict: 'fornecedor_id,material_id' });
+            const res = await fetch('/api/fornecedor-materiais', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'toggle_ativo',
+                    fornecedor_id: fornecedorId,
+                    material_id: materialId,
+                    ativo: novoAtivo
+                })
+            });
 
-                if (error) throw error;
-
-                setFornecedorMateriais(prev => {
-                    const newMap = new Map(prev);
-                    newMap.set(materialId, {
-                        materialId,
-                        preco: 0,
-                        estoque: 0,
-                        ativo: false,
-                        updatedAt: new Date().toISOString()
-                    });
-                    return newMap;
-                });
-            } else {
-                const { error } = await supabase
-                    .from('fornecedor_materiais')
-                    .update({ ativo: novoAtivo, updated_at: new Date().toISOString() })
-                    .eq('fornecedor_id', fornecedorId)
-                    .eq('material_id', materialId);
-
-                if (error) throw error;
-
-                setFornecedorMateriais(prev => {
-                    const newMap = new Map(prev);
-                    const existing = newMap.get(materialId);
-                    if (existing) {
-                        newMap.set(materialId, { ...existing, ativo: novoAtivo, updatedAt: new Date().toISOString() });
-                    }
-                    return newMap;
-                });
+            if (!res.ok) {
+                const json = await res.json();
+                throw new Error(json.error || 'Erro ao alterar status');
             }
+
+            const json = await res.json();
+            const updated = json.data;
+
+            setFornecedorMateriais(prev => {
+                const newMap = new Map(prev);
+                newMap.set(materialId, {
+                    materialId,
+                    preco: updated.preco ?? prev.get(materialId)?.preco ?? 0,
+                    estoque: updated.estoque ?? prev.get(materialId)?.estoque ?? 0,
+                    ativo: updated.ativo,
+                    updatedAt: updated.updated_at
+                });
+                return newMap;
+            });
         } catch (error) {
             console.error('Erro ao alterar status:', error);
             alert('Erro ao alterar status. Tente novamente.');
@@ -452,18 +437,23 @@ export function SupplierMaterialsSection() {
 
         setSendingRequest(true);
         try {
-            const { error } = await supabase
-                .from('solicitacoes_materiais')
-                .insert({
+            const res = await fetch('/api/fornecedor-materiais', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'request_material',
                     fornecedor_id: fornecedorId,
                     nome: requestMaterialName,
                     unidade: 'unid',
                     descricao: requestMaterialDesc,
-                    grupo_sugerido: requestGrupo,
-                    status: 'pendente'
-                });
+                    grupo_sugerido: requestGrupo
+                })
+            });
 
-            if (error) throw error;
+            if (!res.ok) {
+                const json = await res.json();
+                throw new Error(json.error || 'Erro ao enviar solicitação');
+            }
 
             alert("Solicitação enviada com sucesso! O administrador irá analisar.");
             setShowRequestModal(false);
