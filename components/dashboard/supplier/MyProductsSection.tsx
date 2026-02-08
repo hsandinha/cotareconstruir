@@ -6,311 +6,327 @@ import {
     CheckIcon,
     XMarkIcon,
     TagIcon,
-    PercentBadgeIcon,
-    CurrencyDollarIcon
 } from "@heroicons/react/24/outline";
-import { supabase } from "../../../lib/supabase";
-import { useAuth } from "../../../lib/useAuth";
+import { supabase } from "@/lib/supabaseAuth";
+import { useAuth } from "@/lib/useAuth";
 
-// Interfaces
-interface MaterialBase {
-    id: string;
-    nome: string;
-    unidade: string;
-    gruposInsumoIds: string[];
-    descricao?: string;
-    fabricante?: string;
+// Helper para obter headers com token de autenticação
+async function getAuthHeaders(): Promise<Record<string, string>> {
+    const { data: { session } } = await supabase.auth.getSession();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+    }
+    return headers;
 }
 
-interface FornecedorMaterial {
+interface ProdutoConfigurado {
+    fornecedorMaterialId: string; // fornecedor_materiais.id
     materialId: string;
+    materialNome: string;
+    materialUnidade: string;
     preco: number;
     estoque: number;
-    ativo: boolean;
-    dataAtualizacao: string;
-    // Campos de oferta
-    tipoOferta?: 'valor' | 'percentual';
+    // Dados da oferta (da tabela ofertas)
+    ofertaId?: string;
+    tipoOferta?: "valor" | "percentual";
     valorOferta?: number;
+    precoFinal?: number;
+    descontoPercentual?: number;
     quantidadeMinima?: number;
-}
-
-interface GrupoInsumo {
-    id: string;
-    nome: string;
+    ofertaAtiva?: boolean;
 }
 
 export function SupplierMyProductsSection() {
-    const { user, profile } = useAuth();
+    const { user, initialized } = useAuth();
     const [searchTerm, setSearchTerm] = useState("");
     const [loading, setLoading] = useState(true);
     const [fornecedorId, setFornecedorId] = useState<string | null>(null);
-
-    const [materiaisBase, setMateriaisBase] = useState<MaterialBase[]>([]);
-    const [grupos, setGrupos] = useState<GrupoInsumo[]>([]);
-    const [fornecedorMateriais, setFornecedorMateriais] = useState<Map<string, FornecedorMaterial>>(new Map());
+    const [produtos, setProdutos] = useState<ProdutoConfigurado[]>([]);
 
     // Edição inline
     const [editingMaterial, setEditingMaterial] = useState<string | null>(null);
-    const [editTipoOferta, setEditTipoOferta] = useState<'valor' | 'percentual'>('percentual');
+    const [editTipoOferta, setEditTipoOferta] = useState<"valor" | "percentual">("percentual");
     const [editValorOferta, setEditValorOferta] = useState("");
-    const [editQtdMinima, setEditQtdMinima] = useState("");
+    const [editQtdMinima, setEditQtdMinima] = useState("1");
+    const [saving, setSaving] = useState(false);
 
-    // Carregar dados do usuário e fornecedor
+    // Carregar fornecedor_id
     useEffect(() => {
-        const loadUserData = async () => {
-            if (!user) {
-                setLoading(false);
+        if (!initialized || !user) return;
+
+        const loadFornecedorId = async () => {
+            const { data: userData } = await supabase
+                .from("users")
+                .select("fornecedor_id")
+                .eq("id", user.id)
+                .single();
+
+            if (userData?.fornecedor_id) {
+                setFornecedorId(userData.fornecedor_id);
                 return;
             }
 
-            try {
-                // Buscar dados do usuário para obter fornecedorId
-                const { data: userData, error: userError } = await supabase
-                    .from('users')
-                    .select('fornecedor_id')
-                    .eq('id', user.id)
-                    .single();
+            const { data: fornecedorData } = await supabase
+                .from("fornecedores")
+                .select("id")
+                .eq("user_id", user.id)
+                .single();
 
-                if (!userError && userData?.fornecedor_id) {
-                    setFornecedorId(userData.fornecedor_id);
-                }
-            } catch (error) {
-                console.error("Erro ao carregar dados do usuário:", error);
-            } finally {
-                setLoading(false);
+            if (fornecedorData) {
+                setFornecedorId(fornecedorData.id);
             }
         };
 
-        loadUserData();
-    }, [user]);
+        loadFornecedorId();
+    }, [user, initialized]);
 
-    // Carregar materiais base e grupos
-    useEffect(() => {
-        const loadBaseData = async () => {
-            try {
-                const [gruposResult, materiaisResult] = await Promise.all([
-                    supabase.from('grupos_insumo').select('id, nome'),
-                    supabase.from('materiais').select('id, nome, unidade, grupos_insumo_ids, descricao, fabricante')
-                ]);
-
-                if (gruposResult.data) {
-                    setGrupos(gruposResult.data);
-                }
-
-                if (materiaisResult.data) {
-                    const materiaisData = materiaisResult.data.map(m => ({
-                        id: m.id,
-                        nome: m.nome,
-                        unidade: m.unidade,
-                        gruposInsumoIds: m.grupos_insumo_ids || [],
-                        descricao: m.descricao,
-                        fabricante: m.fabricante
-                    })) as MaterialBase[];
-                    setMateriaisBase(materiaisData);
-                }
-            } catch (error) {
-                console.error("Erro ao carregar dados base:", error);
-            }
-        };
-
-        loadBaseData();
-    }, []);
-
-    // Carregar materiais configurados pelo fornecedor
+    // Carregar produtos configurados + ofertas
     useEffect(() => {
         if (!fornecedorId) return;
 
-        const loadFornecedorMateriais = async () => {
+        const loadData = async () => {
+            setLoading(true);
             try {
-                const { data, error } = await supabase
-                    .from('fornecedor_materiais')
-                    .select('*')
-                    .eq('fornecedor_id', fornecedorId);
+                const headers = await getAuthHeaders();
 
-                if (error) throw error;
+                // 1. Buscar fornecedor_materiais via API (bypass RLS)
+                const fmRes = await fetch(
+                    `/api/fornecedor-materiais?fornecedor_id=${fornecedorId}`,
+                    { headers }
+                );
 
-                const materiaisMap = new Map<string, FornecedorMaterial>();
-                data?.forEach(item => {
-                    materiaisMap.set(item.material_id, {
-                        materialId: item.material_id,
-                        preco: item.preco || 0,
-                        estoque: item.estoque || 0,
-                        ativo: item.ativo ?? true,
-                        dataAtualizacao: item.data_atualizacao || new Date().toISOString(),
-                        tipoOferta: item.tipo_oferta,
-                        valorOferta: item.valor_oferta,
-                        quantidadeMinima: item.quantidade_minima
-                    });
-                });
-                setFornecedorMateriais(materiaisMap);
-            } catch (error: any) {
-                console.error("Erro ao carregar materiais:", error);
-                setFornecedorMateriais(new Map());
+                if (!fmRes.ok) {
+                    console.error("Erro ao buscar fornecedor_materiais:", fmRes.status);
+                    setProdutos([]);
+                    setLoading(false);
+                    return;
+                }
+
+                const fmJson = await fmRes.json();
+                const fmData: any[] = fmJson.data || [];
+
+                // Filtrar apenas materiais ativos com preço > 0
+                const ativos = fmData.filter(
+                    (m: any) => m.ativo !== false && m.preco > 0
+                );
+
+                if (ativos.length === 0) {
+                    setProdutos([]);
+                    setLoading(false);
+                    return;
+                }
+
+                // 2. Buscar nomes dos materiais
+                const materialIds = ativos.map((m: any) => m.material_id);
+                const { data: matData } = await supabase
+                    .from("materiais")
+                    .select("id, nome, unidade")
+                    .in("id", materialIds);
+
+                const matMap = new Map(
+                    matData?.map((m) => [m.id, m]) || []
+                );
+
+                // 3. Buscar ofertas existentes para este fornecedor
+                const { data: ofertasData } = await supabase
+                    .from("ofertas")
+                    .select("*")
+                    .eq("fornecedor_id", fornecedorId);
+
+                const ofertasMap = new Map(
+                    (ofertasData || []).map((o: any) => [o.material_id, o])
+                );
+
+                // 4. Montar lista de produtos
+                const produtosResult: ProdutoConfigurado[] = ativos.map(
+                    (fm: any) => {
+                        const mat = matMap.get(fm.material_id);
+                        const oferta = ofertasMap.get(fm.material_id);
+
+                        return {
+                            fornecedorMaterialId: fm.id,
+                            materialId: fm.material_id,
+                            materialNome: mat?.nome || "Material desconhecido",
+                            materialUnidade: mat?.unidade || "",
+                            preco: fm.preco,
+                            estoque: fm.estoque || 0,
+                            // Dados da oferta (se existir)
+                            ofertaId: oferta?.id,
+                            tipoOferta: oferta?.tipo_oferta,
+                            valorOferta: oferta?.valor_oferta,
+                            precoFinal: oferta?.preco_final,
+                            descontoPercentual: oferta?.desconto_percentual,
+                            quantidadeMinima: oferta?.quantidade_minima,
+                            ofertaAtiva: oferta?.ativo,
+                        };
+                    }
+                );
+
+                setProdutos(produtosResult);
+            } catch (error) {
+                console.error("Erro ao carregar dados:", error);
+                setProdutos([]);
             }
+            setLoading(false);
         };
 
-        loadFornecedorMateriais();
+        loadData();
     }, [fornecedorId]);
 
-    // Filtrar apenas materiais com preço e estoque configurados
-    const materiaisConfigurados = useMemo(() => {
-        const materiais: Array<MaterialBase & { config: FornecedorMaterial }> = [];
+    // Filtrar por busca
+    const produtosFiltrados = useMemo(() => {
+        if (!searchTerm) return produtos;
+        const term = searchTerm.toLowerCase();
+        return produtos.filter(
+            (p) =>
+                p.materialNome.toLowerCase().includes(term) ||
+                p.materialUnidade.toLowerCase().includes(term)
+        );
+    }, [produtos, searchTerm]);
 
-        fornecedorMateriais.forEach((config, materialId) => {
-            const material = materiaisBase.find(m => m.id === materialId);
-            if (material && config.preco > 0) {
-                materiais.push({ ...material, config });
-            }
-        });
-
-        // Filtrar por busca
-        if (searchTerm) {
-            return materiais.filter(m =>
-                m.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                m.descricao?.toLowerCase().includes(searchTerm.toLowerCase())
-            );
-        }
-
-        return materiais;
-    }, [materiaisBase, fornecedorMateriais, searchTerm]);
-
-    const getGrupoNome = (grupoId: string) => {
-        return grupos.find(g => g.id === grupoId)?.nome || grupoId;
-    };
-
-    const startEditing = (materialId: string, config: FornecedorMaterial) => {
-        setEditingMaterial(materialId);
-        setEditTipoOferta(config.tipoOferta || 'percentual');
-        setEditValorOferta(config.valorOferta?.toString() || "");
-        setEditQtdMinima(config.quantidadeMinima?.toString() || "");
+    const startEditing = (produto: ProdutoConfigurado) => {
+        setEditingMaterial(produto.materialId);
+        setEditTipoOferta(produto.tipoOferta || "percentual");
+        setEditValorOferta(produto.valorOferta?.toString() || "");
+        setEditQtdMinima(produto.quantidadeMinima?.toString() || "1");
     };
 
     const cancelEditing = () => {
         setEditingMaterial(null);
-        setEditTipoOferta('percentual');
+        setEditTipoOferta("percentual");
         setEditValorOferta("");
-        setEditQtdMinima("");
+        setEditQtdMinima("1");
+    };
+
+    const calcularPrecoFinal = (
+        preco: number,
+        tipo: "valor" | "percentual",
+        valor: number
+    ) => {
+        if (!valor || valor <= 0) return preco;
+        if (tipo === "percentual") {
+            return preco * (1 - valor / 100);
+        }
+        return preco - valor;
     };
 
     const saveEditing = async () => {
         if (!fornecedorId || !editingMaterial) return;
 
+        const produto = produtos.find((p) => p.materialId === editingMaterial);
+        if (!produto) return;
+
+        const valorOferta = parseFloat(editValorOferta) || 0;
+        const precoOrig = produto.preco;
+
+        setSaving(true);
         try {
-            const currentConfig = fornecedorMateriais.get(editingMaterial);
-            const materialBase = materiaisBase.find(m => m.id === editingMaterial);
+            if (valorOferta > 0 && precoOrig > 0) {
+                // Calcular preço final e desconto
+                let precoFinal: number;
+                let descontoPerc: number;
 
-            const valorOferta = parseFloat(editValorOferta) || 0;
-            const preco = currentConfig?.preco || 0;
-            const dataAtualizacao = new Date().toISOString();
+                if (editTipoOferta === "percentual") {
+                    descontoPerc = valorOferta;
+                    precoFinal = precoOrig * (1 - valorOferta / 100);
+                } else {
+                    precoFinal = precoOrig - valorOferta;
+                    descontoPerc = (valorOferta / precoOrig) * 100;
+                }
 
-            // Atualizar material do fornecedor
-            const { error: updateError } = await supabase
-                .from('fornecedor_materiais')
-                .update({
+                if (precoFinal <= 0) {
+                    alert("O desconto não pode tornar o preço menor ou igual a zero.");
+                    setSaving(false);
+                    return;
+                }
+
+                // Upsert na tabela ofertas
+                const ofertaData: any = {
+                    fornecedor_id: fornecedorId,
+                    fornecedor_material_id: produto.fornecedorMaterialId,
+                    material_id: produto.materialId,
+                    material_nome: produto.materialNome,
+                    material_unidade: produto.materialUnidade,
                     tipo_oferta: editTipoOferta,
                     valor_oferta: valorOferta,
-                    quantidade_minima: parseInt(editQtdMinima) || 0,
-                    data_atualizacao: dataAtualizacao
-                })
-                .eq('fornecedor_id', fornecedorId)
-                .eq('material_id', editingMaterial);
+                    preco_original: precoOrig,
+                    preco_final: parseFloat(precoFinal.toFixed(2)),
+                    desconto_percentual: parseFloat(descontoPerc.toFixed(2)),
+                    quantidade_minima: parseInt(editQtdMinima) || 1,
+                    estoque: produto.estoque,
+                    ativo: true,
+                    updated_at: new Date().toISOString(),
+                };
 
-            if (updateError) throw updateError;
+                if (produto.ofertaId) {
+                    // Atualizar oferta existente
+                    const { error } = await supabase
+                        .from("ofertas")
+                        .update(ofertaData)
+                        .eq("id", produto.ofertaId);
 
-            // Gerenciar tabela global de ofertas
-            if (valorOferta > 0 && preco > 0 && materialBase) {
-                // Buscar dados do fornecedor para nome
-                const { data: fornecedorData } = await supabase
-                    .from('fornecedores')
-                    .select('nome_fantasia, razao_social')
-                    .eq('id', fornecedorId)
-                    .single();
-
-                const fornecedorNome = fornecedorData?.nome_fantasia || fornecedorData?.razao_social || "Fornecedor";
-
-                // Calcular preço final
-                let precoFinal = preco;
-                let descontoPercentual = 0;
-                if (editTipoOferta === 'percentual') {
-                    precoFinal = preco * (1 - valorOferta / 100);
-                    descontoPercentual = valorOferta;
+                    if (error) throw error;
                 } else {
-                    precoFinal = preco - valorOferta;
-                    descontoPercentual = Math.round((valorOferta / preco) * 100);
+                    // Criar nova oferta
+                    ofertaData.data_inicio = new Date().toISOString();
+                    const { error } = await supabase
+                        .from("ofertas")
+                        .insert(ofertaData);
+
+                    if (error) throw error;
                 }
 
-                // Criar/atualizar oferta global usando upsert
-                const { error: ofertaError } = await supabase
-                    .from('ofertas')
-                    .upsert({
-                        fornecedor_id: fornecedorId,
-                        material_id: editingMaterial,
-                        material_nome: materialBase.nome,
-                        material_unidade: materialBase.unidade,
-                        material_descricao: materialBase.descricao || null,
-                        grupos_insumo_ids: materialBase.gruposInsumoIds || [],
-                        fornecedor_nome: fornecedorNome,
-                        preco,
-                        preco_final: precoFinal,
-                        tipo_oferta: editTipoOferta,
-                        valor_oferta: valorOferta,
-                        desconto_percentual: descontoPercentual,
-                        quantidade_minima: parseInt(editQtdMinima) || 1,
-                        estoque: currentConfig?.estoque || 0,
-                        ativo: true,
-                        data_atualizacao: dataAtualizacao
-                    }, { onConflict: 'fornecedor_id,material_id' });
-
-                if (ofertaError) {
-                    console.error("Erro ao salvar oferta:", ofertaError);
-                } else {
-                    console.log("Oferta salva na tabela global");
-                }
+                // Atualizar estado local
+                setProdutos((prev) =>
+                    prev.map((p) =>
+                        p.materialId === editingMaterial
+                            ? {
+                                ...p,
+                                tipoOferta: editTipoOferta,
+                                valorOferta,
+                                precoFinal: parseFloat(precoFinal.toFixed(2)),
+                                descontoPercentual: parseFloat(descontoPerc.toFixed(2)),
+                                quantidadeMinima: parseInt(editQtdMinima) || 1,
+                                ofertaAtiva: true,
+                            }
+                            : p
+                    )
+                );
             } else {
                 // Remover oferta se valor for 0
-                await supabase
-                    .from('ofertas')
-                    .delete()
-                    .eq('fornecedor_id', fornecedorId)
-                    .eq('material_id', editingMaterial);
-                console.log("Oferta removida");
+                if (produto.ofertaId) {
+                    await supabase
+                        .from("ofertas")
+                        .delete()
+                        .eq("id", produto.ofertaId);
+                }
+
+                // Atualizar estado local
+                setProdutos((prev) =>
+                    prev.map((p) =>
+                        p.materialId === editingMaterial
+                            ? {
+                                ...p,
+                                ofertaId: undefined,
+                                tipoOferta: undefined,
+                                valorOferta: undefined,
+                                precoFinal: undefined,
+                                descontoPercentual: undefined,
+                                quantidadeMinima: undefined,
+                                ofertaAtiva: undefined,
+                            }
+                            : p
+                    )
+                );
             }
-
-            // Recarregar dados
-            const { data: materiaisData } = await supabase
-                .from('fornecedor_materiais')
-                .select('*')
-                .eq('fornecedor_id', fornecedorId);
-
-            const materiaisMap = new Map<string, FornecedorMaterial>();
-            materiaisData?.forEach(item => {
-                materiaisMap.set(item.material_id, {
-                    materialId: item.material_id,
-                    preco: item.preco || 0,
-                    estoque: item.estoque || 0,
-                    ativo: item.ativo ?? true,
-                    dataAtualizacao: item.data_atualizacao || new Date().toISOString(),
-                    tipoOferta: item.tipo_oferta,
-                    valorOferta: item.valor_oferta,
-                    quantidadeMinima: item.quantidade_minima
-                });
-            });
-            setFornecedorMateriais(materiaisMap);
 
             cancelEditing();
         } catch (error) {
-            console.error("Erro ao salvar:", error);
-            alert("Erro ao salvar. Tente novamente.");
-        }
-    };
-
-    const calcularPrecoComOferta = (preco: number, config: FornecedorMaterial) => {
-        if (!config.valorOferta || config.valorOferta === 0) return preco;
-
-        if (config.tipoOferta === 'percentual') {
-            return preco * (1 - config.valorOferta / 100);
-        } else {
-            return preco - config.valorOferta;
+            console.error("Erro ao salvar oferta:", error);
+            alert("Erro ao salvar oferta. Verifique os dados e tente novamente.");
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -319,6 +335,16 @@ export function SupplierMyProductsSection() {
             <div className="p-8 flex items-center justify-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                 <span className="ml-3 text-gray-600">Carregando produtos...</span>
+            </div>
+        );
+    }
+
+    if (!fornecedorId) {
+        return (
+            <div className="p-8 text-center text-gray-500">
+                <TagIcon className="mx-auto h-12 w-12 text-gray-300 mb-3" />
+                <p className="font-medium">Perfil de fornecedor não encontrado</p>
+                <p className="text-sm mt-1">Complete seu cadastro para gerenciar produtos.</p>
             </div>
         );
     }
@@ -344,6 +370,18 @@ export function SupplierMyProductsSection() {
                 />
                 <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" />
             </div>
+
+            {/* Info */}
+            {produtos.length === 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <p className="text-sm text-amber-800 font-medium">
+                        ⚠️ Nenhum produto configurado com preço encontrado.
+                    </p>
+                    <p className="text-sm text-amber-700 mt-1">
+                        Vá em &quot;Cadastro de Materiais&quot; e configure preço e estoque para seus materiais.
+                    </p>
+                </div>
+            )}
 
             {/* Products Table */}
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
@@ -378,45 +416,61 @@ export function SupplierMyProductsSection() {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {materiaisConfigurados.length === 0 ? (
+                            {produtosFiltrados.length === 0 ? (
                                 <tr>
                                     <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
-                                        Nenhum produto configurado ainda
+                                        {produtos.length === 0
+                                            ? "Nenhum produto configurado ainda"
+                                            : "Nenhum produto encontrado para a busca"}
                                     </td>
                                 </tr>
                             ) : (
-                                materiaisConfigurados.map((material) => {
-                                    const isEditing = editingMaterial === material.id;
-                                    const precoFinal = calcularPrecoComOferta(material.config.preco, material.config);
+                                produtosFiltrados.map((produto) => {
+                                    const isEditing = editingMaterial === produto.materialId;
+                                    const precoFinal =
+                                        produto.precoFinal ??
+                                        calcularPrecoFinal(
+                                            produto.preco,
+                                            produto.tipoOferta || "percentual",
+                                            produto.valorOferta || 0
+                                        );
+
+                                    // Preview do preço durante edição
+                                    const editPrecoPreview = isEditing
+                                        ? calcularPrecoFinal(
+                                            produto.preco,
+                                            editTipoOferta,
+                                            parseFloat(editValorOferta) || 0
+                                        )
+                                        : null;
 
                                     return (
-                                        <tr key={material.id} className="hover:bg-gray-50">
+                                        <tr key={produto.materialId} className="hover:bg-gray-50">
                                             <td className="px-6 py-4">
                                                 <div>
-                                                    <p className="text-sm font-medium text-gray-900">{material.nome}</p>
-                                                    {material.descricao && (
-                                                        <p className="text-xs text-gray-500 mt-0.5">{material.descricao}</p>
-                                                    )}
-                                                    <div className="flex gap-1 mt-1">
-                                                        {material.gruposInsumoIds?.slice(0, 2).map(grupoId => (
-                                                            <span key={grupoId} className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">
-                                                                {getGrupoNome(grupoId)}
-                                                            </span>
-                                                        ))}
-                                                    </div>
+                                                    <p className="text-sm font-medium text-gray-900">
+                                                        {produto.materialNome}
+                                                    </p>
+                                                    <p className="text-xs text-gray-500 mt-0.5">
+                                                        {produto.materialUnidade}
+                                                    </p>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                                                R$ {material.config.preco.toFixed(2)}
+                                                R$ {produto.preco.toFixed(2)}
                                             </td>
                                             <td className="px-6 py-4 text-sm text-gray-600">
-                                                {material.config.estoque} {material.unidade}
+                                                {produto.estoque}
                                             </td>
                                             <td className="px-6 py-4">
                                                 {isEditing ? (
                                                     <select
                                                         value={editTipoOferta}
-                                                        onChange={(e) => setEditTipoOferta(e.target.value as 'valor' | 'percentual')}
+                                                        onChange={(e) =>
+                                                            setEditTipoOferta(
+                                                                e.target.value as "valor" | "percentual"
+                                                            )
+                                                        }
                                                         className="px-2 py-1 border border-blue-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
                                                     >
                                                         <option value="percentual">Percentual (%)</option>
@@ -424,7 +478,11 @@ export function SupplierMyProductsSection() {
                                                     </select>
                                                 ) : (
                                                     <span className="text-sm text-gray-600">
-                                                        {material.config.tipoOferta === 'valor' ? 'Valor (R$)' : 'Percentual (%)'}
+                                                        {produto.tipoOferta === "valor"
+                                                            ? "Valor (R$)"
+                                                            : produto.tipoOferta === "percentual"
+                                                                ? "Percentual (%)"
+                                                                : "-"}
                                                     </span>
                                                 )}
                                             </td>
@@ -441,18 +499,34 @@ export function SupplierMyProductsSection() {
                                                     />
                                                 ) : (
                                                     <span className="text-sm text-gray-600">
-                                                        {material.config.valorOferta ?
-                                                            (material.config.tipoOferta === 'percentual' ?
-                                                                `${material.config.valorOferta}%` :
-                                                                `R$ ${material.config.valorOferta.toFixed(2)}`)
-                                                            : '-'}
+                                                        {produto.valorOferta && produto.valorOferta > 0
+                                                            ? produto.tipoOferta === "percentual"
+                                                                ? `${produto.valorOferta}%`
+                                                                : `R$ ${produto.valorOferta.toFixed(2)}`
+                                                            : "-"}
                                                     </span>
                                                 )}
                                             </td>
                                             <td className="px-6 py-4">
-                                                <span className={`text-sm font-semibold ${material.config.valorOferta && material.config.valorOferta > 0 ? 'text-green-600' : 'text-gray-900'}`}>
-                                                    R$ {precoFinal.toFixed(2)}
-                                                </span>
+                                                {isEditing ? (
+                                                    <span
+                                                        className={`text-sm font-semibold ${editPrecoPreview && editPrecoPreview < produto.preco
+                                                                ? "text-green-600"
+                                                                : "text-gray-900"
+                                                            }`}
+                                                    >
+                                                        R$ {(editPrecoPreview ?? produto.preco).toFixed(2)}
+                                                    </span>
+                                                ) : (
+                                                    <span
+                                                        className={`text-sm font-semibold ${produto.valorOferta && produto.valorOferta > 0
+                                                                ? "text-green-600"
+                                                                : "text-gray-900"
+                                                            }`}
+                                                    >
+                                                        R$ {precoFinal.toFixed(2)}
+                                                    </span>
+                                                )}
                                             </td>
                                             <td className="px-6 py-4">
                                                 {isEditing ? (
@@ -461,12 +535,12 @@ export function SupplierMyProductsSection() {
                                                         value={editQtdMinima}
                                                         onChange={(e) => setEditQtdMinima(e.target.value)}
                                                         className="w-20 px-2 py-1 border border-blue-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                                                        min="0"
-                                                        placeholder="0"
+                                                        min="1"
+                                                        placeholder="1"
                                                     />
                                                 ) : (
                                                     <span className="text-sm text-gray-600">
-                                                        {material.config.quantidadeMinima || '-'}
+                                                        {produto.quantidadeMinima || "-"}
                                                     </span>
                                                 )}
                                             </td>
@@ -475,14 +549,16 @@ export function SupplierMyProductsSection() {
                                                     <div className="flex items-center justify-end gap-2">
                                                         <button
                                                             onClick={saveEditing}
-                                                            className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
+                                                            disabled={saving}
+                                                            className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors disabled:opacity-50"
                                                             title="Salvar"
                                                         >
                                                             <CheckIcon className="h-4 w-4" />
                                                         </button>
                                                         <button
                                                             onClick={cancelEditing}
-                                                            className="p-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                                                            disabled={saving}
+                                                            className="p-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50"
                                                             title="Cancelar"
                                                         >
                                                             <XMarkIcon className="h-4 w-4" />
@@ -490,10 +566,13 @@ export function SupplierMyProductsSection() {
                                                     </div>
                                                 ) : (
                                                     <button
-                                                        onClick={() => startEditing(material.id, material.config)}
-                                                        className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                                                        onClick={() => startEditing(produto)}
+                                                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${produto.ofertaId
+                                                                ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                                                : "bg-blue-600 text-white hover:bg-blue-700"
+                                                            }`}
                                                     >
-                                                        Configurar Oferta
+                                                        {produto.ofertaId ? "Editar Oferta" : "Configurar Oferta"}
                                                     </button>
                                                 )}
                                             </td>

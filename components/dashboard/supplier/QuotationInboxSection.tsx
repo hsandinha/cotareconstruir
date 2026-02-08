@@ -1,9 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { SupplierQuotationResponseSection } from "./QuotationResponseSection";
+
+// Helper para obter headers com token de autenticação
+async function getAuthHeaders(): Promise<Record<string, string>> {
+    const { data: { session } } = await supabase.auth.getSession();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+    return headers;
+}
 
 export function SupplierQuotationInboxSection() {
     const { user, profile, initialized } = useAuth();
@@ -17,55 +27,45 @@ export function SupplierQuotationInboxSection() {
         categories: [] as string[]
     });
 
-    useEffect(() => {
-        const loadFornecedorData = async () => {
-            if (!initialized || !user) return;
+    // Fetch cotações via API route (bypasses RLS)
+    const fetchQuotations = useCallback(async () => {
+        try {
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/cotacoes', { headers });
 
-            // Buscar fornecedor vinculado ao user
-            const { data: fornecedorData, error } = await supabase
-                .from('fornecedores')
-                .select('id, status, regioes_atendimento')
-                .eq('user_id', user.id)
-                .single();
+            if (!res.ok) {
+                console.error('Erro ao carregar cotações:', res.status);
+                setQuotations([]);
+                setLoading(false);
+                return;
+            }
 
-            if (error || !fornecedorData) {
+            const json = await res.json();
+
+            // Handle fornecedor not found or suspended
+            if (json.fornecedor_status === 'not_found' || json.fornecedor_status === 'suspended') {
                 setIsInactive(true);
                 setLoading(false);
                 return;
             }
 
-            if (fornecedorData.status === 'suspended') {
-                setIsInactive(true);
-                setLoading(false);
-                return;
-            }
+            setFornecedorId(json.fornecedor_id);
+            const regioes = (json.regioes || []) as string[];
+            setFilters(prev => ({ ...prev, regions: regioes }));
 
-            setFornecedorId(fornecedorData.id);
-            setFilters({
-                regions: (fornecedorData.regioes_atendimento || []).map((r: string) => r.toLowerCase()),
-                categories: []
-            });
-        };
-        loadFornecedorData();
-    }, [user, initialized]);
+            const data = json.data || [];
 
-    useEffect(() => {
-        // Fetch initial quotations and set up realtime subscription
-        const fetchQuotations = async () => {
-            const { data, error } = await supabase
-                .from('cotacoes')
-                .select('*, cotacao_itens(*), obra:obras(nome, bairro, cidade, estado)')
-                .eq('status', 'enviada');
-
-            if (data) {
-                let items = data.map(doc => ({
+            let items = data.map((doc: any) => {
+                const obra = doc._obra;
+                const cliente = doc._cliente;
+                return {
                     id: doc.id,
                     user_id: doc.user_id,
                     obra_id: doc.obra_id,
                     status: doc.status,
-                    clientCode: "Cliente " + (doc.user_id ? doc.user_id.substring(0, 5) : "Anon"),
-                    locationRaw: doc.obra?.cidade || "",
-                    location: doc.obra ? `${doc.obra.bairro || ''}, ${doc.obra.cidade || ''} - ${doc.obra.estado || ''}` : "Não informado",
+                    clientCode: cliente?.nome || ("Cliente " + (doc.user_id ? doc.user_id.substring(0, 5) : "Anon")),
+                    locationRaw: obra?.cidade || "",
+                    location: obra ? `${obra.bairro || ''}, ${obra.cidade || ''} - ${obra.estado || ''}` : "Não informado",
                     receivedAt: doc.created_at ? new Date(doc.created_at).toLocaleString() : "N/A",
                     deadline: doc.data_validade ? new Date(doc.data_validade).toLocaleDateString('pt-BR') : "Sem prazo",
                     itemsCount: doc.cotacao_itens?.length || 0,
@@ -79,21 +79,30 @@ export function SupplierQuotationInboxSection() {
                         fase_nome: item.fase_nome,
                         servico_nome: item.servico_nome
                     })),
-                    urgency: "Média"
-                }));
+                    urgency: "Média",
+                    _proposta_status: doc._proposta_status || null
+                };
+            });
 
-                // Filtrar por região se configurado
-                if (filters.regions.length > 0) {
-                    items = items.filter(item => {
-                        const loc = item.locationRaw.toLowerCase();
-                        return filters.regions.some(region => loc.includes(region));
-                    });
-                }
-
-                setQuotations(items);
+            // Filtrar por região se configurado
+            if (regioes.length > 0) {
+                items = items.filter((item: any) => {
+                    const loc = item.location.toLowerCase();
+                    return regioes.some((region: string) => loc.includes(region));
+                });
             }
+
+            setQuotations(items);
+        } catch (err) {
+            console.error('Erro ao carregar cotações:', err);
+            setQuotations([]);
+        } finally {
             setLoading(false);
-        };
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!initialized || !user) return;
 
         fetchQuotations();
 
@@ -108,7 +117,7 @@ export function SupplierQuotationInboxSection() {
                     table: 'cotacoes',
                     filter: 'status=eq.enviada'
                 },
-                (payload) => {
+                () => {
                     fetchQuotations();
                 }
             )
@@ -117,7 +126,7 @@ export function SupplierQuotationInboxSection() {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [filters]);
+    }, [user, initialized, fetchQuotations]);
 
     const getStatusColor = (status: string) => {
         switch (status) {

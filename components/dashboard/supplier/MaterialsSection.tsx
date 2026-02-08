@@ -16,6 +16,16 @@ import { CheckCircleIcon, ClockIcon } from "@heroicons/react/24/solid";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 
+// Helper para obter headers com token de autenticação
+async function getAuthHeaders(): Promise<Record<string, string>> {
+    const { data: { session } } = await supabase.auth.getSession();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+    return headers;
+}
+
 // Interfaces
 interface MaterialBase {
     id: string;
@@ -206,7 +216,8 @@ export function SupplierMaterialsSection() {
 
         const loadFornecedorMateriais = async () => {
             try {
-                const res = await fetch(`/api/fornecedor-materiais?fornecedor_id=${fornecedorId}`);
+                const headers = await getAuthHeaders();
+                const res = await fetch(`/api/fornecedor-materiais?fornecedor_id=${fornecedorId}`, { headers });
                 const json = await res.json();
 
                 if (!res.ok) {
@@ -351,9 +362,10 @@ export function SupplierMaterialsSection() {
         if (!fornecedorId || !editingMaterial) return;
 
         try {
+            const headers = await getAuthHeaders();
             const res = await fetch('/api/fornecedor-materiais', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({
                     action: 'upsert',
                     fornecedor_id: fornecedorId,
@@ -393,9 +405,10 @@ export function SupplierMaterialsSection() {
         if (!fornecedorId) return;
 
         try {
+            const headers = await getAuthHeaders();
             const res = await fetch('/api/fornecedor-materiais', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({
                     action: 'toggle_ativo',
                     fornecedor_id: fornecedorId,
@@ -437,9 +450,10 @@ export function SupplierMaterialsSection() {
 
         setSendingRequest(true);
         try {
+            const headers = await getAuthHeaders();
             const res = await fetch('/api/fornecedor-materiais', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({
                     action: 'request_material',
                     fornecedor_id: fornecedorId,

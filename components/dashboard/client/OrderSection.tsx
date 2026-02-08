@@ -6,6 +6,14 @@ import { ClientComparativeSection } from "./ComparativeSection";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 
+// Helper para obter headers com token de autenticação
+async function getAuthHeaders(): Promise<Record<string, string>> {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token
+        ? { 'Authorization': `Bearer ${session.access_token}` }
+        : {};
+}
+
 export function ClientOrderSection() {
     const { user, initialized } = useAuth();
     const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
@@ -24,47 +32,50 @@ export function ClientOrderSection() {
 
         // Buscar obras para mapear IDs para nomes
         const fetchWorks = async () => {
-            const { data, error } = await supabase
-                .from('obras')
-                .select('id, nome')
-                .eq('user_id', user.id);
-
-            if (!error && data) {
+            try {
+                const headers = await getAuthHeaders();
+                const res = await fetch('/api/cotacoes/detail?action=list-obras', { headers });
+                if (!res.ok) return;
+                const json = await res.json();
                 const map: Record<string, string> = {};
-                data.forEach(doc => {
+                (json.data || []).forEach((doc: any) => {
                     map[doc.id] = doc.nome;
                 });
                 setWorksMap(map);
+            } catch (error) {
+                console.error('Erro ao buscar obras:', error);
             }
         };
 
         // Buscar cotações (Orders)
         const fetchQuotations = async () => {
-            const { data, error } = await supabase
-                .from('cotacoes')
-                .select('*, cotacao_itens(id)')
-                .eq('user_id', user.id);
-
-            if (error) {
+            try {
+                const headers = await getAuthHeaders();
+                const res = await fetch('/api/cotacoes/detail?action=list', { headers });
+                if (!res.ok) {
+                    console.error("Erro ao carregar pedidos:", res.status);
+                    setOrders([]);
+                    setLoading(false);
+                    return;
+                }
+                const json = await res.json();
+                const data = json.data || [];
+                const ordersData = data.map((doc: any) => ({
+                    id: doc.id,
+                    workId: doc.obra_id,
+                    date: doc.created_at ? new Date(doc.created_at).toLocaleDateString('pt-BR') : 'Data desconhecida',
+                    timestamp: doc.created_at ? new Date(doc.created_at).getTime() : 0,
+                    items: doc.cotacao_itens?.length || 0,
+                    rawStatus: doc.status,
+                    status: mapStatus(doc.status),
+                    statusColor: mapStatusColor(doc.status),
+                    totalEstimado: "-"
+                }));
+                ordersData.sort((a: any, b: any) => b.timestamp - a.timestamp);
+                setOrders(ordersData);
+            } catch (error) {
                 console.error("Erro ao carregar pedidos:", error);
                 setOrders([]);
-            } else {
-                const ordersData = (data || []).map(doc => {
-                    return {
-                        id: doc.id,
-                        workId: doc.obra_id,
-                        date: doc.created_at ? new Date(doc.created_at).toLocaleDateString('pt-BR') : 'Data desconhecida',
-                        timestamp: doc.created_at ? new Date(doc.created_at).getTime() : 0,
-                        items: doc.cotacao_itens?.length || 0,
-                        rawStatus: doc.status,
-                        status: mapStatus(doc.status),
-                        statusColor: mapStatusColor(doc.status),
-                        totalEstimado: "-" // Placeholder
-                    };
-                });
-                // Sort by date descending
-                ordersData.sort((a, b) => b.timestamp - a.timestamp);
-                setOrders(ordersData);
             }
             setLoading(false);
         };
@@ -72,7 +83,7 @@ export function ClientOrderSection() {
         fetchWorks();
         fetchQuotations();
 
-        // Configurar subscriptions realtime
+        // Configurar subscriptions realtime - just trigger refetch
         const worksChannel = supabase
             .channel('works_orders_changes')
             .on(
@@ -83,20 +94,7 @@ export function ClientOrderSection() {
                     table: 'obras',
                     filter: `user_id=eq.${user.id}`
                 },
-                async () => {
-                    const { data } = await supabase
-                        .from('obras')
-                        .select('id, nome')
-                        .eq('user_id', user.id);
-
-                    if (data) {
-                        const map: Record<string, string> = {};
-                        data.forEach(doc => {
-                            map[doc.id] = doc.nome;
-                        });
-                        setWorksMap(map);
-                    }
-                }
+                () => { fetchWorks(); }
             )
             .subscribe();
 
@@ -110,28 +108,7 @@ export function ClientOrderSection() {
                     table: 'cotacoes',
                     filter: `user_id=eq.${user.id}`
                 },
-                async () => {
-                    const { data } = await supabase
-                        .from('cotacoes')
-                        .select('*, cotacao_itens(id)')
-                        .eq('user_id', user.id);
-
-                    const ordersData = (data || []).map(doc => {
-                        return {
-                            id: doc.id,
-                            workId: doc.obra_id,
-                            date: doc.created_at ? new Date(doc.created_at).toLocaleDateString('pt-BR') : 'Data desconhecida',
-                            timestamp: doc.created_at ? new Date(doc.created_at).getTime() : 0,
-                            items: doc.cotacao_itens?.length || 0,
-                            rawStatus: doc.status,
-                            status: mapStatus(doc.status),
-                            statusColor: mapStatusColor(doc.status),
-                            totalEstimado: "-"
-                        };
-                    });
-                    ordersData.sort((a, b) => b.timestamp - a.timestamp);
-                    setOrders(ordersData);
-                }
+                () => { fetchQuotations(); }
             )
             .subscribe();
 

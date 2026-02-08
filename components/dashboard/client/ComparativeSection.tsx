@@ -5,7 +5,24 @@ import { ArrowDownOnSquareIcon, ChatBubbleLeftRightIcon, StarIcon } from "@heroi
 import { ChatInterface } from "../../ChatInterface";
 import { ReviewModal } from "../../ReviewModal";
 import { supabase } from "@/lib/supabaseAuth";
-import { sendEmail } from "../../../app/actions/email";
+
+// Helper para obter headers com token de autenticação (espera sessão ficar pronta)
+async function getAuthHeaders(): Promise<Record<string, string>> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+
+    // Tenta obter sessão, com retry se ainda não estiver pronta
+    for (let i = 0; i < 5; i++) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`;
+            return headers;
+        }
+        // Espera 500ms e tenta novamente
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    return headers;
+}
 
 interface ClientComparativeSectionProps {
     orderId?: string;
@@ -40,29 +57,28 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
         setLoading(true);
 
-        // Fetch initial data
+        // Fetch all data via API route (bypasses RLS)
         const fetchData = async () => {
             try {
-                // 1. Fetch Quotation
-                const { data: quotationData, error: quotationError } = await supabase
-                    .from('cotacoes')
-                    .select(`
-                        *,
-                        cotacao_itens (*)
-                    `)
-                    .eq('id', orderId)
-                    .single();
+                const headers = await getAuthHeaders();
+                const res = await fetch(`/api/cotacoes/detail?id=${orderId}`, { headers });
 
-                if (quotationError) throw quotationError;
+                if (!res.ok) {
+                    console.error('Erro ao carregar cotação:', res.status);
+                    setLoading(false);
+                    return;
+                }
 
-                if (quotationData) {
-                    // Map to expected format
+                const json = await res.json();
+                const { cotacao: cotacaoData, propostas: propostasData, pedidos: pedidosData } = json;
+
+                if (cotacaoData) {
                     setQuotation({
-                        id: quotationData.id,
-                        obra_id: quotationData.obra_id,
-                        status: quotationData.status,
-                        clientCode: quotationData.user_id,
-                        items: quotationData.cotacao_itens?.map((item: any) => ({
+                        id: cotacaoData.id,
+                        obra_id: cotacaoData.obra_id,
+                        status: cotacaoData.status,
+                        clientCode: cotacaoData.user_id,
+                        items: cotacaoData.cotacao_itens?.map((item: any) => ({
                             id: item.id,
                             descricao: item.nome,
                             quantidade: item.quantidade,
@@ -72,33 +88,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     });
                 }
 
-                // 2. Fetch Proposals
-                const { data: proposalsData, error: proposalsError } = await supabase
-                    .from('propostas')
-                    .select(`
-                        *,
-                        proposta_itens (*),
-                        fornecedor:fornecedores!propostas_fornecedor_id_fkey (
-                            id,
-                            razao_social,
-                            nome_fantasia,
-                            cnpj,
-                            email,
-                            telefone,
-                            user_id,
-                            logradouro,
-                            numero,
-                            bairro,
-                            cidade,
-                            estado
-                        )
-                    `)
-                    .eq('cotacao_id', orderId)
-                    .order('valor_total', { ascending: true });
-
-                if (proposalsError) throw proposalsError;
-
-                const mappedProposals = proposalsData?.map((p: any) => ({
+                const mappedProposals = (propostasData || []).map((p: any) => ({
                     id: p.id,
                     supplierId: p.fornecedor_id,
                     supplierUserId: p.fornecedor?.user_id,
@@ -118,36 +108,11 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         price: item.preco_unitario,
                         quantity: item.quantidade
                     })) || []
-                })) || [];
-
+                }));
                 setProposals(mappedProposals);
 
-                // 3. Fetch Orders if finished
-                if (status === "fechada") {
-                    const { data: ordersData, error: ordersError } = await supabase
-                        .from('pedidos')
-                        .select(`
-                            *,
-                            pedido_itens (*),
-                            fornecedor:fornecedores!pedidos_fornecedor_id_fkey (
-                                id,
-                                razao_social,
-                                nome_fantasia,
-                                cnpj,
-                                email,
-                                telefone,
-                                logradouro,
-                                numero,
-                                bairro,
-                                cidade,
-                                estado
-                            )
-                        `)
-                        .eq('cotacao_id', orderId);
-
-                    if (ordersError) throw ordersError;
-
-                    const mappedOrders = ordersData?.map((order: any) => ({
+                if (pedidosData && pedidosData.length > 0) {
+                    const mappedOrders = pedidosData.map((order: any) => ({
                         id: order.id,
                         supplierId: order.fornecedor_id,
                         supplierName: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social || 'Fornecedor',
@@ -171,8 +136,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         subtotal: order.valor_total || 0,
                         total: order.valor_total || 0,
                         status: order.status
-                    })) || [];
-
+                    }));
                     setOrders(mappedOrders);
                 }
 
@@ -185,35 +149,12 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
         fetchData();
 
-        // Set up realtime subscriptions
+        // Set up realtime subscriptions - just trigger refetch on changes
         const quotationChannel = supabase
             .channel(`quotation-${orderId}`)
             .on('postgres_changes',
                 { event: '*', schema: 'public', table: 'cotacoes', filter: `id=eq.${orderId}` },
-                async () => {
-                    // Refetch quotation on changes
-                    const { data } = await supabase
-                        .from('cotacoes')
-                        .select('*, cotacao_itens (*)')
-                        .eq('id', orderId)
-                        .single();
-
-                    if (data) {
-                        setQuotation({
-                            id: data.id,
-                            obra_id: data.obra_id,
-                            status: data.status,
-                            clientCode: data.user_id,
-                            items: data.cotacao_itens?.map((item: any) => ({
-                                id: item.id,
-                                descricao: item.nome,
-                                quantidade: item.quantidade,
-                                unidade: item.unidade,
-                                observacao: item.observacao
-                            })) || []
-                        });
-                    }
-                }
+                () => { fetchData(); }
             )
             .subscribe();
 
@@ -221,36 +162,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
             .channel(`proposals-${orderId}`)
             .on('postgres_changes',
                 { event: '*', schema: 'public', table: 'propostas', filter: `cotacao_id=eq.${orderId}` },
-                async () => {
-                    // Refetch proposals on changes
-                    const { data } = await supabase
-                        .from('propostas')
-                        .select(`
-                            *,
-                            proposta_itens (*),
-                            fornecedor:fornecedores!propostas_fornecedor_id_fkey (id, razao_social, nome_fantasia, email, user_id)
-                        `)
-                        .eq('cotacao_id', orderId)
-                        .order('valor_total', { ascending: true });
-
-                    if (data) {
-                        const mappedProposals = data.map((p: any) => ({
-                            id: p.id,
-                            supplierId: p.fornecedor_id,
-                            supplierUserId: p.fornecedor?.user_id,
-                            supplierName: p.fornecedor?.nome_fantasia || p.fornecedor?.razao_social || 'Fornecedor',
-                            totalValue: p.valor_total || 0,
-                            validity: p.data_validade,
-                            paymentMethod: p.condicoes_pagamento,
-                            items: p.proposta_itens?.map((item: any) => ({
-                                itemId: item.cotacao_item_id,
-                                price: item.preco_unitario,
-                                quantity: item.quantidade
-                            })) || []
-                        }));
-                        setProposals(mappedProposals);
-                    }
-                }
+                () => { fetchData(); }
             )
             .subscribe();
 
@@ -260,45 +172,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 .channel(`orders-${orderId}`)
                 .on('postgres_changes',
                     { event: '*', schema: 'public', table: 'pedidos', filter: `cotacao_id=eq.${orderId}` },
-                    async () => {
-                        const { data } = await supabase
-                            .from('pedidos')
-                            .select(`
-                                *,
-                                pedido_itens (*),
-                                fornecedor:fornecedores!pedidos_fornecedor_id_fkey (id, razao_social, nome_fantasia, cnpj, email, telefone, logradouro, numero, bairro, cidade, estado)
-                            `)
-                            .eq('cotacao_id', orderId);
-
-                        if (data) {
-                            const mappedOrders = data.map((order: any) => ({
-                                id: order.id,
-                                supplierId: order.fornecedor_id,
-                                supplierName: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social || 'Fornecedor',
-                                supplierDetails: {
-                                    name: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social,
-                                    document: order.fornecedor?.cnpj,
-                                    email: order.fornecedor?.email,
-                                    phone: order.fornecedor?.telefone,
-                                    address: [order.fornecedor?.logradouro, order.fornecedor?.numero, order.fornecedor?.bairro, order.fornecedor?.cidade, order.fornecedor?.estado].filter(Boolean).join(', ')
-                                },
-                                items: order.pedido_itens?.map((item: any) => ({
-                                    id: item.id,
-                                    name: item.nome,
-                                    descricao: item.nome,
-                                    quantity: item.quantidade,
-                                    quantidade: item.quantidade,
-                                    unitPrice: item.preco_unitario,
-                                    total: item.subtotal
-                                })) || [],
-                                freight: 0,
-                                subtotal: order.valor_total || 0,
-                                total: order.valor_total || 0,
-                                status: order.status
-                            }));
-                            setOrders(mappedOrders);
-                        }
-                    }
+                    () => { fetchData(); }
                 )
                 .subscribe();
         }
@@ -313,61 +187,45 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
     }, [orderId, status]);
 
     useEffect(() => {
-        if (quotation?.status === 'fechada' && orderId) {
+        if (quotation?.status === 'fechada' && orderId && orders.length === 0) {
             const fetchOrders = async () => {
-                const { data, error } = await supabase
-                    .from('pedidos')
-                    .select(`
-                        *,
-                        pedido_itens (*),
-                        fornecedor:fornecedores!pedidos_fornecedor_id_fkey (
-                            id,
-                            razao_social,
-                            nome_fantasia,
-                            cnpj,
-                            email,
-                            telefone,
-                            logradouro,
-                            numero,
-                            bairro,
-                            cidade,
-                            estado
-                        )
-                    `)
-                    .eq('cotacao_id', orderId);
+                try {
+                    const headers = await getAuthHeaders();
+                    const res = await fetch(`/api/cotacoes/detail?id=${orderId}`, { headers });
+                    if (!res.ok) return;
+                    const json = await res.json();
+                    const pedidosData = json.pedidos || [];
 
-                if (error) {
+                    const mappedOrders = pedidosData.map((order: any) => ({
+                        id: order.id,
+                        supplierId: order.fornecedor_id,
+                        supplierName: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social || 'Fornecedor',
+                        supplierDetails: {
+                            name: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social,
+                            document: order.fornecedor?.cnpj,
+                            email: order.fornecedor?.email,
+                            phone: order.fornecedor?.telefone,
+                            address: [order.fornecedor?.logradouro, order.fornecedor?.numero, order.fornecedor?.bairro, order.fornecedor?.cidade, order.fornecedor?.estado].filter(Boolean).join(', ')
+                        },
+                        items: order.pedido_itens?.map((item: any) => ({
+                            id: item.id,
+                            name: item.nome,
+                            descricao: item.nome,
+                            quantity: item.quantidade,
+                            quantidade: item.quantidade,
+                            unitPrice: item.preco_unitario,
+                            total: item.subtotal
+                        })) || [],
+                        freight: 0,
+                        subtotal: order.valor_total || 0,
+                        total: order.valor_total || 0,
+                        status: order.status
+                    }));
+
+                    setOrders(mappedOrders);
+                } catch (error) {
                     console.error("Error fetching orders:", error);
-                    return;
                 }
-
-                const mappedOrders = data?.map((order: any) => ({
-                    id: order.id,
-                    supplierId: order.fornecedor_id,
-                    supplierName: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social || 'Fornecedor',
-                    supplierDetails: {
-                        name: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social,
-                        document: order.fornecedor?.cnpj,
-                        email: order.fornecedor?.email,
-                        phone: order.fornecedor?.telefone,
-                        address: [order.fornecedor?.logradouro, order.fornecedor?.numero, order.fornecedor?.bairro, order.fornecedor?.cidade, order.fornecedor?.estado].filter(Boolean).join(', ')
-                    },
-                    items: order.pedido_itens?.map((item: any) => ({
-                        id: item.id,
-                        name: item.nome,
-                        descricao: item.nome,
-                        quantity: item.quantidade,
-                        quantidade: item.quantidade,
-                        unitPrice: item.preco_unitario,
-                        total: item.subtotal
-                    })) || [],
-                    freight: 0,
-                    subtotal: order.valor_total || 0,
-                    total: order.valor_total || 0,
-                    status: order.status
-                })) || [];
-
-                setOrders(mappedOrders);
             };
             fetchOrders();
         }
@@ -450,14 +308,76 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
     if (!proposals.length) {
         return (
-            <div className="p-12 text-center bg-white rounded-lg border border-gray-200 mt-6">
-                <div className="mx-auto w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
-                    <ChatBubbleLeftRightIcon className="w-8 h-8 text-yellow-600" />
+            <div className="space-y-6 mt-6">
+                {/* Status banner */}
+                <div className="p-6 text-center bg-white rounded-lg border border-gray-200">
+                    <div className="mx-auto w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
+                        <ChatBubbleLeftRightIcon className="w-8 h-8 text-yellow-600" />
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900">Aguardando Propostas</h3>
+                    <p className="text-gray-500 mt-2 max-w-md mx-auto">
+                        Os fornecedores estão analisando seu pedido. O mapa comparativo será gerado automaticamente assim que recebermos as primeiras propostas.
+                    </p>
                 </div>
-                <h3 className="text-lg font-medium text-gray-900">Aguardando Propostas</h3>
-                <p className="text-gray-500 mt-2 max-w-md mx-auto">
-                    Os fornecedores estão analisando seu pedido. O mapa comparativo será gerado automaticamente assim que recebermos as primeiras propostas.
-                </p>
+
+                {/* Items table - Mapa de Preços preview */}
+                {quotation && quotation.items.length > 0 && (
+                    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                            <h3 className="text-base font-semibold text-gray-900">Mapa de Preços</h3>
+                            <p className="text-sm text-gray-500 mt-0.5">{quotation.items.length} {quotation.items.length === 1 ? 'item' : 'itens'} na cotação</p>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Material</th>
+                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Quantidade</th>
+                                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Unidade</th>
+                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Preço Unitário</th>
+                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {quotation.items.map((item: any, idx: number) => (
+                                        <tr key={item.id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idx + 1}</td>
+                                            <td className="px-6 py-4">
+                                                <div className="text-sm font-medium text-gray-900">{item.descricao}</div>
+                                                {item.observacao && (
+                                                    <div className="text-xs text-gray-400 mt-0.5">{item.observacao}</div>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{item.quantidade}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">{item.unidade}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700 border border-yellow-200">
+                                                    Aguardando
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700 border border-yellow-200">
+                                                    Aguardando
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot className="bg-gray-50">
+                                    <tr>
+                                        <td colSpan={4} className="px-6 py-3 text-right text-sm font-semibold text-gray-700">Total Estimado</td>
+                                        <td colSpan={2} className="px-6 py-3 text-right">
+                                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700 border border-yellow-200">
+                                                Aguardando Fornecedores
+                                            </span>
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
@@ -553,28 +473,22 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         if (!quotation || !orderId) return;
 
         try {
-            // Get current user
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) {
-                alert("Usuário não autenticado.");
-                return;
-            }
-
             // Group items by supplier
-            const itemsBySupplier: { [key: string]: any[] } = {};
+            const supplierGroups: any[] = [];
+            const groupedBySupplier: { [key: string]: any[] } = {};
 
             quotation.items.forEach((item: any) => {
                 const selectedId = selectedSuppliers[item.id];
                 if (selectedId) {
-                    if (!itemsBySupplier[selectedId]) {
-                        itemsBySupplier[selectedId] = [];
+                    if (!groupedBySupplier[selectedId]) {
+                        groupedBySupplier[selectedId] = [];
                     }
 
                     const proposal = proposals.find(p => p.supplierId === selectedId);
                     const price = getItemPrice(proposal, item.id);
                     const total = price * item.quantidade;
 
-                    itemsBySupplier[selectedId].push({
+                    groupedBySupplier[selectedId].push({
                         id: item.id,
                         name: item.descricao,
                         quantity: item.quantidade,
@@ -586,128 +500,39 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 }
             });
 
-            // Fetch client details
-            const { data: clientData, error: clientError } = await supabase
-                .from('users')
-                .select('nome, email, telefone, cpf_cnpj')
-                .eq('id', user.id)
-                .single();
-
-            if (clientError) throw clientError;
-
-            const clientDetails = {
-                name: clientData?.nome || "Cliente",
-                document: clientData?.cpf_cnpj || "",
-                email: clientData?.email || "",
-                phone: clientData?.telefone || ""
-            };
-
-            // Create orders and update proposals for each supplier
-            for (const [supplierId, items] of Object.entries(itemsBySupplier)) {
+            for (const [supplierId, items] of Object.entries(groupedBySupplier)) {
                 const proposal = proposals.find(p => p.supplierId === supplierId);
-
-                const supplierDetails = proposal?.supplierDetails || {
-                    name: proposal?.supplierName || 'Fornecedor',
-                    document: '',
-                    email: '',
-                    phone: '',
-                    address: ''
-                };
-
-                const supplierTotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
-                const finalTotal = supplierTotal;
-
-                // Create order (using only columns that exist in schema)
-                const { data: orderData, error: orderError } = await supabase
-                    .from('pedidos')
-                    .insert({
-                        cotacao_id: orderId,
-                        proposta_id: proposal?.id,
-                        user_id: user.id,
-                        fornecedor_id: supplierId,
-                        obra_id: quotation.obra_id,
-                        valor_total: finalTotal,
-                        status: 'pendente',
-                        endereco_entrega: {
-                            clientDetails,
-                            supplierDetails,
-                            items: items
-                        },
-                        observacoes: `Pedido gerado via mapa comparativo`
-                    })
-                    .select()
-                    .single();
-
-                if (orderError) {
-                    console.error("Error creating order:", orderError);
-                    continue;
-                }
-
-                // Create order items (using only columns that exist in schema)
-                const orderItems = items.map((item: any) => ({
-                    pedido_id: orderData.id,
-                    nome: item.name,
-                    quantidade: item.quantity,
-                    unidade: item.unit,
-                    preco_unitario: item.unitPrice,
-                    subtotal: item.total
-                }));
-
-                const { error: itemsError } = await supabase
-                    .from('pedido_itens')
-                    .insert(orderItems);
-
-                if (itemsError) {
-                    console.error("Error creating order items:", itemsError);
-                }
-
-                // Update proposal status
-                if (proposal?.id) {
-                    await supabase
-                        .from('propostas')
-                        .update({ status: 'aceita' })
-                        .eq('id', proposal.id);
-                }
-
-                // Create notification for the supplier's user
-                const supplierUserId = proposal?.supplierUserId;
-                if (supplierUserId) {
-                    await supabase
-                        .from('notificacoes')
-                        .insert({
-                            user_id: supplierUserId,
-                            titulo: "Novo Pedido Recebido!",
-                            mensagem: "Você recebeu um novo pedido de compra.",
-                            tipo: "success",
-                            lida: false,
-                            link: '/dashboard/fornecedor'
-                        });
-                }
-
-                // Send email notification
-                if (supplierDetails.email) {
-                    await sendEmail({
-                        to: supplierDetails.email,
-                        subject: "Sua proposta foi aceita! - Cota Reconstruir",
-                        html: `
-                            <h1>Parabéns! Sua proposta foi aceita.</h1>
-                            <p>Você recebeu um novo pedido de compra do cliente <strong>${clientDetails.name}</strong>.</p>
-                            <p>Acesse a plataforma para ver os detalhes do pedido e entrar em contato com o cliente.</p>
-                            <p>Valor total: R$ ${finalTotal.toFixed(2)}</p>
-                        `
-                    });
-                }
+                supplierGroups.push({
+                    supplierId,
+                    proposalId: proposal?.id,
+                    supplierUserId: proposal?.supplierUserId,
+                    supplierName: proposal?.supplierName || 'Fornecedor',
+                    supplierDetails: proposal?.supplierDetails || {
+                        name: proposal?.supplierName || 'Fornecedor',
+                        document: '',
+                        email: '',
+                        phone: '',
+                        address: ''
+                    },
+                    items
+                });
             }
 
-            // Update quotation status to fechada
-            const { error: quotationError } = await supabase
-                .from('cotacoes')
-                .update({ status: 'fechada' })
-                .eq('id', orderId);
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/cotacoes/detail', {
+                method: 'POST',
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'finalize-order',
+                    cotacaoId: orderId,
+                    obraId: quotation.obra_id,
+                    itemsBySupplier: supplierGroups
+                })
+            });
 
-            if (quotationError) {
-                console.error("Error updating quotation:", quotationError);
-                throw quotationError;
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Erro ao finalizar pedido');
             }
 
             alert("Pedidos gerados com sucesso!");

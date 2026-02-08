@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { createServerClient } from '@/lib/supabase';
+
+async function getAuthUser(req: NextRequest) {
+    const authHeader = req.headers.get('authorization');
+    const token = authHeader?.replace('Bearer ', '') || req.cookies.get('sb-access-token')?.value;
+    if (!token || !supabaseAdmin) return null;
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) return null;
+    return user;
+}
 
 // POST: Upsert (configurar preço/estoque) or toggle ativo
-// PUT: Update ativo status
 export async function POST(req: NextRequest) {
     try {
-        // Verify authenticated user
-        const cookieHeader = req.headers.get('cookie') || '';
-        const userClient = createServerClient(cookieHeader);
-        const { data: { user }, error: authError } = await userClient.auth.getUser();
-
-        if (authError || !user) {
+        const user = await getAuthUser(req);
+        if (!user) {
             return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
         }
 
@@ -155,11 +158,8 @@ export async function POST(req: NextRequest) {
 // GET: Load fornecedor materials (using admin to bypass RLS)
 export async function GET(req: NextRequest) {
     try {
-        const cookieHeader = req.headers.get('cookie') || '';
-        const userClient = createServerClient(cookieHeader);
-        const { data: { user }, error: authError } = await userClient.auth.getUser();
-
-        if (authError || !user) {
+        const user = await getAuthUser(req);
+        if (!user) {
             return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
         }
 

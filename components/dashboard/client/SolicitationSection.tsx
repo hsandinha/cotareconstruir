@@ -373,65 +373,56 @@ export function ClientSolicitationSection() {
 
         setLoading(true);
         try {
-            // Inserir cotação (apenas colunas do schema)
-            const { data: cotacaoData, error } = await supabase
-                .from('cotacoes')
-                .insert({
-                    user_id: user.id,
+            // Obter token de autenticação
+            const { data: { session } } = await supabase.auth.getSession();
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (session?.access_token) {
+                headers['Authorization'] = `Bearer ${session.access_token}`;
+            }
+
+            // Criar cotação via API route (bypass RLS)
+            const res = await fetch('/api/cotacoes', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    action: 'create',
                     obra_id: selectedObraId,
-                    status: 'enviada',
-                    data_envio: new Date().toISOString(),
+                    itens: items.map(item => ({
+                        material_id: item.materialId || null,
+                        nome: item.descricao,
+                        quantidade: item.quantidade,
+                        unidade: item.unidade,
+                        grupo: item.categoria,
+                        observacao: item.observacao || null,
+                        fase_nome: item.faseNome || null,
+                        servico_nome: item.servicoNome || null,
+                    }))
                 })
-                .select()
-                .single();
+            });
 
-            if (error) throw error;
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Erro ao criar cotação');
+            }
 
-            // Inserir itens na tabela cotacao_itens
-            const cotacaoItens = items.map(item => ({
-                cotacao_id: cotacaoData.id,
-                material_id: item.materialId || null,
-                nome: item.descricao,
-                quantidade: item.quantidade,
-                unidade: item.unidade,
-                grupo: item.categoria,
-                observacao: item.observacao || null,
-                fase_nome: item.faseNome || null,
-                servico_nome: item.servicoNome || null,
-            }));
+            const result = await res.json();
 
-            const { error: itensError } = await supabase
-                .from('cotacao_itens')
-                .insert(cotacaoItens);
-
-            if (itensError) throw itensError;
-
-            // Notificar fornecedores da região
-            if (selectedObra?.cidade) {
-                const { data: suppliersData } = await supabase
-                    .from('fornecedores')
-                    .select('email, regioes_atendimento')
-                    .eq('status', 'active');
-
-                const suppliers = (suppliersData || []).filter(s =>
-                    s.regioes_atendimento?.some((r: string) =>
-                        r.toLowerCase().includes(selectedObra.cidade!.toLowerCase())
-                    )
-                );
-
-                await Promise.all(suppliers.map(async (supplier) => {
-                    if (supplier.email) {
-                        await sendEmail({
-                            to: supplier.email,
-                            subject: `Nova cotação em ${selectedObra.cidade} - Cota Reconstruir`,
-                            html: `
-                                <h1>Nova oportunidade!</h1>
-                                <p>Uma nova cotação foi aberta em <strong>${selectedObra.bairro}, ${selectedObra.cidade}</strong>.</p>
-                                <p><strong>${items.length} itens</strong> aguardando proposta.</p>
-                            `
-                        });
-                    }
-                }));
+            // Notificar fornecedores da região por email (best effort)
+            if (selectedObra?.cidade && result.suppliers_notified > 0) {
+                try {
+                    await sendEmail({
+                        to: 'admin@cotareconstruir.com.br',
+                        subject: `Nova cotação em ${selectedObra.cidade} - Cota Reconstruir`,
+                        html: `
+                            <h1>Nova cotação criada!</h1>
+                            <p>Obra: <strong>${selectedObra.nome}</strong> em ${selectedObra.bairro}, ${selectedObra.cidade}</p>
+                            <p><strong>${items.length} itens</strong> aguardando proposta.</p>
+                            <p>${result.suppliers_notified} fornecedores na região.</p>
+                        `
+                    });
+                } catch (emailErr) {
+                    console.warn('Erro ao enviar notificação por email:', emailErr);
+                }
             }
 
             setSuccess(true);

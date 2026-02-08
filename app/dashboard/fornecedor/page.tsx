@@ -69,31 +69,28 @@ export default function FornecedorDashboard() {
                     }
                 }
 
-                // Buscar estatísticas via Supabase
-                const fornecedorId = profile?.fornecedor_id;
+                // Buscar estatísticas via API routes (bypass RLS)
+                const { data: { session } } = await supabase.auth.getSession();
+                const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+                if (session?.access_token) {
+                    authHeaders['Authorization'] = `Bearer ${session.access_token}`;
+                }
 
-                const [cotacoesResult, propostasResult, materiaisResult, aceitas] = await Promise.all([
-                    // Cotações abertas (que o fornecedor pode responder)
-                    supabase.from('cotacoes').select('*', { count: 'exact', head: true }).eq('status', 'enviada'),
-                    // Propostas enviadas
-                    fornecedorId
-                        ? supabase.from('propostas').select('*', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
-                        : Promise.resolve({ count: 0 }),
-                    // Materiais cadastrados
-                    fornecedorId
-                        ? supabase.from('fornecedor_materiais').select('*', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
-                        : Promise.resolve({ count: 0 }),
-                    // Propostas aceitas
-                    fornecedorId
-                        ? supabase.from('propostas').select('*', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId).eq('status', 'aceita')
-                        : Promise.resolve({ count: 0 })
+                const [cotacoesRes, pedidosRes, materiaisRes] = await Promise.all([
+                    fetch('/api/cotacoes', { headers: authHeaders }).then(r => r.ok ? r.json() : { data: [] }),
+                    fetch('/api/pedidos', { headers: authHeaders }).then(r => r.ok ? r.json() : { data: [] }),
+                    fetch('/api/fornecedor-materiais' + (profile?.fornecedor_id ? `?fornecedor_id=${profile.fornecedor_id}` : ''), { headers: authHeaders }).then(r => r.ok ? r.json() : { data: [] }),
                 ]);
 
+                const cotacoesData = cotacoesRes.data || [];
+                const pedidosData = pedidosRes.data || [];
+                const materiaisData = materiaisRes.data || [];
+
                 setStats({
-                    activeConsultations: cotacoesResult.count || 0,
-                    sentProposals: (propostasResult as any).count || 0,
-                    registeredMaterials: (materiaisResult as any).count || 0,
-                    approvals: (aceitas as any).count || 0,
+                    activeConsultations: cotacoesData.length,
+                    sentProposals: pedidosData.length,
+                    registeredMaterials: materiaisData.length,
+                    approvals: pedidosData.filter((p: any) => p.status === 'confirmado' || p.status === 'entregue').length,
                 });
             } catch (error) {
                 console.error("Error fetching stats:", error);

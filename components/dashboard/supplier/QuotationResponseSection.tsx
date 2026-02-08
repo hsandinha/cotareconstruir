@@ -4,6 +4,16 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "../../../lib/useAuth";
 
+// Helper para obter headers com token de autenticação
+async function getAuthHeaders(): Promise<Record<string, string>> {
+    const { data: { session } } = await supabase.auth.getSession();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+    return headers;
+}
+
 interface SupplierQuotationResponseSectionProps {
     quotation: any;
     onBack: () => void;
@@ -16,21 +26,6 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
     const [validity, setValidity] = useState("");
     const [observations, setObservations] = useState("");
     const [loading, setLoading] = useState(false);
-    const [fornecedorId, setFornecedorId] = useState<string | null>(null);
-
-    // Buscar fornecedor_id real do usuário
-    useEffect(() => {
-        const loadFornecedor = async () => {
-            if (!user) return;
-            const { data } = await supabase
-                .from('fornecedores')
-                .select('id')
-                .eq('user_id', user.id)
-                .single();
-            if (data) setFornecedorId(data.id);
-        };
-        loadFornecedor();
-    }, [user]);
 
     const handleResponseChange = (itemId: string, field: 'preco' | 'disponibilidade', value: string) => {
         setResponses(prev => ({
@@ -43,8 +38,8 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
     };
 
     const handleSendProposal = async () => {
-        if (!user || !fornecedorId) {
-            alert("Fornecedor não encontrado. Verifique seu cadastro.");
+        if (!user) {
+            alert("Usuário não autenticado.");
             return;
         }
         setLoading(true);
@@ -68,38 +63,17 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
             const dataValidade = new Date();
             dataValidade.setDate(dataValidade.getDate() + (validityDays[validity] || 30));
 
-            // Inserir proposta com fornecedor_id real (referencia fornecedores table)
-            const { data: proposta, error: propostaError } = await supabase
-                .from('propostas')
-                .insert({
-                    cotacao_id: quotation.id,
-                    fornecedor_id: fornecedorId,
-                    status: 'enviada',
-                    valor_total: totalValue,
-                    prazo_entrega: null,
-                    condicoes_pagamento: paymentMethod,
-                    observacoes: observations,
-                    data_envio: new Date().toISOString(),
-                    data_validade: dataValidade.toISOString()
-                })
-                .select()
-                .single();
-
-            if (propostaError) throw propostaError;
-
-            // Inserir itens da proposta (cotacao_item_id são UUIDs reais)
+            // Build itens for API
             const propostaItens = (quotation.items || []).map((item: any) => {
                 const response = responses[item.id] || { preco: '0', disponibilidade: 'indisponivel' };
                 const precoUnitario = parseFloat(response.preco) || 0;
 
-                // Mapear disponibilidade para valores válidos do CHECK constraint
                 const disponibilidadeMap: { [key: string]: string } = {
                     'disponivel': 'disponivel',
                     'sob_consulta': 'sob_consulta',
                     'indisponivel': 'indisponivel'
                 };
 
-                // Mapear disponibilidade para prazo em dias
                 const prazoDiasMap: { [key: string]: number } = {
                     'disponivel': 0,
                     'sob_consulta': 5,
@@ -107,7 +81,6 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                 };
 
                 return {
-                    proposta_id: proposta.id,
                     cotacao_item_id: item.id,
                     preco_unitario: precoUnitario,
                     quantidade: item.quantidade,
@@ -118,30 +91,25 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                 };
             });
 
-            const { error: itensError } = await supabase
-                .from('proposta_itens')
-                .insert(propostaItens);
+            // Send via API route (bypasses RLS)
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/propostas', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    action: 'create',
+                    cotacao_id: quotation.id,
+                    valor_total: totalValue,
+                    condicoes_pagamento: paymentMethod,
+                    observacoes: observations,
+                    data_validade: dataValidade.toISOString(),
+                    itens: propostaItens
+                })
+            });
 
-            if (itensError) throw itensError;
-
-            // Atualizar status da cotação para respondida
-            await supabase
-                .from('cotacoes')
-                .update({ status: 'respondida' })
-                .eq('id', quotation.id);
-
-            // Criar notificação para o cliente
-            if (quotation.user_id) {
-                await supabase
-                    .from('notificacoes')
-                    .insert({
-                        user_id: quotation.user_id,
-                        titulo: 'Nova Proposta Recebida',
-                        mensagem: 'Um fornecedor enviou uma proposta para sua cotação.',
-                        tipo: 'success',
-                        lida: false,
-                        link: '/dashboard/cliente'
-                    });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Erro ao enviar proposta');
             }
 
             alert("Proposta enviada com sucesso!");

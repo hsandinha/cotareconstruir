@@ -15,6 +15,16 @@ import {
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "../../../lib/useAuth";
 
+// Helper para obter headers com token de autenticação
+async function getAuthHeaders(): Promise<Record<string, string>> {
+    const { data: { session } } = await supabase.auth.getSession();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+    return headers;
+}
+
 type SaleStatus = "pending" | "responded" | "negotiating" | "approved" | "completed" | "cancelled";
 
 type DaySchedule = {
@@ -83,7 +93,7 @@ interface SaleOrder {
 }
 
 export function SupplierSalesSection() {
-    const { user, loading: authLoading } = useAuth();
+    const { user, initialized } = useAuth();
     const [activeTab, setActiveTab] = useState<"all" | "pending" | "negotiating" | "approved">("all");
     const [selectedOrder, setSelectedOrder] = useState<SaleOrder | null>(null);
     const [isChatOpen, setIsChatOpen] = useState(false);
@@ -100,56 +110,66 @@ export function SupplierSalesSection() {
         discountPercent: number;
     } | null>(null);
 
-    // Function to fetch orders from Supabase
-    const fetchOrders = useCallback(async (fornecedorId: string) => {
+    // Function to fetch orders via API route (bypasses RLS)
+    const fetchOrders = useCallback(async () => {
+        setLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('pedidos')
-                .select('*, pedido_itens(*), cotacao:cotacoes(*, obra:obras(nome, bairro, cidade, estado))')
-                .eq('fornecedor_id', fornecedorId)
-                .order('created_at', { ascending: false });
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/pedidos', { headers });
 
-            if (error) {
-                console.error("Erro ao carregar vendas:", error);
+            if (!res.ok) {
+                console.error('Erro ao carregar vendas:', res.status);
                 setOrders([]);
-            } else {
-                // Map Supabase data to SaleOrder format
-                const mappedOrders: SaleOrder[] = (data || []).map((pedido) => {
-                    const obra = pedido.cotacao?.obra;
-                    const extraData = pedido.endereco_entrega || {};
-                    return {
-                        id: pedido.id,
-                        quotationId: pedido.cotacao_id || '',
-                        clientCode: pedido.user_id || '',
-                        clientName: extraData.clientDetails?.name || '',
-                        workName: obra?.nome || extraData.workName || 'Obra sem nome',
-                        location: {
-                            neighborhood: obra?.bairro || '',
-                            city: obra?.cidade || '',
-                            state: obra?.estado || '',
-                            fullAddress: [obra?.bairro, obra?.cidade, obra?.estado].filter(Boolean).join(', ')
-                        },
-                        deliverySchedule: extraData.deliverySchedule,
-                        items: (pedido.pedido_itens || []).map((item: any) => ({
-                            id: item.id,
-                            name: item.nome,
-                            quantity: item.quantidade,
-                            unit: item.unidade,
-                            unitPrice: item.preco_unitario,
-                            total: item.subtotal
-                        })),
-                        clientDetails: extraData.clientDetails,
-                        status: mapSupabaseStatus(pedido.status),
-                        createdAt: pedido.created_at,
-                        deadline: pedido.data_previsao_entrega,
-                        totalValue: pedido.valor_total,
-                        proposal: extraData.proposal
-                    };
-                });
-                setOrders(mappedOrders);
+                setLoading(false);
+                return;
             }
+
+            const json = await res.json();
+            const data = json.data || [];
+
+            // Map API data to SaleOrder format
+            const mappedOrders: SaleOrder[] = data.map((pedido: any) => {
+                const obra = pedido._obra;
+                const cliente = pedido._cliente;
+                const extraData = pedido.endereco_entrega || {};
+                return {
+                    id: pedido.id,
+                    quotationId: pedido.cotacao_id || '',
+                    clientCode: cliente?.nome || cliente?.email || pedido.user_id || '',
+                    clientName: cliente?.nome || extraData.clientDetails?.name || '',
+                    workName: obra?.nome || extraData.workName || 'Obra sem nome',
+                    location: {
+                        neighborhood: obra?.bairro || '',
+                        city: obra?.cidade || '',
+                        state: obra?.estado || '',
+                        fullAddress: [obra?.bairro, obra?.cidade, obra?.estado].filter(Boolean).join(', ')
+                    },
+                    deliverySchedule: extraData.deliverySchedule,
+                    items: (pedido.pedido_itens || []).map((item: any) => ({
+                        id: item.id,
+                        name: item.nome,
+                        quantity: item.quantidade,
+                        unit: item.unidade,
+                        unitPrice: item.preco_unitario,
+                        total: item.subtotal
+                    })),
+                    clientDetails: extraData.clientDetails || (cliente ? {
+                        name: cliente.nome || '',
+                        document: '',
+                        email: cliente.email || '',
+                        phone: '',
+                        address: obra ? [obra.endereco, obra.bairro, obra.cidade, obra.estado].filter(Boolean).join(', ') : ''
+                    } : undefined),
+                    status: mapSupabaseStatus(pedido.status),
+                    createdAt: pedido.created_at,
+                    deadline: pedido.data_previsao_entrega,
+                    totalValue: pedido.valor_total,
+                    proposal: extraData.proposal
+                };
+            });
+            setOrders(mappedOrders);
         } catch (err) {
-            console.error("Erro ao carregar vendas:", err);
+            console.error('Erro ao carregar vendas:', err);
             setOrders([]);
         } finally {
             setLoading(false);
@@ -183,7 +203,7 @@ export function SupplierSalesSection() {
     };
 
     useEffect(() => {
-        if (authLoading) return;
+        if (!initialized) return;
 
         if (!user) {
             setOrders([]);
@@ -191,45 +211,25 @@ export function SupplierSalesSection() {
             return;
         }
 
-        // Buscar fornecedor_id real do usuário
-        const initFornecedor = async () => {
-            const { data: fornecedorData } = await supabase
-                .from('fornecedores')
-                .select('id')
-                .eq('user_id', user.id)
-                .single();
+        // Initial fetch via API route (handles fornecedor_id lookup server-side)
+        fetchOrders();
 
-            if (!fornecedorData) {
-                setOrders([]);
-                setLoading(false);
-                return;
-            }
+        // Set up realtime subscription for pedidos changes
+        const channel = supabase
+            .channel('orders-changes')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'pedidos',
+            }, () => {
+                fetchOrders();
+            })
+            .subscribe();
 
-            const fornecedorId = fornecedorData.id;
-
-            // Initial fetch
-            fetchOrders(fornecedorId);
-
-            // Set up realtime subscription
-            const channel = supabase
-                .channel('orders-changes')
-                .on('postgres_changes', {
-                    event: '*',
-                    schema: 'public',
-                    table: 'pedidos',
-                    filter: `fornecedor_id=eq.${fornecedorId}`
-                }, () => {
-                    fetchOrders(fornecedorId);
-                })
-                .subscribe();
-
-            return () => {
-                channel.unsubscribe();
-            };
+        return () => {
+            channel.unsubscribe();
         };
-
-        initFornecedor();
-    }, [user, authLoading, fetchOrders]);
+    }, [user, initialized, fetchOrders]);
 
     const filteredOrders = orders.filter(order => {
         const matchesTab = activeTab === "all" || order.status === activeTab;
@@ -243,21 +243,27 @@ export function SupplierSalesSection() {
     const handleStatusUpdate = async (orderId: string, newStatus: SaleStatus) => {
         try {
             const supabaseStatus = mapToSupabaseStatus(newStatus);
-            const { error } = await supabase
-                .from('pedidos')
-                .update({
-                    status: supabaseStatus,
-                    updated_at: new Date().toISOString(),
-                    ...(newStatus === 'approved' && { data_confirmacao: new Date().toISOString() })
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/pedidos', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    action: 'update_status',
+                    pedido_id: orderId,
+                    status: supabaseStatus
                 })
-                .eq('id', orderId);
+            });
 
-            if (error) {
-                throw error;
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Erro ao atualizar');
             }
+
+            // Refresh orders
+            fetchOrders();
         } catch (error) {
-            console.error("Error updating status:", error);
-            alert("Erro ao atualizar status.");
+            console.error('Error updating status:', error);
+            alert('Erro ao atualizar status.');
         }
     };
 
