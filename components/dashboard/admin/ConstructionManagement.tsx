@@ -537,7 +537,7 @@ export default function ConstructionManagement() {
             const currentList = [...filteredServicos];
             const draggedIndex = currentList.findIndex(s => s.id === data.id);
             const targetIndex = currentList.findIndex(s => s.id === targetId);
-            
+
             if (draggedIndex === -1 || targetIndex === -1) return;
 
             const newServicos = [...currentList];
@@ -545,7 +545,7 @@ export default function ConstructionManagement() {
             newServicos.splice(targetIndex, 0, removed);
 
             const updatedServicos = newServicos.map((s, idx) => ({ ...s, ordem: idx + 1 }));
-            
+
             setServicos(updatedServicos);
 
             try {
@@ -829,7 +829,7 @@ export default function ConstructionManagement() {
 
                         return (
                             <div key={fase.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                                <div 
+                                <div
                                     className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
                                     onClick={() => setExpandedPhases(prev => ({ ...prev, [fase.id]: !prev[fase.id] }))}
                                 >
@@ -846,7 +846,7 @@ export default function ConstructionManagement() {
                                         </span>
                                     </div>
                                 </div>
-                                
+
                                 {isExpanded && (
                                     <div className="p-2 space-y-1 animate-in slide-in-from-top-1 duration-200">
                                         {phaseServices.length > 0 ? (

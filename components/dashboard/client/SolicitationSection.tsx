@@ -58,6 +58,7 @@ interface CartItem {
     categoria: string;
     quantidade: number;
     unidade: string;
+    fornecedor?: string;
     observacao: string;
     faseNome?: string;
     servicoNome?: string;
@@ -108,6 +109,7 @@ export function ClientSolicitationSection() {
         categoria: "",
         quantidade: 1,
         unidade: "unid",
+        fornecedor: "",
         observacao: "",
     });
 
@@ -347,6 +349,7 @@ export function ClientSolicitationSection() {
             ...prev,
             descricao: "",
             quantidade: 1,
+            fornecedor: "",
             observacao: "",
         }));
         setShowAddForm(false);
@@ -486,17 +489,17 @@ export function ClientSolicitationSection() {
                                     (s.num === 3 && items.length === 0)
                                 }
                                 className={`flex items-center gap-2 flex-1 rounded-xl px-4 py-3 transition-all ${step === s.num
-                                        ? 'bg-blue-600 text-white shadow-lg'
-                                        : step > s.num
-                                            ? 'bg-emerald-100 text-emerald-700'
-                                            : 'bg-slate-100 text-slate-500'
+                                    ? 'bg-blue-600 text-white shadow-lg'
+                                    : step > s.num
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : 'bg-slate-100 text-slate-500'
                                     } disabled:cursor-not-allowed disabled:opacity-50`}
                             >
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${step === s.num
-                                        ? 'bg-white/20 text-white'
-                                        : step > s.num
-                                            ? 'bg-emerald-500 text-white'
-                                            : 'bg-slate-200 text-slate-500'
+                                    ? 'bg-white/20 text-white'
+                                    : step > s.num
+                                        ? 'bg-emerald-500 text-white'
+                                        : 'bg-slate-200 text-slate-500'
                                     }`}>
                                     {step > s.num ? <Check className="w-4 h-4" /> : s.num}
                                 </div>
@@ -537,13 +540,13 @@ export function ClientSolicitationSection() {
                                         setStep(2);
                                     }}
                                     className={`group relative flex items-center gap-4 rounded-xl border-2 p-4 text-left transition-all hover:border-blue-300 hover:bg-blue-50/50 ${selectedObraId === obra.id
-                                            ? 'border-blue-500 bg-blue-50'
-                                            : 'border-slate-200 bg-white'
+                                        ? 'border-blue-500 bg-blue-50'
+                                        : 'border-slate-200 bg-white'
                                         }`}
                                 >
                                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${selectedObraId === obra.id
-                                            ? 'bg-blue-500 text-white'
-                                            : 'bg-slate-100 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600'
+                                        ? 'bg-blue-500 text-white'
+                                        : 'bg-slate-100 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600'
                                         }`}>
                                         <Building2 className="w-6 h-6" />
                                     </div>
@@ -557,8 +560,8 @@ export function ClientSolicitationSection() {
                                         <div className="flex items-center gap-2 mt-1">
                                             {obra.status && (
                                                 <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full ${obra.status === 'ativa'
-                                                        ? 'bg-emerald-100 text-emerald-700'
-                                                        : 'bg-slate-100 text-slate-600'
+                                                    ? 'bg-emerald-100 text-emerald-700'
+                                                    : 'bg-slate-100 text-slate-600'
                                                     }`}>
                                                     {obra.status}
                                                 </span>
@@ -610,8 +613,8 @@ export function ClientSolicitationSection() {
                                 <button
                                     onClick={() => setQuotationMode("phases")}
                                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${quotationMode === "phases"
-                                            ? "bg-blue-600 text-white shadow-md"
-                                            : "bg-white text-slate-600 hover:bg-slate-50"
+                                        ? "bg-blue-600 text-white shadow-md"
+                                        : "bg-white text-slate-600 hover:bg-slate-50"
                                         }`}
                                 >
                                     <Layers className="w-4 h-4" />
@@ -620,8 +623,8 @@ export function ClientSolicitationSection() {
                                 <button
                                     onClick={() => setQuotationMode("search")}
                                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${quotationMode === "search"
-                                            ? "bg-blue-600 text-white shadow-md"
-                                            : "bg-white text-slate-600 hover:bg-slate-50"
+                                        ? "bg-blue-600 text-white shadow-md"
+                                        : "bg-white text-slate-600 hover:bg-slate-50"
                                         }`}
                                 >
                                     <Search className="w-4 h-4" />
@@ -891,6 +894,7 @@ export function ClientSolicitationSection() {
                                                                             <p className="text-sm font-medium text-slate-900">{item.descricao}</p>
                                                                             <p className="text-xs text-slate-500">
                                                                                 {item.quantidade} {item.unidade}
+                                                                                {item.fornecedor && ` • ${item.fornecedor}`}
                                                                                 {item.observacao && ` • ${item.observacao}`}
                                                                             </p>
                                                                         </div>
@@ -1064,6 +1068,12 @@ export function ClientSolicitationSection() {
                                                             {item.servicoNome && ` → ${item.servicoNome}`}
                                                         </p>
                                                     )}
+                                                    {item.fornecedor && (
+                                                        <p className="text-xs text-blue-600">
+                                                            <Building2 className="w-3 h-3 inline mr-1" />
+                                                            {item.fornecedor}
+                                                        </p>
+                                                    )}
                                                     {item.observacao && (
                                                         <p className="text-xs text-slate-400">{item.observacao}</p>
                                                     )}
@@ -1192,6 +1202,20 @@ export function ClientSolicitationSection() {
                                 </div>
                             </div>
 
+                            {/* Fornecedor / Fabricante Preferencial */}
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                                    <Building2 className="w-3 h-3 inline mr-1" />
+                                    Fornecedor / Fabricante (opcional)
+                                </label>
+                                <input
+                                    value={form.fornecedor}
+                                    onChange={e => setForm({ ...form, fornecedor: e.target.value })}
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                    placeholder="Ex: Votorantim, Quartzolit, Tigre..."
+                                />
+                            </div>
+
                             {/* Observação */}
                             <div>
                                 <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
@@ -1202,7 +1226,7 @@ export function ClientSolicitationSection() {
                                     value={form.observacao}
                                     onChange={e => setForm({ ...form, observacao: e.target.value })}
                                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
-                                    placeholder="Ex: Preferência por marca X, entrega urgente..."
+                                    placeholder="Ex: Entrega urgente, especificações técnicas..."
                                     rows={2}
                                 />
                             </div>

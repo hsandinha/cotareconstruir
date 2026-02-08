@@ -407,22 +407,49 @@ export async function deleteGrupoInsumo(id: string): Promise<void> {
 
 export async function getMateriais(): Promise<Material[]> {
     try {
-        // Busca materiais
-        const { data: materiais, error } = await supabase
-            .from(TABLES.MATERIAIS)
-            .select('*');
+        // Busca todos os materiais com paginação (Supabase limita a 1000 por request)
+        let allMateriais: any[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+            const { data, error } = await supabase
+                .from(TABLES.MATERIAIS)
+                .select('*')
+                .range(from, from + pageSize - 1);
+            if (error) throw error;
+            if (!data || data.length === 0) break;
+            allMateriais = allMateriais.concat(data);
+            if (data.length < pageSize) break;
+            from += pageSize;
+        }
 
-        if (error) throw error;
+        // Busca todos os relacionamentos de grupos com paginação
+        let allMaterialGrupos: any[] = [];
+        from = 0;
+        while (true) {
+            const { data, error } = await supabase
+                .from(TABLES.MATERIAL_GRUPO)
+                .select('material_id, grupo_id')
+                .range(from, from + pageSize - 1);
+            if (error) throw error;
+            if (!data || data.length === 0) break;
+            allMaterialGrupos = allMaterialGrupos.concat(data);
+            if (data.length < pageSize) break;
+            from += pageSize;
+        }
 
-        // Busca relacionamentos de grupos
-        const { data: materialGrupos } = await supabase
-            .from(TABLES.MATERIAL_GRUPO)
-            .select('material_id, grupo_id');
+        // Indexa os grupos por material_id para performance
+        const gruposByMaterialId = new Map<string, string[]>();
+        for (const mg of allMaterialGrupos) {
+            const list = gruposByMaterialId.get(mg.material_id) || [];
+            list.push(mg.grupo_id);
+            gruposByMaterialId.set(mg.material_id, list);
+        }
 
         // Monta os objetos com os arrays de IDs
-        return materiais.map(material => ({
+        return allMateriais.map(material => ({
             ...material,
-            gruposInsumoIds: materialGrupos?.filter(mg => mg.material_id === material.id).map(mg => mg.grupo_id) || [],
+            gruposInsumoIds: gruposByMaterialId.get(material.id) || [],
         })) as Material[];
     } catch (error) {
         console.error('Erro ao buscar materiais:', error);
