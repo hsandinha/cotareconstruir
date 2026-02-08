@@ -180,127 +180,108 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
 
             {/* Informações de Entrega da Obra */}
             {quotation.obraHorarioEntrega && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-                    <h4 className="text-base font-medium text-blue-900 mb-4 flex items-center gap-2">
-                        <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                        <svg className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
                         </svg>
-                        Informações de Entrega da Obra
-                    </h4>
-
-                    <div>
-                        {/* Dias e Horários de Entrega */}
-                        <div>
-                            <span className="text-sm font-medium text-blue-800">Dias e Horários Disponíveis para Entrega:</span>
-                            <div className="mt-1 space-y-1">
+                        <div className="flex-1 min-w-0">
+                            <h4 className="text-sm font-semibold text-blue-900 mb-2">Horários de Entrega na Obra</h4>
+                            <div className="flex flex-wrap gap-2">
                                 {Object.entries(quotation.obraHorarioEntrega).map(([day, schedule]: [string, any]) => {
                                     if (!schedule?.enabled) return null;
                                     return (
-                                        <div key={day} className="flex items-center gap-2 text-sm text-blue-900">
-                                            <svg className="h-4 w-4 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                                            </svg>
-                                            <span className="font-medium min-w-[110px]">{dayLabels[day] || day}:</span>
-                                            <span>{schedule.startTime} às {schedule.endTime}</span>
-                                        </div>
+                                        <span key={day} className="inline-flex items-center gap-1.5 bg-white/80 border border-blue-200 rounded-full px-3 py-1 text-xs font-medium text-blue-800">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0"></span>
+                                            {dayLabels[day] || day} {schedule.startTime}–{schedule.endTime}
+                                        </span>
                                     );
                                 })}
                                 {Object.values(quotation.obraHorarioEntrega).every((s: any) => !s?.enabled) && (
-                                    <p className="text-sm text-blue-700 italic">Nenhum horário específico definido</p>
+                                    <span className="text-xs text-blue-700 italic">Nenhum horário específico definido</span>
                                 )}
                             </div>
+                            {quotation.obraRestricoesEntrega && (
+                                <p className="mt-2 text-xs text-blue-700"><strong>Restrição:</strong> {quotation.obraRestricoesEntrega}</p>
+                            )}
+                            <p className="mt-2 text-xs text-blue-500">
+                                ⚠️ Considere esses horários ao calcular o frete.
+                            </p>
                         </div>
-                    </div>
-
-                    {/* Restrições de Entrega */}
-                    {quotation.obraRestricoesEntrega && (
-                        <div className="mt-4 pt-4 border-t border-blue-200">
-                            <span className="text-sm font-medium text-blue-800">Restrições de Entrega:</span>
-                            <p className="mt-1 text-sm text-blue-900">{quotation.obraRestricoesEntrega}</p>
-                        </div>
-                    )}
-
-                    <div className="mt-4 pt-4 border-t border-blue-200">
-                        <p className="text-xs text-blue-600 italic">
-                            ⚠️ Os dias e horários acima são os definidos pelo cliente para recebimento de materiais na obra. Considere essas informações ao calcular o valor do frete.
-                        </p>
                     </div>
                 </div>
             )}
 
             {/* Alerta de segurança */}
-            <div className="bg-red-50 border border-red-200 rounded-md p-4">
-                <div className="flex">
-                    <div className="flex-shrink-0">
-                        <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                    </div>
-                    <div className="ml-3">
-                        <h4 className="text-sm font-medium text-red-800">Atenção - Monitoramento Ativo</h4>
-                        <p className="mt-1 text-sm text-red-700">
-                            <strong>Proibido fornecer contatos diretos!</strong> Tentativas de passar número de telefone, e-mail ou qualquer forma de contato direto serão detectadas pelo sistema e podem resultar em penalidades ou exclusão do cadastro.
-                        </p>
-                    </div>
-                </div>
+            <div className="bg-red-50 border border-red-200 rounded-md px-4 py-3 flex items-center gap-3">
+                <svg className="h-4 w-4 text-red-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <p className="text-xs text-red-700">
+                    <strong className="text-red-800">Monitoramento Ativo:</strong> Proibido fornecer contatos diretos (telefone, e-mail). Violações resultam em penalidades ou exclusão.
+                </p>
             </div>
 
             {/* Tabela de cotação */}
             <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200">
-                    <h4 className="text-base font-medium text-gray-900">Itens para Cotação</h4>
-                    <p className="text-sm text-gray-600">Preencha apenas sua coluna. Você não tem acesso às propostas dos concorrentes.</p>
+                <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                    <div>
+                        <h4 className="text-sm font-semibold text-gray-900">Itens para Cotação</h4>
+                        <p className="text-xs text-gray-500 mt-0.5">Preencha preço e disponibilidade para cada item</p>
+                    </div>
+                    <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">{quotation.items?.length || 0} {quotation.items?.length === 1 ? 'item' : 'itens'}</span>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unid.</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qtd.</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Preço Unitário</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Disponibilidade</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
+                                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Material</th>
+                                <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Unid.</th>
+                                <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-14">Qtd.</th>
+                                <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Preço Unit.</th>
+                                <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Status</th>
+                                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Subtotal</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
+                        <tbody className="bg-white divide-y divide-gray-100">
                             {quotation.items && quotation.items.map((item: any) => {
                                 const response = responses[item.id] || { preco: '', disponibilidade: '' };
                                 const subtotal = response.preco ? (parseFloat(response.preco) * item.quantidade).toFixed(2) : '0.00';
+                                const dispColor = response.disponibilidade === 'disponivel' ? 'text-green-700 bg-green-50 border-green-200' : response.disponibilidade === 'sob_consulta' ? 'text-amber-700 bg-amber-50 border-amber-200' : response.disponibilidade === 'indisponivel' ? 'text-red-700 bg-red-50 border-red-200' : 'text-gray-600 bg-white border-gray-300';
 
                                 return (
-                                    <tr key={item.id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 text-sm text-gray-900">
-                                            <div>{item.descricao}</div>
+                                    <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
+                                        <td className="px-4 py-3 text-sm text-gray-900">
+                                            <div className="font-medium">{item.descricao}</div>
                                             {item.observacao && (
-                                                <div className="text-xs text-gray-500 mt-1">{item.observacao}</div>
+                                                <div className="text-xs text-gray-400 mt-0.5">{item.observacao}</div>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.unidade}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">{item.quantidade}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                        <td className="px-3 py-3 whitespace-nowrap text-center text-xs text-gray-500">{item.unidade}</td>
+                                        <td className="px-3 py-3 whitespace-nowrap text-center text-sm text-gray-900 font-semibold">{item.quantidade}</td>
+                                        <td className="px-3 py-3 whitespace-nowrap text-center">
                                             <input
                                                 type="number"
                                                 step="0.01"
                                                 placeholder="0,00"
-                                                className="w-24 px-2 py-1 text-sm text-gray-900 placeholder:text-gray-500 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-24 px-2 py-1.5 text-sm text-center text-gray-900 placeholder:text-gray-400 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                                 value={response.preco}
                                                 onChange={(e) => handleResponseChange(item.id, 'preco', e.target.value)}
                                             />
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                        <td className="px-3 py-3 whitespace-nowrap text-center">
                                             <select
-                                                className="text-sm text-gray-900 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                className={`text-xs font-medium border rounded-md px-1.5 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer ${dispColor}`}
                                                 value={response.disponibilidade}
                                                 onChange={(e) => handleResponseChange(item.id, 'disponibilidade', e.target.value)}
                                             >
-                                                <option value="">Selecionar</option>
-                                                <option value="disponivel">Disponível</option>
-                                                <option value="sob_consulta">Sob Consulta</option>
-                                                <option value="indisponivel">Indisponível</option>
+                                                <option value="">—</option>
+                                                <option value="disponivel">✓ Sim</option>
+                                                <option value="sob_consulta">◷ Consulta</option>
+                                                <option value="indisponivel">✕ Não</option>
                                             </select>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                        <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-semibold text-gray-900">
                                             R$ {subtotal}
                                         </td>
                                     </tr>
@@ -309,8 +290,8 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                         </tbody>
                         <tfoot className="bg-gray-50">
                             <tr>
-                                <td colSpan={5} className="px-6 py-3 text-right text-sm font-medium text-gray-900">Total Geral:</td>
-                                <td className="px-6 py-3 text-sm font-bold text-gray-900">
+                                <td colSpan={5} className="px-4 py-3 text-right text-sm font-medium text-gray-700">Total Materiais:</td>
+                                <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">
                                     R$ {quotation.items ? quotation.items.reduce((total: number, item: any) => {
                                         const response = responses[item.id];
                                         if (response?.preco) {
@@ -325,17 +306,16 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                 </div>
             </div>
 
-            {/* Frete */}
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <h4 className="text-base font-medium text-gray-900 mb-4 flex items-center gap-2">
-                    <svg className="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
-                    </svg>
-                    Frete
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Frete e Resumo */}
+            <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Valor do Frete (R$)</label>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
+                            <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
+                            </svg>
+                            Valor do Frete (R$)
+                        </label>
                         <input
                             type="number"
                             step="0.01"
@@ -343,32 +323,37 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                             placeholder="0,00"
                             value={freightValue}
                             onChange={(e) => setFreightValue(e.target.value)}
-                            className="w-full px-3 py-2 text-gray-900 placeholder:text-gray-500 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 text-gray-900 placeholder:text-gray-400 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
-                        <p className="mt-1 text-xs text-gray-500">Informe 0 para frete grátis (CIF)</p>
+                        <p className="mt-1 text-xs text-gray-400">Informe 0 para frete grátis (CIF)</p>
                     </div>
-                    <div className="flex items-end">
-                        <div className="bg-gray-50 rounded-md p-3 w-full">
-                            <div className="text-xs text-gray-500 mb-1">Resumo de Valores</div>
-                            <div className="flex justify-between text-sm">
-                                <span className="text-gray-600">Materiais:</span>
-                                <span className="font-medium">R$ {quotation.items ? quotation.items.reduce((total: number, item: any) => {
-                                    const response = responses[item.id];
-                                    if (response?.preco) return total + (parseFloat(response.preco) * item.quantidade);
-                                    return total;
-                                }, 0).toFixed(2) : '0.00'}</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                                <span className="text-gray-600">Frete:</span>
-                                <span className="font-medium">R$ {freightValue ? parseFloat(freightValue).toFixed(2) : '0.00'}</span>
-                            </div>
-                            <div className="flex justify-between text-sm font-bold border-t border-gray-200 mt-2 pt-2">
-                                <span className="text-gray-900">Total Geral:</span>
-                                <span className="text-green-700">R$ {((quotation.items ? quotation.items.reduce((total: number, item: any) => {
-                                    const response = responses[item.id];
-                                    if (response?.preco) return total + (parseFloat(response.preco) * item.quantidade);
-                                    return total;
-                                }, 0) : 0) + (parseFloat(freightValue) || 0)).toFixed(2)}</span>
+                    <div className="md:col-span-2">
+                        <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-3 border border-gray-200">
+                            <div className="flex items-center justify-between gap-4 flex-wrap">
+                                <div className="flex items-center gap-6">
+                                    <div className="text-center">
+                                        <div className="text-xs text-gray-500">Materiais</div>
+                                        <div className="text-sm font-semibold text-gray-800">R$ {quotation.items ? quotation.items.reduce((total: number, item: any) => {
+                                            const response = responses[item.id];
+                                            if (response?.preco) return total + (parseFloat(response.preco) * item.quantidade);
+                                            return total;
+                                        }, 0).toFixed(2) : '0.00'}</div>
+                                    </div>
+                                    <div className="text-gray-300 text-lg">+</div>
+                                    <div className="text-center">
+                                        <div className="text-xs text-gray-500">Frete</div>
+                                        <div className="text-sm font-semibold text-gray-800">R$ {freightValue ? parseFloat(freightValue).toFixed(2) : '0.00'}</div>
+                                    </div>
+                                    <div className="text-gray-300 text-lg">=</div>
+                                </div>
+                                <div className="text-right bg-white rounded-md px-4 py-2 border border-green-200 shadow-sm">
+                                    <div className="text-xs text-gray-500">Total Geral</div>
+                                    <div className="text-lg font-bold text-green-700">R$ {((quotation.items ? quotation.items.reduce((total: number, item: any) => {
+                                        const response = responses[item.id];
+                                        if (response?.preco) return total + (parseFloat(response.preco) * item.quantidade);
+                                        return total;
+                                    }, 0) : 0) + (parseFloat(freightValue) || 0)).toFixed(2)}</div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -376,15 +361,15 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
             </div>
 
             {/* Condições comerciais */}
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <h4 className="text-base font-medium text-gray-900 mb-4">Condições Comerciais</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-gray-900 mb-3">Condições Comerciais</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Forma de Pagamento</label>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Forma de Pagamento</label>
                         <select
                             value={paymentMethod}
                             onChange={(e) => setPaymentMethod(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
                             <option value="">Selecione</option>
                             <option value="vista">À vista</option>
@@ -395,11 +380,11 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                         </select>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Validade da Proposta</label>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Validade da Proposta</label>
                         <select
                             value={validity}
                             onChange={(e) => setValidity(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
                             <option value="">Selecione</option>
                             <option value="7-dias">7 dias</option>
@@ -409,32 +394,42 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                         </select>
                     </div>
                     <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Observações Adicionais</label>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Observações</label>
                         <textarea
-                            rows={3}
+                            rows={2}
                             value={observations}
                             onChange={(e) => setObservations(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="Insira informações adicionais sobre sua proposta..."
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Informações adicionais sobre sua proposta..."
                         />
                     </div>
                 </div>
             </div>
 
             {/* Ações */}
-            <div className="flex justify-end space-x-3">
+            <div className="flex justify-end items-center gap-3 pt-2">
                 <button
                     onClick={onBack}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                    className="px-5 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                 >
                     Cancelar
                 </button>
                 <button
                     onClick={handleSendProposal}
                     disabled={loading}
-                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 disabled:opacity-50"
+                    className="px-6 py-2.5 text-sm font-semibold text-white bg-green-600 border border-transparent rounded-lg hover:bg-green-700 disabled:opacity-50 shadow-sm transition-colors flex items-center gap-2"
                 >
-                    {loading ? "Enviando..." : "Enviar Proposta"}
+                    {loading ? (
+                        <>
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            Enviando...
+                        </>
+                    ) : (
+                        <>
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" /></svg>
+                            Enviar Proposta
+                        </>
+                    )}
                 </button>
             </div>
         </div>

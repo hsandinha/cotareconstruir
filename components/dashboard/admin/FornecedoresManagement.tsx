@@ -1,10 +1,20 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
-import { Search, Edit2, Trash2, X, Save, Package, CreditCard, Tags, UserPlus, UserCheck, RefreshCw, Mail, Plus } from 'lucide-react';
+import { supabase } from '@/lib/supabaseAuth';
+import { Search, Edit2, Trash2, X, Save, Package, CreditCard, Tags, UserPlus, UserCheck, RefreshCw, Mail, Plus, Eye, MapPin, Phone, Building2, FileText, Calendar, Globe, Hash } from 'lucide-react';
 import { createUserAccount, resetUserPassword } from '@/lib/userAccountService';
 import { useToast } from '@/components/ToastProvider';
+
+// Helper para obter headers com token
+async function getAuthHeaders(): Promise<Record<string, string>> {
+    const { data: { session } } = await supabase.auth.getSession();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+    return headers;
+}
 
 interface GrupoInsumo {
     id: string;
@@ -47,7 +57,9 @@ export default function FornecedoresManagement() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isGruposModalOpen, setIsGruposModalOpen] = useState(false);
     const [isCreateAccountModalOpen, setIsCreateAccountModalOpen] = useState(false);
+    const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
     const [editingFornecedor, setEditingFornecedor] = useState<Fornecedor | null>(null);
+    const [selectedFornecedorDetail, setSelectedFornecedorDetail] = useState<Fornecedor | null>(null);
     const [selectedFornecedorGrupos, setSelectedFornecedorGrupos] = useState<Fornecedor | null>(null);
     const [selectedFornecedorForAccount, setSelectedFornecedorForAccount] = useState<Fornecedor | null>(null);
     const [creatingAccount, setCreatingAccount] = useState(false);
@@ -139,25 +151,20 @@ export default function FornecedoresManagement() {
         try {
             setLoading(true);
 
-            // Buscar fornecedores, grupos e usuários do Supabase
-            const [fornecedoresRes, gruposRes, usersRes, fornecedorGruposRes] = await Promise.all([
-                supabase.from('fornecedores').select('*'),
-                supabase.from('grupos_insumo').select('*'),
-                supabase.from('users').select('id, fornecedor_id'),
-                supabase.from('fornecedor_grupo').select('fornecedor_id, grupo_id')
-            ]);
-
-            if (fornecedoresRes.error) throw fornecedoresRes.error;
-            if (gruposRes.error) throw gruposRes.error;
-            if (usersRes.error) throw usersRes.error;
-            if (fornecedorGruposRes.error) throw fornecedorGruposRes.error;
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/admin/fornecedores', { headers });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Erro ao carregar');
+            }
+            const { fornecedores: fornecedoresRaw, grupos: gruposRaw, users: usersRaw, fornecedorGrupos: fornecedorGruposRaw } = await res.json();
 
             // Mapear dados do Supabase para o formato do componente
-            const fornecedoresData: Fornecedor[] = (fornecedoresRes.data || []).map(f => {
+            const fornecedoresData: Fornecedor[] = (fornecedoresRaw || []).map((f: any) => {
                 // Buscar grupos associados a este fornecedor
-                const grupoIds = (fornecedorGruposRes.data || [])
-                    .filter(fg => fg.fornecedor_id === f.id)
-                    .map(fg => fg.grupo_id);
+                const grupoIds = (fornecedorGruposRaw || [])
+                    .filter((fg: any) => fg.fornecedor_id === f.id)
+                    .map((fg: any) => fg.grupo_id);
 
                 return {
                     id: f.id,
@@ -185,14 +192,14 @@ export default function FornecedoresManagement() {
                 };
             });
 
-            const gruposData: GrupoInsumo[] = (gruposRes.data || []).map(g => ({
+            const gruposData: GrupoInsumo[] = (gruposRaw || []).map((g: any) => ({
                 id: g.id,
                 nome: g.nome || ''
             }));
 
             // Criar mapa de fornecedorId -> userId para verificar quem tem conta
             const fornecedorUserMap = new Map<string, string>();
-            (usersRes.data || []).forEach(user => {
+            (usersRaw || []).forEach((user: any) => {
                 if (user.fornecedor_id) {
                     fornecedorUserMap.set(user.fornecedor_id, user.id);
                 }
@@ -227,6 +234,7 @@ export default function FornecedoresManagement() {
 
         try {
             setSaving(true);
+            const headers = await getAuthHeaders();
 
             // Preparar dados para o Supabase (snake_case)
             const supabaseData = {
@@ -245,34 +253,32 @@ export default function FornecedoresManagement() {
                 inscricao_estadual: formData.inscricaoEstadual || '',
                 cartao_credito: formData.cartaoCredito || false,
                 ativo: formData.ativo ?? true,
-                updated_at: new Date().toISOString(),
             };
 
             if (editingFornecedor) {
-                // Editando fornecedor existente
-                const { error } = await supabase
-                    .from('fornecedores')
-                    .update(supabaseData)
-                    .eq('id', editingFornecedor.id);
-
-                if (error) throw error;
+                // Editando fornecedor existente via API
+                const res = await fetch('/api/admin/fornecedores', {
+                    method: 'PUT',
+                    headers,
+                    body: JSON.stringify({ id: editingFornecedor.id, ...supabaseData })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Erro ao atualizar');
+                }
                 showToast('success', 'Fornecedor atualizado com sucesso!');
             } else {
-                // Criando novo fornecedor
-                const codigo = `F${Date.now().toString().slice(-6)}`;
-                const { data: newFornecedor, error } = await supabase
-                    .from('fornecedores')
-                    .insert({
-                        ...supabaseData,
-                        codigo,
-                        codigo_grupo: '',
-                        grupo_insumos: '',
-                        created_at: new Date().toISOString(),
-                    })
-                    .select()
-                    .single();
-
-                if (error) throw error;
+                // Criando novo fornecedor via API
+                const res = await fetch('/api/admin/fornecedores', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ action: 'create', data: supabaseData })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Erro ao criar');
+                }
+                const { fornecedor: newFornecedor } = await res.json();
 
                 // Se marcou para criar acesso junto
                 if (createAccessOnSave && formData.email && newFornecedor) {
@@ -311,19 +317,15 @@ export default function FornecedoresManagement() {
         if (!confirm('Deseja realmente excluir este fornecedor?')) return;
 
         try {
-            // Primeiro remover os grupos associados
-            await supabase
-                .from('fornecedor_grupo')
-                .delete()
-                .eq('fornecedor_id', id);
-
-            // Depois remover o fornecedor
-            const { error } = await supabase
-                .from('fornecedores')
-                .delete()
-                .eq('id', id);
-
-            if (error) throw error;
+            const headers = await getAuthHeaders();
+            const res = await fetch(`/api/admin/fornecedores?id=${id}`, {
+                method: 'DELETE',
+                headers
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Erro ao excluir');
+            }
             loadFornecedores();
         } catch (error) {
             console.error('Erro ao excluir fornecedor:', error);
@@ -380,22 +382,21 @@ export default function FornecedoresManagement() {
 
         try {
             setSaving(true);
+            const headers = await getAuthHeaders();
 
-            // Inserir na tabela de junção fornecedor_grupo
-            const { error } = await supabase
-                .from('fornecedor_grupo')
-                .insert({
+            const res = await fetch('/api/admin/fornecedores', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    action: 'addGrupo',
                     fornecedor_id: selectedFornecedorGrupos.id,
                     grupo_id: selectedGrupoToAdd
-                });
-
-            if (error) throw error;
-
-            // Atualizar timestamp do fornecedor
-            await supabase
-                .from('fornecedores')
-                .update({ updated_at: new Date().toISOString() })
-                .eq('id', selectedFornecedorGrupos.id);
+                })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Erro ao adicionar grupo');
+            }
 
             await loadFornecedores();
 
@@ -420,21 +421,21 @@ export default function FornecedoresManagement() {
 
         try {
             setSaving(true);
+            const headers = await getAuthHeaders();
 
-            // Remover da tabela de junção fornecedor_grupo
-            const { error } = await supabase
-                .from('fornecedor_grupo')
-                .delete()
-                .eq('fornecedor_id', selectedFornecedorGrupos.id)
-                .eq('grupo_id', grupoId);
-
-            if (error) throw error;
-
-            // Atualizar timestamp do fornecedor
-            await supabase
-                .from('fornecedores')
-                .update({ updated_at: new Date().toISOString() })
-                .eq('id', selectedFornecedorGrupos.id);
+            const res = await fetch('/api/admin/fornecedores', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    action: 'removeGrupo',
+                    fornecedor_id: selectedFornecedorGrupos.id,
+                    grupo_id: grupoId
+                })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Erro ao remover grupo');
+            }
 
             await loadFornecedores();
 
@@ -496,6 +497,23 @@ export default function FornecedoresManagement() {
         } catch (error: any) {
             showToast('error', error.message || 'Erro ao resetar senha');
         }
+    };
+
+    const openDetailModal = (fornecedor: Fornecedor) => {
+        setSelectedFornecedorDetail(fornecedor);
+        setIsDetailModalOpen(true);
+    };
+
+    const closeDetailModal = () => {
+        setIsDetailModalOpen(false);
+        setSelectedFornecedorDetail(null);
+    };
+
+    const formatDate = (dateStr: any) => {
+        if (!dateStr) return '—';
+        try {
+            return new Date(dateStr).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        } catch { return '—'; }
     };
 
     if (loading) {
@@ -573,10 +591,10 @@ export default function FornecedoresManagement() {
                             {filteredFornecedores.map((fornecedor) => (
                                 <tr key={fornecedor.id} className="hover:bg-slate-50 transition-colors">
                                     <td className="px-4 py-3">
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 cursor-pointer group" onClick={() => openDetailModal(fornecedor)}>
                                             <Package className="w-4 h-4 text-purple-600" />
                                             <div>
-                                                <div className="font-medium text-slate-900">{fornecedor.razaoSocial}</div>
+                                                <div className="font-medium text-slate-900 group-hover:text-purple-700 transition-colors">{fornecedor.razaoSocial}</div>
                                                 <div className="text-xs text-slate-500">{fornecedor.email}</div>
                                             </div>
                                         </div>
@@ -627,16 +645,25 @@ export default function FornecedoresManagement() {
                                         </span>
                                     </td>
                                     <td className="px-4 py-3">
-                                        <div className="flex items-center justify-end gap-2">
+                                        <div className="flex items-center justify-end gap-1">
+                                            <button
+                                                onClick={() => openDetailModal(fornecedor)}
+                                                className="p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700 rounded-lg transition-colors"
+                                                title="Ver detalhes"
+                                            >
+                                                <Eye className="w-4 h-4" />
+                                            </button>
                                             <button
                                                 onClick={() => openModal(fornecedor)}
                                                 className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                title="Editar"
                                             >
                                                 <Edit2 className="w-4 h-4" />
                                             </button>
                                             <button
                                                 onClick={() => handleDelete(fornecedor.id)}
                                                 className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                title="Excluir"
                                             >
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
@@ -1001,6 +1028,192 @@ export default function FornecedoresManagement() {
                     </div>
                 </div>
             )}
+
+            {/* Modal Detalhes do Fornecedor */}
+            {isDetailModalOpen && selectedFornecedorDetail && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                        {/* Header */}
+                        <div className="flex items-start justify-between p-6 border-b border-slate-200 bg-gradient-to-r from-purple-50 to-slate-50">
+                            <div className="flex items-start gap-4">
+                                <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0">
+                                    <Building2 className="w-6 h-6 text-purple-600" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-900">{selectedFornecedorDetail.razaoSocial}</h3>
+                                    <div className="flex items-center gap-3 mt-1">
+                                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${selectedFornecedorDetail.ativo ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-600'}`}>
+                                            {selectedFornecedorDetail.ativo ? 'Ativo' : 'Inativo'}
+                                        </span>
+                                        {selectedFornecedorDetail.hasUserAccount ? (
+                                            <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+                                                <UserCheck className="w-3 h-3" /> Com acesso
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                                                <UserPlus className="w-3 h-3" /> Sem acesso
+                                            </span>
+                                        )}
+                                        {selectedFornecedorDetail.cartaoCredito && (
+                                            <span className="inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
+                                                <CreditCard className="w-3 h-3" /> Cartão
+                                            </span>
+                                        )}
+                                        {selectedFornecedorDetail.codigo && (
+                                            <span className="text-xs text-slate-500">Cód: {selectedFornecedorDetail.codigo}</span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                            <button onClick={closeDetailModal} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                                <X className="w-5 h-5 text-slate-500" />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-6 overflow-y-auto space-y-5">
+                            {/* Documentos */}
+                            <div>
+                                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                    <FileText className="w-3.5 h-3.5" /> Documentos
+                                </h4>
+                                <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+                                    <DetailField label="CNPJ" value={selectedFornecedorDetail.cnpj} />
+                                    <DetailField label="Inscrição Estadual" value={selectedFornecedorDetail.inscricaoEstadual} />
+                                </div>
+                            </div>
+
+                            <hr className="border-slate-100" />
+
+                            {/* Contato */}
+                            <div>
+                                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                    <Phone className="w-3.5 h-3.5" /> Contato
+                                </h4>
+                                <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+                                    <DetailField label="Nome do Contato" value={selectedFornecedorDetail.contato} />
+                                    <DetailField label="Email" value={selectedFornecedorDetail.email} copyable />
+                                    <DetailField label="Telefone" value={selectedFornecedorDetail.fone} />
+                                    <DetailField label="WhatsApp" value={selectedFornecedorDetail.whatsapp} />
+                                </div>
+                            </div>
+
+                            <hr className="border-slate-100" />
+
+                            {/* Endereço */}
+                            <div>
+                                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                    <MapPin className="w-3.5 h-3.5" /> Endereço
+                                </h4>
+                                <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+                                    <DetailField label="CEP" value={selectedFornecedorDetail.cep} />
+                                    <DetailField label="Logradouro" value={selectedFornecedorDetail.endereco ? `${selectedFornecedorDetail.endereco}${selectedFornecedorDetail.numero ? `, ${selectedFornecedorDetail.numero}` : ''}` : ''} />
+                                    <DetailField label="Bairro" value={selectedFornecedorDetail.bairro} />
+                                    <DetailField label="Cidade / UF" value={selectedFornecedorDetail.cidade ? `${selectedFornecedorDetail.cidade} - ${selectedFornecedorDetail.estado}` : ''} />
+                                </div>
+                            </div>
+
+                            <hr className="border-slate-100" />
+
+                            {/* Grupos de Insumo */}
+                            <div>
+                                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                    <Tags className="w-3.5 h-3.5" /> Grupos de Insumo ({selectedFornecedorDetail.grupoInsumoIds?.length || 0})
+                                </h4>
+                                {selectedFornecedorDetail.grupoInsumoIds && selectedFornecedorDetail.grupoInsumoIds.length > 0 ? (
+                                    <div className="flex flex-wrap gap-2">
+                                        {selectedFornecedorDetail.grupoInsumoIds.map((grupoId) => {
+                                            const grupo = grupos.find(g => g.id === grupoId);
+                                            return grupo ? (
+                                                <span key={grupoId} className="inline-flex items-center gap-1.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-full px-3 py-1 text-xs font-medium">
+                                                    <Tags className="w-3 h-3" />
+                                                    {grupo.nome}
+                                                </span>
+                                            ) : null;
+                                        })}
+                                    </div>
+                                ) : (
+                                    <p className="text-sm text-slate-400 italic">Nenhum grupo associado</p>
+                                )}
+                            </div>
+
+                            <hr className="border-slate-100" />
+
+                            {/* Sistema */}
+                            <div>
+                                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                    <Calendar className="w-3.5 h-3.5" /> Informações do Sistema
+                                </h4>
+                                <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+                                    <DetailField label="ID" value={selectedFornecedorDetail.id} mono />
+                                    <DetailField label="Código" value={selectedFornecedorDetail.codigo} />
+                                    <DetailField label="Cadastrado em" value={formatDate(selectedFornecedorDetail.createdAt)} />
+                                    <DetailField label="Última atualização" value={formatDate(selectedFornecedorDetail.updatedAt)} />
+                                    <DetailField label="User ID" value={selectedFornecedorDetail.userId || '—'} mono />
+                                    <DetailField label="Aceita Cartão" value={selectedFornecedorDetail.cartaoCredito ? 'Sim' : 'Não'} />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="flex items-center justify-between gap-3 p-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
+                            <div className="text-xs text-slate-400">
+                                ID: {selectedFornecedorDetail.id.slice(0, 8)}...
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => {
+                                        closeDetailModal();
+                                        openModal(selectedFornecedorDetail);
+                                    }}
+                                    className="flex items-center gap-2 px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                                >
+                                    <Edit2 className="w-4 h-4" /> Editar
+                                </button>
+                                <button
+                                    onClick={closeDetailModal}
+                                    className="px-5 py-2 text-sm bg-slate-600 text-white rounded-xl hover:bg-slate-700 transition-colors"
+                                >
+                                    Fechar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+/* Sub-componente para exibir campo de detalhe */
+function DetailField({ label, value, copyable, mono }: { label: string; value?: string; copyable?: boolean; mono?: boolean }) {
+    const displayValue = value || '—';
+    const isEmpty = !value || value === '—';
+
+    const handleCopy = () => {
+        if (value && !isEmpty) {
+            navigator.clipboard.writeText(value);
+        }
+    };
+
+    return (
+        <div className="py-1">
+            <dt className="text-xs text-slate-500">{label}</dt>
+            <dd className={`text-sm mt-0.5 flex items-center gap-1.5 ${isEmpty ? 'text-slate-300 italic' : 'text-slate-900'
+                } ${mono && !isEmpty ? 'font-mono text-xs bg-slate-50 px-2 py-0.5 rounded' : ''}`}>
+                {displayValue}
+                {copyable && !isEmpty && (
+                    <button
+                        onClick={handleCopy}
+                        className="text-slate-400 hover:text-slate-600 transition-colors"
+                        title="Copiar"
+                    >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
+                        </svg>
+                    </button>
+                )}
+            </dd>
         </div>
     );
 }
