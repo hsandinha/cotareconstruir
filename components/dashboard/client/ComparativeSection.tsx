@@ -96,6 +96,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 const mappedProposals = (propostasData || []).map((p: any) => {
                     const frete = parseFloat(p.valor_frete) || 0;
                     const valorTotal = parseFloat(p.valor_total) || 0;
+                    const prazoEntrega = Number.isFinite(p.prazo_entrega) ? Number(p.prazo_entrega) : null;
                     // valor_total do DB já inclui frete, separar mercadoria
                     const merchandiseTotal = valorTotal - frete;
                     return {
@@ -112,6 +113,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         },
                         totalValue: merchandiseTotal,
                         freightPrice: frete,
+                        deliveryDays: prazoEntrega,
                         validity: p.data_validade ? new Date(p.data_validade).toLocaleDateString('pt-BR') : null,
                         paymentMethod: p.condicoes_pagamento,
                         items: p.proposta_itens?.map((item: any) => ({
@@ -1053,6 +1055,23 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                     className="border-t border-slate-100 px-4 py-3 text-center text-slate-700 text-xs"
                                 >
                                     {proposal.paymentMethod || "-"}
+                                </td>
+                            ))}
+                        </tr>
+                        <tr className="bg-white text-sm">
+                            <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Prazo de Entrega</td>
+                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                            {proposals.map((proposal) => (
+                                <td
+                                    key={`delivery-${proposal.id}`}
+                                    className="border-t border-slate-100 px-4 py-3 text-center text-slate-700 text-xs"
+                                >
+                                    {proposal.deliveryDays === null || proposal.deliveryDays === undefined
+                                        ? '-'
+                                        : proposal.deliveryDays === 0
+                                            ? 'Imediata'
+                                            : `${proposal.deliveryDays} dias`}
                                 </td>
                             ))}
                         </tr>

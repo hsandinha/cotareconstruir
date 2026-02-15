@@ -58,11 +58,16 @@ export async function POST(req: NextRequest) {
                 cotacao_id,
                 valor_total,
                 valor_frete,
+                prazo_entrega,
                 condicoes_pagamento,
                 observacoes,
                 data_validade,
                 itens
             } = body;
+
+            const prazoEntregaValue = Number.isInteger(prazo_entrega) && prazo_entrega >= 0
+                ? prazo_entrega
+                : null;
 
             if (!cotacao_id || !itens || !Array.isArray(itens)) {
                 return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 });
@@ -105,7 +110,7 @@ export async function POST(req: NextRequest) {
                     status: 'enviada',
                     valor_total: valor_total || 0,
                     valor_frete: valor_frete || 0,
-                    prazo_entrega: null,
+                    prazo_entrega: prazoEntregaValue,
                     condicoes_pagamento: condicoes_pagamento || null,
                     observacoes: observacoes || null,
                     data_envio: new Date().toISOString(),

@@ -24,6 +24,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
     const [responses, setResponses] = useState<{ [key: string]: { preco: string, disponibilidade: string } }>({});
     const [paymentMethod, setPaymentMethod] = useState("");
     const [validity, setValidity] = useState("");
+    const [deliveryDays, setDeliveryDays] = useState("");
     const [observations, setObservations] = useState("");
     const [freightValue, setFreightValue] = useState("");
     const [loading, setLoading] = useState(false);
@@ -105,6 +106,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
 
             // Calcular valor do frete
             const freteVal = parseFloat(freightValue) || 0;
+            const prazoEntrega = deliveryDays ? Math.max(0, parseInt(deliveryDays, 10) || 0) : null;
 
             // Send via API route (bypasses RLS)
             const headers = await getAuthHeaders();
@@ -116,6 +118,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                     cotacao_id: quotation.id,
                     valor_total: totalValue + freteVal,
                     valor_frete: freteVal,
+                    prazo_entrega: prazoEntrega,
                     condicoes_pagamento: paymentMethod,
                     observacoes: observations,
                     data_validade: dataValidade.toISOString(),
@@ -239,7 +242,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                                 <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Unid.</th>
                                 <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-14">Qtd.</th>
                                 <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Preço Unit.</th>
-                                <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Status</th>
+                                <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Disponibilidade</th>
                                 <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Subtotal</th>
                             </tr>
                         </thead>
@@ -276,9 +279,9 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                                                 onChange={(e) => handleResponseChange(item.id, 'disponibilidade', e.target.value)}
                                             >
                                                 <option value="">—</option>
-                                                <option value="disponivel">✓ Sim</option>
-                                                <option value="sob_consulta">◷ Consulta</option>
-                                                <option value="indisponivel">✕ Não</option>
+                                                <option value="disponivel">✓ Imediata</option>
+                                                <option value="sob_consulta">◷ Com consulta</option>
+                                                <option value="indisponivel">✕ Indisponível</option>
                                             </select>
                                         </td>
                                         <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-semibold text-gray-900">
@@ -363,7 +366,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
             {/* Condições comerciais */}
             <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <h4 className="text-sm font-semibold text-gray-900 mb-3">Condições Comerciais</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Forma de Pagamento</label>
                         <select
@@ -393,7 +396,19 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                             <option value="60-dias">60 dias</option>
                         </select>
                     </div>
-                    <div className="md:col-span-2">
+                    <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Prazo de Entrega (dias)</label>
+                        <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={deliveryDays}
+                            onChange={(e) => setDeliveryDays(e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Ex: 7"
+                        />
+                    </div>
+                    <div className="md:col-span-3">
                         <label className="block text-xs font-medium text-gray-600 mb-1">Observações</label>
                         <textarea
                             rows={2}
