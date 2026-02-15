@@ -41,6 +41,7 @@ export default function ClienteDashboard() {
         works: 0,
         quotations: 0,
         orders: 0,
+        propostas: 0,
     });
 
     const { user, profile, initialized, logout } = useAuth();
@@ -71,16 +72,18 @@ export default function ClienteDashboard() {
                 }
 
                 // Buscar estatísticas via Supabase
-                const [obrasResult, cotacoesResult, pedidosResult] = await Promise.all([
+                const [obrasResult, cotacoesResult, pedidosResult, propostasResult] = await Promise.all([
                     supabase.from('obras').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
                     supabase.from('cotacoes').select('*', { count: 'exact', head: true }).eq('user_id', user.id).in('status', ['rascunho', 'enviada', 'respondida']),
-                    supabase.from('pedidos').select('*', { count: 'exact', head: true }).eq('user_id', user.id)
+                    supabase.from('pedidos').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
+                    supabase.from('propostas').select('cotacao_id, cotacoes!inner(user_id)', { count: 'exact', head: true }).eq('cotacoes.user_id', user.id)
                 ]);
 
                 setStats({
                     works: obrasResult.count || 0,
                     quotations: cotacoesResult.count || 0,
                     orders: pedidosResult.count || 0,
+                    propostas: propostasResult.count || 0,
                 });
             } catch (error) {
                 console.error("Error fetching stats:", error);

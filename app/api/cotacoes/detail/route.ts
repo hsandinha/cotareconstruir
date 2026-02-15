@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
         const action = searchParams.get('action') || 'detail';
 
         if (action === 'list') {
-            // List all cotações for this user
+            // List all cotações for this user with proposal counts
             const { data, error } = await supabaseAdmin
                 .from('cotacoes')
                 .select('*, cotacao_itens(id)')
@@ -39,7 +39,30 @@ export async function GET(req: NextRequest) {
                 return NextResponse.json({ error: error.message }, { status: 500 });
             }
 
-            return NextResponse.json({ data: data || [] });
+            // Enrich with proposal count for each cotação
+            const cotacaoIds = (data || []).map(c => c.id);
+            let propostaCounts: Record<string, number> = {};
+
+            if (cotacaoIds.length > 0) {
+                // Fetch proposal counts grouped by cotacao_id
+                const { data: propostasData } = await supabaseAdmin
+                    .from('propostas')
+                    .select('cotacao_id')
+                    .in('cotacao_id', cotacaoIds);
+
+                (propostasData || []).forEach(p => {
+                    propostaCounts[p.cotacao_id] = (propostaCounts[p.cotacao_id] || 0) + 1;
+                });
+            }
+
+            const enrichedData = (data || []).map(c => ({
+                ...c,
+                propostas_count: c.status === 'fechada'
+                    ? (c.total_propostas_recebidas || propostaCounts[c.id] || 0)
+                    : (propostaCounts[c.id] || 0)
+            }));
+
+            return NextResponse.json({ data: enrichedData });
         }
 
         if (action === 'list-obras') {
@@ -74,9 +97,9 @@ export async function GET(req: NextRequest) {
         }
 
         // 2. Fetch propostas with itens and fornecedor data
-        const { data: propostas } = await supabaseAdmin
+        const { data: propostas, count: totalPropostas } = await supabaseAdmin
             .from('propostas')
-            .select('*, proposta_itens(*)')
+            .select('*, proposta_itens(*)', { count: 'exact' })
             .eq('cotacao_id', cotacaoId)
             .order('valor_total', { ascending: true });
 
@@ -128,7 +151,10 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({
             cotacao,
             propostas: enrichedPropostas,
-            pedidos
+            pedidos,
+            total_propostas: cotacao.status === 'fechada'
+                ? (cotacao.total_propostas_recebidas || totalPropostas || 0)
+                : (totalPropostas || 0)
         });
     } catch (error: any) {
         console.error('Erro na API cotacoes/detail:', error);
@@ -253,10 +279,48 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-            // Update cotação status to fechada
+            // ========================================================
+            // Fechar cotação: manter apenas as 3 melhores propostas,
+            // deletar as demais, e armazenar o total de propostas recebidas
+            // ========================================================
+
+            // 1. Contar total de propostas recebidas ANTES de deletar
+            const { count: totalPropostasRecebidas } = await supabaseAdmin
+                .from('propostas')
+                .select('id', { count: 'exact', head: true })
+                .eq('cotacao_id', cotacaoId);
+
+            // 2. Buscar todas as propostas ordenadas por valor_total (as 3 melhores)
+            const { data: allPropostas } = await supabaseAdmin
+                .from('propostas')
+                .select('id, valor_total')
+                .eq('cotacao_id', cotacaoId)
+                .order('valor_total', { ascending: true });
+
+            const top3Ids = (allPropostas || []).slice(0, 3).map(p => p.id);
+            const toDeleteIds = (allPropostas || []).slice(3).map(p => p.id);
+
+            // 3. Deletar proposta_itens das propostas que não são top 3
+            if (toDeleteIds.length > 0) {
+                await supabaseAdmin
+                    .from('proposta_itens')
+                    .delete()
+                    .in('proposta_id', toDeleteIds);
+
+                // 4. Deletar as propostas que não são top 3
+                await supabaseAdmin
+                    .from('propostas')
+                    .delete()
+                    .in('id', toDeleteIds);
+            }
+
+            // 5. Atualizar cotação: status fechada + total de propostas recebidas
             const { error: quotationError } = await supabaseAdmin
                 .from('cotacoes')
-                .update({ status: 'fechada' })
+                .update({
+                    status: 'fechada',
+                    total_propostas_recebidas: totalPropostasRecebidas || 0
+                })
                 .eq('id', cotacaoId);
 
             if (quotationError) {
@@ -264,7 +328,13 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: 'Erro ao fechar cotação' }, { status: 500 });
             }
 
-            return NextResponse.json({ success: true, orders: createdOrders });
+            return NextResponse.json({
+                success: true,
+                orders: createdOrders,
+                total_propostas_recebidas: totalPropostasRecebidas || 0,
+                propostas_mantidas: top3Ids.length,
+                propostas_removidas: toDeleteIds.length
+            });
         }
 
         return NextResponse.json({ error: 'Ação não reconhecida' }, { status: 400 });

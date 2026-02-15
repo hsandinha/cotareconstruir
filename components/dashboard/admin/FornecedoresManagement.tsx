@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseAuth';
 import { Search, Edit2, Trash2, X, Save, Package, CreditCard, Tags, UserPlus, UserCheck, RefreshCw, Mail, Plus, Eye, MapPin, Phone, Building2, FileText, Calendar, Globe, Hash } from 'lucide-react';
-import { createUserAccount, resetUserPassword } from '@/lib/userAccountService';
 import { useToast } from '@/components/ToastProvider';
 
 // Helper para obter headers com token (com fallback para localStorage)
@@ -307,13 +306,22 @@ export default function FornecedoresManagement() {
                 // Se marcou para criar acesso junto
                 if (createAccessOnSave && formData.email && newFornecedor) {
                     try {
-                        await createUserAccount({
-                            email: formData.email,
-                            entityType: 'fornecedor',
-                            entityId: newFornecedor.id,
-                            entityName: formData.razaoSocial || '',
-                            whatsapp: formData.whatsapp
+                        const accHeaders = await getAuthHeaders();
+                        const accRes = await fetch('/api/admin/accounts', {
+                            method: 'POST',
+                            headers: accHeaders,
+                            body: JSON.stringify({
+                                email: formData.email,
+                                entityType: 'fornecedor',
+                                entityId: newFornecedor.id,
+                                entityName: formData.razaoSocial || '',
+                                whatsapp: formData.whatsapp
+                            })
                         });
+                        if (!accRes.ok) {
+                            const accErr = await accRes.json();
+                            throw new Error(accErr.error || 'Erro ao criar acesso');
+                        }
                         showToast('success', 'Fornecedor criado com acesso! Credenciais enviadas por email.');
                     } catch (accessError: any) {
                         if (accessError.message?.includes('já possui uma conta')) {
@@ -493,13 +501,23 @@ export default function FornecedoresManagement() {
 
         try {
             setCreatingAccount(true);
-            await createUserAccount({
-                email: selectedFornecedorForAccount.email,
-                entityType: 'fornecedor',
-                entityId: selectedFornecedorForAccount.id,
-                entityName: selectedFornecedorForAccount.razaoSocial,
-                whatsapp: selectedFornecedorForAccount.whatsapp
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/admin/accounts', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    email: selectedFornecedorForAccount.email,
+                    entityType: 'fornecedor',
+                    entityId: selectedFornecedorForAccount.id,
+                    entityName: selectedFornecedorForAccount.razaoSocial,
+                    whatsapp: selectedFornecedorForAccount.whatsapp
+                })
             });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Erro ao criar conta');
+            }
 
             showToast('success', 'Conta criada com sucesso! Credenciais enviadas por email.');
             closeCreateAccountModal();
@@ -516,7 +534,18 @@ export default function FornecedoresManagement() {
         if (!confirm(`Resetar senha de ${fornecedor.razaoSocial} para 123456?`)) return;
 
         try {
-            await resetUserPassword(fornecedor.userId, 'fornecedor');
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/admin/accounts', {
+                method: 'PUT',
+                headers,
+                body: JSON.stringify({ userId: fornecedor.userId })
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Erro ao resetar senha');
+            }
+
             showToast('success', 'Senha resetada! Credenciais enviadas por email.');
         } catch (error: any) {
             showToast('error', error.message || 'Erro ao resetar senha');

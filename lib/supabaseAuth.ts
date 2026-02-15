@@ -288,6 +288,16 @@ export function onAuthStateChange(
     callback: (user: User | null, session: Session | null) => void
 ) {
     return supabase.auth.onAuthStateChange((event, session) => {
+        // Se o token refresh falhou ou o usuário deslogou, limpar tudo
+        if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
+            if (typeof window !== 'undefined') {
+                localStorage.removeItem('token');
+                localStorage.removeItem('role');
+                localStorage.removeItem('uid');
+            }
+            callback(null, null);
+            return;
+        }
         callback(session?.user || null, session);
     });
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { ArrowRightIcon, CalendarIcon, MapPinIcon, DocumentTextIcon } from "@heroicons/react/24/outline";
 import { ClientComparativeSection } from "./ComparativeSection";
+import { getQuotationStatusBadge } from "./quotationStatus";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 
@@ -60,17 +61,23 @@ export function ClientOrderSection() {
                 }
                 const json = await res.json();
                 const data = json.data || [];
-                const ordersData = data.map((doc: any) => ({
-                    id: doc.id,
-                    workId: doc.obra_id,
-                    date: doc.created_at ? new Date(doc.created_at).toLocaleDateString('pt-BR') : 'Data desconhecida',
-                    timestamp: doc.created_at ? new Date(doc.created_at).getTime() : 0,
-                    items: doc.cotacao_itens?.length || 0,
-                    rawStatus: doc.status,
-                    status: mapStatus(doc.status),
-                    statusColor: mapStatusColor(doc.status),
-                    totalEstimado: "-"
-                }));
+                const ordersData = data.map((doc: any) => {
+                    const statusBadge = getQuotationStatusBadge(doc.status, doc.propostas_count || 0);
+
+                    return {
+                        id: doc.id,
+                        numero: doc.numero || doc.id.slice(0, 8),
+                        workId: doc.obra_id,
+                        date: doc.created_at ? new Date(doc.created_at).toLocaleDateString('pt-BR') : 'Data desconhecida',
+                        timestamp: doc.created_at ? new Date(doc.created_at).getTime() : 0,
+                        items: doc.cotacao_itens?.length || 0,
+                        rawStatus: doc.status,
+                        status: statusBadge.label,
+                        statusColor: statusBadge.color,
+                        totalEstimado: "-",
+                        propostas_count: doc.propostas_count || 0
+                    };
+                });
                 ordersData.sort((a: any, b: any) => b.timestamp - a.timestamp);
                 setOrders(ordersData);
             } catch (error) {
@@ -118,30 +125,6 @@ export function ClientOrderSection() {
         };
     }, [user, initialized]);
 
-    const mapStatus = (status: string) => {
-        switch (status) {
-            case 'rascunho': return 'Rascunho';
-            case 'enviada': return 'Aguardando Fornecedores';
-            case 'em_analise': return 'Em Análise';
-            case 'respondida': return 'Propostas Recebidas';
-            case 'fechada': return 'Finalizado';
-            case 'cancelada': return 'Cancelado';
-            default: return 'Em Análise';
-        }
-    };
-
-    const mapStatusColor = (status: string) => {
-        switch (status) {
-            case 'rascunho': return 'text-gray-700 bg-gray-50';
-            case 'enviada': return 'text-yellow-700 bg-yellow-50';
-            case 'em_analise': return 'text-blue-700 bg-blue-50';
-            case 'respondida': return 'text-green-700 bg-green-50';
-            case 'fechada': return 'text-gray-700 bg-gray-50';
-            case 'cancelada': return 'text-red-700 bg-red-50';
-            default: return 'text-blue-700 bg-blue-50';
-        }
-    };
-
     if (selectedOrder) {
         const order = orders.find(o => o.id === selectedOrder);
         if (!order) return null;
@@ -158,7 +141,7 @@ export function ClientOrderSection() {
 
                 <div className="flex items-center justify-between bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
                     <div>
-                        <h2 className="text-xl font-bold text-gray-900">Pedido #{order.id.slice(0, 8)}</h2>
+                        <h2 className="text-xl font-bold text-gray-900">Pedido #{order.numero}</h2>
                         <p className="text-sm text-gray-500 mt-1">{worksMap[order.workId] || "Obra não identificada"} • Criado em {order.date}</p>
                     </div>
                     <div className="flex items-center gap-3">
@@ -203,7 +186,7 @@ export function ClientOrderSection() {
                                 <div className="space-y-3">
                                     <div className="flex items-center gap-3">
                                         <span className="text-lg font-semibold text-blue-600 group-hover:text-blue-700">
-                                            #{order.id.slice(0, 8)}
+                                            #{order.numero}
                                         </span>
                                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${order.statusColor}`}>
                                             {order.status}
@@ -223,6 +206,18 @@ export function ClientOrderSection() {
                                             <DocumentTextIcon className="h-4 w-4" />
                                             {order.items} itens
                                         </div>
+                                        {order.propostas_count > 0 && (
+                                            <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold ${order.rawStatus === 'fechada'
+                                                ? 'bg-gray-100 text-gray-600'
+                                                : 'bg-green-100 text-green-700 animate-pulse'
+                                                }`}>
+                                                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                </svg>
+                                                {order.propostas_count} {order.propostas_count === 1 ? 'proposta' : 'propostas'}
+                                                {order.rawStatus === 'fechada' ? ' recebidas' : ''}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 

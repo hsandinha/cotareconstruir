@@ -3,8 +3,24 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Search, Plus, Edit2, Trash2, X, Save, Building2, UserPlus, UserCheck, RefreshCw, Mail, Briefcase, Layers, ChevronDown, ChevronRight, MapPin, Calendar } from 'lucide-react';
-import { createUserAccount, resetUserPassword } from '@/lib/userAccountService';
 import { useToast } from '@/components/ToastProvider';
+
+// Helper para obter headers com token
+async function getAuthHeaders(): Promise<Record<string, string>> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`;
+            return headers;
+        }
+    } catch (e) { /* ignore */ }
+    if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('token');
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+}
 
 interface Obra {
     id: string;
@@ -284,13 +300,22 @@ export default function ClientesManagement() {
                 // Se marcou para criar acesso junto
                 if (createAccessOnSave && formData.email && newCliente) {
                     try {
-                        await createUserAccount({
-                            email: formData.email,
-                            entityType: 'cliente',
-                            entityId: newCliente.id,
-                            entityName: formData.nome || '',
-                            whatsapp: formData.telefone
+                        const accHeaders = await getAuthHeaders();
+                        const accRes = await fetch('/api/admin/accounts', {
+                            method: 'POST',
+                            headers: accHeaders,
+                            body: JSON.stringify({
+                                email: formData.email,
+                                entityType: 'cliente',
+                                entityId: newCliente.id,
+                                entityName: formData.nome || '',
+                                whatsapp: formData.telefone
+                            })
                         });
+                        if (!accRes.ok) {
+                            const accErr = await accRes.json();
+                            throw new Error(accErr.error || 'Erro ao criar acesso');
+                        }
                         showToast('success', 'Cliente criado com acesso! Credenciais enviadas por email.');
                     } catch (accessError: any) {
                         if (accessError.message?.includes('já possui uma conta')) {
@@ -393,13 +418,23 @@ export default function ClientesManagement() {
 
         try {
             setCreatingAccount(true);
-            await createUserAccount({
-                email: selectedClienteForAccount.email,
-                entityType: 'cliente',
-                entityId: selectedClienteForAccount.id,
-                entityName: selectedClienteForAccount.nome,
-                whatsapp: selectedClienteForAccount.telefone
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/admin/accounts', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    email: selectedClienteForAccount.email,
+                    entityType: 'cliente',
+                    entityId: selectedClienteForAccount.id,
+                    entityName: selectedClienteForAccount.nome,
+                    whatsapp: selectedClienteForAccount.telefone
+                })
             });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Erro ao criar conta');
+            }
 
             showToast('success', 'Conta criada com sucesso! Credenciais enviadas por email.');
             closeCreateAccountModal();
@@ -416,7 +451,18 @@ export default function ClientesManagement() {
         if (!confirm(`Resetar senha de ${cliente.nome} para 123456?`)) return;
 
         try {
-            await resetUserPassword(cliente.userId, 'cliente');
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/admin/accounts', {
+                method: 'PUT',
+                headers,
+                body: JSON.stringify({ userId: cliente.userId })
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Erro ao resetar senha');
+            }
+
             showToast('success', 'Senha resetada! Credenciais enviadas por email.');
         } catch (error: any) {
             showToast('error', error.message || 'Erro ao resetar senha');

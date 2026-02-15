@@ -35,6 +35,7 @@ type DaySchedule = {
 
 interface SaleOrder {
     id: string;
+    numero: string;
     quotationId: string;
     clientCode: string;
     clientName?: string;
@@ -134,6 +135,7 @@ export function SupplierSalesSection() {
                 const extraData = pedido.endereco_entrega || {};
                 return {
                     id: pedido.id,
+                    numero: pedido.numero || pedido.id.slice(0, 8),
                     quotationId: pedido.cotacao_id || '',
                     clientCode: cliente?.nome || cliente?.email || pedido.user_id || '',
                     clientName: cliente?.nome || extraData.clientDetails?.name || '',
@@ -342,7 +344,7 @@ export function SupplierSalesSection() {
                                     className={`p-4 cursor-pointer transition-colors hover:bg-gray-50 ${selectedOrder?.id === order.id ? "bg-blue-50 border-l-4 border-blue-500" : "border-l-4 border-transparent"}`}
                                 >
                                     <div className="flex justify-between items-start mb-2">
-                                        <span className="text-xs font-medium text-gray-500">{order.id}</span>
+                                        <span className="text-xs font-medium text-gray-500">#{order.numero}</span>
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
                                             ${order.status === 'approved' ? 'bg-green-100 text-green-800' :
                                                 order.status === 'negotiating' ? 'bg-blue-100 text-blue-800' :

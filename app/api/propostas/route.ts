@@ -3,7 +3,10 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
-    const token = authHeader?.replace('Bearer ', '') || req.cookies.get('token')?.value || req.cookies.get('sb-access-token')?.value;
+    const token = authHeader?.replace('Bearer ', '')
+        || req.cookies.get('authToken')?.value
+        || req.cookies.get('token')?.value
+        || req.cookies.get('sb-access-token')?.value;
     if (!token || !supabaseAdmin) return null;
     const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !user) return null;
@@ -12,19 +15,22 @@ async function getAuthUser(req: NextRequest) {
 
 async function getFornecedorId(userId: string): Promise<string | null> {
     if (!supabaseAdmin) return null;
+
+    const { data: fornecedorByUser } = await supabaseAdmin
+        .from('fornecedores')
+        .select('id')
+        .eq('user_id', userId)
+        .single();
+
+    if (fornecedorByUser?.id) return fornecedorByUser.id;
+
     const { data: userData } = await supabaseAdmin
         .from('users')
         .select('fornecedor_id')
         .eq('id', userId)
         .single();
-    if (userData?.fornecedor_id) return userData.fornecedor_id;
 
-    const { data: fornecedorData } = await supabaseAdmin
-        .from('fornecedores')
-        .select('id')
-        .eq('user_id', userId)
-        .single();
-    return fornecedorData?.id || null;
+    return userData?.fornecedor_id || null;
 }
 
 // POST: Create a proposal (proposta) for a cotação
@@ -71,6 +77,11 @@ export async function POST(req: NextRequest) {
 
             if (!cotacao) {
                 return NextResponse.json({ error: 'Cotação não encontrada' }, { status: 404 });
+            }
+
+            // Only allow proposals on open cotações
+            if (cotacao.status !== 'enviada' && cotacao.status !== 'respondida') {
+                return NextResponse.json({ error: 'Esta cotação já foi fechada e não aceita mais propostas' }, { status: 400 });
             }
 
             // Check if fornecedor already responded
@@ -131,14 +142,7 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: itensError.message }, { status: 500 });
             }
 
-            // 3. Update cotação status to 'respondida' (only if still 'enviada')
-            await supabaseAdmin
-                .from('cotacoes')
-                .update({ status: 'respondida' })
-                .eq('id', cotacao_id)
-                .eq('status', 'enviada');
-
-            // 4. Create notification for the client
+            // 3. Create notification for the client
             if (cotacao.user_id) {
                 // Get fornecedor name
                 const { data: fornecedor } = await supabaseAdmin

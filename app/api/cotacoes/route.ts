@@ -3,7 +3,10 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
-    const token = authHeader?.replace('Bearer ', '') || req.cookies.get('token')?.value || req.cookies.get('sb-access-token')?.value;
+    const token = authHeader?.replace('Bearer ', '')
+        || req.cookies.get('authToken')?.value
+        || req.cookies.get('token')?.value
+        || req.cookies.get('sb-access-token')?.value;
     if (!token || !supabaseAdmin) return null;
     const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !user) return null;
@@ -13,23 +16,23 @@ async function getAuthUser(req: NextRequest) {
 async function getFornecedorId(userId: string): Promise<string | null> {
     if (!supabaseAdmin) return null;
 
-    // Try users.fornecedor_id first
+    // 1) Fonte mais confiável: fornecedores.user_id vinculado ao usuário autenticado
+    const { data: fornecedorByUser } = await supabaseAdmin
+        .from('fornecedores')
+        .select('id')
+        .eq('user_id', userId)
+        .single();
+
+    if (fornecedorByUser?.id) return fornecedorByUser.id;
+
+    // 2) Fallback para vínculo legado em users.fornecedor_id
     const { data: userData } = await supabaseAdmin
         .from('users')
         .select('fornecedor_id')
         .eq('id', userId)
         .single();
 
-    if (userData?.fornecedor_id) return userData.fornecedor_id;
-
-    // Fallback: fornecedores.user_id
-    const { data: fornecedorData } = await supabaseAdmin
-        .from('fornecedores')
-        .select('id')
-        .eq('user_id', userId)
-        .single();
-
-    return fornecedorData?.id || null;
+    return userData?.fornecedor_id || null;
 }
 
 // GET: Load cotações for the authenticated fornecedor (bypasses RLS)
@@ -124,12 +127,13 @@ export async function GET(req: NextRequest) {
         }
 
         // ========================================================
-        // 5. Load ALL cotações with status 'enviada'
+        // 5. Load ALL cotações with status 'enviada' or 'respondida'
+        //    (both are open for supplier responses)
         // ========================================================
         const { data, error } = await supabaseAdmin
             .from('cotacoes')
             .select('*, cotacao_itens(*)')
-            .eq('status', 'enviada')
+            .in('status', ['enviada', 'respondida'])
             .order('created_at', { ascending: false });
 
         if (error) {

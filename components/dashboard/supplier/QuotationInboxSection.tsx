@@ -119,6 +119,8 @@ export function SupplierQuotationInboxSection() {
         fetchQuotations();
 
         // Set up realtime subscription
+        // Escuta TODAS as mudanças em cotacoes (sem filtro de status)
+        // porque cotações com status 'respondida' também são abertas para outros fornecedores
         const channel = supabase
             .channel('cotacoes-changes')
             .on(
@@ -126,8 +128,7 @@ export function SupplierQuotationInboxSection() {
                 {
                     event: '*',
                     schema: 'public',
-                    table: 'cotacoes',
-                    filter: 'status=eq.enviada'
+                    table: 'cotacoes'
                 },
                 () => {
                     fetchQuotations();
@@ -139,16 +140,6 @@ export function SupplierQuotationInboxSection() {
             supabase.removeChannel(channel);
         };
     }, [user, initialized, fetchQuotations]);
-
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'enviada': return 'bg-yellow-100 text-yellow-800';
-            case 'respondida': return 'bg-green-100 text-green-800';
-            case 'fechada': return 'bg-blue-100 text-blue-800';
-            case 'cancelada': return 'bg-red-100 text-red-800';
-            default: return 'bg-gray-100 text-gray-800';
-        }
-    };
 
     const getUrgencyColor = (urgency: string) => {
         switch (urgency) {
@@ -206,11 +197,11 @@ export function SupplierQuotationInboxSection() {
                         <div className="text-sm text-gray-500">Consultas Ativas</div>
                     </div>
                     <div className="text-center">
-                        <div className="text-2xl font-bold text-green-600">0</div>
+                        <div className="text-2xl font-bold text-green-600">{quotations.filter(q => q._proposta_status).length}</div>
                         <div className="text-sm text-gray-500">Respondidas</div>
                     </div>
                     <div className="text-center">
-                        <div className="text-2xl font-bold text-yellow-600">{quotations.filter(q => q.status === 'enviada').length}</div>
+                        <div className="text-2xl font-bold text-yellow-600">{quotations.filter(q => !q._proposta_status).length}</div>
                         <div className="text-sm text-gray-500">Pendentes</div>
                     </div>
                     <div className="text-center">
@@ -240,9 +231,15 @@ export function SupplierQuotationInboxSection() {
                                 <div className="flex-1">
                                     <div className="flex items-center space-x-3 mb-2">
                                         <h4 className="text-base font-medium text-gray-900">{quotation.clientCode}</h4>
-                                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(quotation.status)}`}>
-                                            {quotation.status === 'enviada' ? 'Pendente' : quotation.status === 'respondida' ? 'Respondida' : quotation.status}
-                                        </span>
+                                        {quotation._proposta_status ? (
+                                            <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                                                ✓ Respondida
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">
+                                                Aguardando resposta
+                                            </span>
+                                        )}
                                         <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getUrgencyColor(quotation.urgency)}`}>
                                             {quotation.urgency}
                                         </span>
@@ -277,7 +274,7 @@ export function SupplierQuotationInboxSection() {
                                     >
                                         Visualizar
                                     </button>
-                                    {quotation.status === 'enviada' && (
+                                    {!quotation._proposta_status && (
                                         <button
                                             onClick={() => setSelectedQuotation(quotation)}
                                             className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700"

@@ -45,7 +45,18 @@ export function useAuth() {
         // Buscar sessão inicial
         const initAuth = async () => {
             try {
-                const { data: { session } } = await supabase.auth.getSession();
+                const { data: { session }, error } = await supabase.auth.getSession();
+
+                // Se o refresh token expirou/é inválido, limpar sessão
+                if (error) {
+                    console.warn('Sessão inválida, limpando dados:', error.message);
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('role');
+                    localStorage.removeItem('uid');
+                    await supabase.auth.signOut({ scope: 'local' }).catch(() => { });
+                    setState(prev => ({ ...prev, initialized: true }));
+                    return;
+                }
 
                 if (session?.user) {
                     const profile = await getUserProfile(session.user.id);
@@ -60,7 +71,10 @@ export function useAuth() {
                     setState(prev => ({ ...prev, initialized: true }));
                 }
             } catch (err) {
-                console.error('Erro ao inicializar auth:', err);
+                console.warn('Erro ao inicializar auth:', err);
+                localStorage.removeItem('token');
+                localStorage.removeItem('role');
+                localStorage.removeItem('uid');
                 setState(prev => ({ ...prev, initialized: true }));
             }
         };

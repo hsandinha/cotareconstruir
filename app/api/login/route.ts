@@ -62,7 +62,25 @@ export async function POST(request: Request) {
             path: '/'
         });
 
+        // Compatibilidade com rotas legadas
+        response.cookies.set('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 60 * 60 * 24 * 7,
+            path: '/'
+        });
+
         response.cookies.set('userRole', userRole, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 60 * 60 * 24 * 7,
+            path: '/'
+        });
+
+        // Compatibilidade com proxy e rotas legadas
+        response.cookies.set('role', userRole, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'lax',

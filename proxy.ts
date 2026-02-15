@@ -8,8 +8,8 @@ import type { NextRequest } from 'next/server'
  */
 export function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl
-    const token = request.cookies.get('token')?.value
-    const role = request.cookies.get('role')?.value
+    const token = request.cookies.get('authToken')?.value || request.cookies.get('token')?.value
+    const role = request.cookies.get('userRole')?.value || request.cookies.get('role')?.value
     const mustChangePassword = request.cookies.get('mustChangePassword')?.value
 
     // Rotas públicas que não requerem autenticação

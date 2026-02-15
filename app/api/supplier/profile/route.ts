@@ -14,6 +14,7 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.replace('Bearer ', '')
+        || req.cookies.get('authToken')?.value
         || req.cookies.get('token')?.value
         || req.cookies.get('sb-access-token')?.value;
     if (!token) return null;

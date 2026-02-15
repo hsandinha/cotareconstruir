@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { ArrowDownOnSquareIcon, ChatBubbleLeftRightIcon, StarIcon } from "@heroicons/react/24/outline";
 import { ChatInterface } from "../../ChatInterface";
 import { ReviewModal } from "../../ReviewModal";
+import { getQuotationStatusBadge } from "./quotationStatus";
 import { supabase } from "@/lib/supabaseAuth";
 
 // Helper para obter headers com token de autenticação (espera sessão ficar pronta)
@@ -34,6 +35,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
     const [proposals, setProposals] = useState<any[]>([]);
     const [orders, setOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [totalPropostas, setTotalPropostas] = useState(0);
 
     // State for selection logic
     const [selectedSuppliers, setSelectedSuppliers] = useState<{ [itemId: string]: string }>({}); // itemId -> supplierId
@@ -70,7 +72,10 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 }
 
                 const json = await res.json();
-                const { cotacao: cotacaoData, propostas: propostasData, pedidos: pedidosData } = json;
+                const { cotacao: cotacaoData, propostas: propostasData, pedidos: pedidosData, total_propostas } = json;
+
+                // Armazenar total de propostas (inclui histórico de propostas já deletadas)
+                setTotalPropostas(total_propostas || 0);
 
                 if (cotacaoData) {
                     setQuotation({
@@ -88,32 +93,45 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     });
                 }
 
-                const mappedProposals = (propostasData || []).map((p: any) => ({
-                    id: p.id,
-                    supplierId: p.fornecedor_id,
-                    supplierUserId: p.fornecedor?.user_id,
-                    supplierName: p.fornecedor?.nome_fantasia || p.fornecedor?.razao_social || 'Fornecedor',
-                    supplierDetails: {
-                        name: p.fornecedor?.nome_fantasia || p.fornecedor?.razao_social || 'Fornecedor',
-                        document: p.fornecedor?.cnpj || '',
-                        email: p.fornecedor?.email || '',
-                        phone: p.fornecedor?.telefone || '',
-                        address: [p.fornecedor?.logradouro, p.fornecedor?.numero, p.fornecedor?.bairro, p.fornecedor?.cidade, p.fornecedor?.estado].filter(Boolean).join(', ')
-                    },
-                    totalValue: p.valor_total || 0,
-                    validity: p.data_validade,
-                    paymentMethod: p.condicoes_pagamento,
-                    items: p.proposta_itens?.map((item: any) => ({
-                        itemId: item.cotacao_item_id,
-                        price: item.preco_unitario,
-                        quantity: item.quantidade
-                    })) || []
-                }));
-                setProposals(mappedProposals);
+                const mappedProposals = (propostasData || []).map((p: any) => {
+                    const frete = parseFloat(p.valor_frete) || 0;
+                    const valorTotal = parseFloat(p.valor_total) || 0;
+                    // valor_total do DB já inclui frete, separar mercadoria
+                    const merchandiseTotal = valorTotal - frete;
+                    return {
+                        id: p.id,
+                        supplierId: p.fornecedor_id,
+                        supplierUserId: p.fornecedor?.user_id,
+                        supplierName: p.fornecedor?.nome_fantasia || p.fornecedor?.razao_social || 'Fornecedor',
+                        supplierDetails: {
+                            name: p.fornecedor?.nome_fantasia || p.fornecedor?.razao_social || 'Fornecedor',
+                            document: p.fornecedor?.cnpj || '',
+                            email: p.fornecedor?.email || '',
+                            phone: p.fornecedor?.telefone || '',
+                            address: [p.fornecedor?.logradouro, p.fornecedor?.numero, p.fornecedor?.bairro, p.fornecedor?.cidade, p.fornecedor?.estado].filter(Boolean).join(', ')
+                        },
+                        totalValue: merchandiseTotal,
+                        freightPrice: frete,
+                        validity: p.data_validade ? new Date(p.data_validade).toLocaleDateString('pt-BR') : null,
+                        paymentMethod: p.condicoes_pagamento,
+                        items: p.proposta_itens?.map((item: any) => ({
+                            itemId: item.cotacao_item_id,
+                            price: item.preco_unitario,
+                            quantity: item.quantidade
+                        })) || []
+                    };
+                });
+
+                const top3Proposals = [...mappedProposals]
+                    .sort((a, b) => a.totalValue - b.totalValue)
+                    .slice(0, 3);
+
+                setProposals(top3Proposals);
 
                 if (pedidosData && pedidosData.length > 0) {
                     const mappedOrders = pedidosData.map((order: any) => ({
                         id: order.id,
+                        numero: order.numero || order.id.slice(0, 8),
                         supplierId: order.fornecedor_id,
                         supplierName: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social || 'Fornecedor',
                         supplierDetails: {
@@ -198,6 +216,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
                     const mappedOrders = pedidosData.map((order: any) => ({
                         id: order.id,
+                        numero: order.numero || order.id.slice(0, 8),
                         supplierId: order.fornecedor_id,
                         supplierName: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social || 'Fornecedor',
                         supplierDetails: {
@@ -235,6 +254,11 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         return <div className="p-12 text-center">Carregando mapa comparativo...</div>;
     }
 
+    const currentStatusBadge = getQuotationStatusBadge(
+        quotation?.status || status || 'enviada',
+        totalPropostas || proposals.length
+    );
+
     if (quotation?.status === 'fechada') {
         return (
             <div className="space-y-6">
@@ -247,6 +271,12 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         Seus pedidos foram gerados e enviados aos fornecedores com sucesso.
                         Abaixo você pode visualizar os detalhes de cada pedido gerado.
                     </p>
+                    {totalPropostas > 0 && (
+                        <p className="text-green-600 text-sm mt-2 font-medium">
+                            Total de {totalPropostas} {totalPropostas === 1 ? 'proposta recebida' : 'propostas recebidas'} —
+                            {' '}mapa financeiro preservado com as {Math.min(proposals.length, 3)} melhores
+                        </p>
+                    )}
                 </div>
 
                 <div className="grid gap-6">
@@ -255,7 +285,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                                 <div>
                                     <h3 className="text-lg font-bold text-gray-900">{order.supplierName}</h3>
-                                    <p className="text-sm text-gray-500">Pedido #{order.id.slice(0, 8)}</p>
+                                    <p className="text-sm text-gray-500">Pedido #{order.numero}</p>
                                 </div>
                                 <div className="text-right">
                                     <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium
@@ -318,6 +348,12 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     <p className="text-gray-500 mt-2 max-w-md mx-auto">
                         Os fornecedores estão analisando seu pedido. O mapa comparativo será gerado automaticamente assim que recebermos as primeiras propostas.
                     </p>
+                    {totalPropostas > 0 && (
+                        <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 rounded-full text-sm font-semibold text-blue-700">
+                            <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                            {totalPropostas} {totalPropostas === 1 ? 'proposta recebida' : 'propostas recebidas'}
+                        </div>
+                    )}
                 </div>
 
                 {/* Items table - Mapa de Preços preview */}
@@ -369,7 +405,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                         <td colSpan={4} className="px-6 py-3 text-right text-sm font-semibold text-gray-700">Total Estimado</td>
                                         <td colSpan={2} className="px-6 py-3 text-right">
                                             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700 border border-yellow-200">
-                                                Aguardando Fornecedores
+                                                {currentStatusBadge.label}
                                             </span>
                                         </td>
                                     </tr>
@@ -381,6 +417,15 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
             </div>
         );
     }
+
+    // Mapa de nomes anônimos para o mapa comparativo (oculta nome real do fornecedor)
+    const anonymousNameMap = new Map<string, string>();
+    [...proposals]
+        .sort((a, b) => a.totalValue - b.totalValue)
+        .forEach((p, idx) => {
+            anonymousNameMap.set(p.supplierId, `Fornecedor ${idx + 1}`);
+        });
+    const getAnonymousName = (supplierId: string) => anonymousNameMap.get(supplierId) || 'Fornecedor';
 
     // Helper to find price of an item in a proposal
     const getItemPrice = (proposal: any, itemId: string | number) => {
@@ -409,6 +454,24 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
         return bestId;
     }
+
+    // Get ranking (1st, 2nd, 3rd) of supplier for a given item
+    function getSupplierRank(itemId: string | number, supplierId: string): number | null {
+        const pricesWithSupplier = proposals
+            .map(p => ({ supplierId: p.supplierId, price: getItemPrice(p, itemId) }))
+            .filter(x => x.price > 0)
+            .sort((a, b) => a.price - b.price);
+
+        const idx = pricesWithSupplier.findIndex(x => x.supplierId === supplierId);
+        return idx >= 0 ? idx + 1 : null;
+    }
+
+    const rankEmoji = (rank: number | null) => {
+        if (rank === 1) return '🥇';
+        if (rank === 2) return '🥈';
+        if (rank === 3) return '🥉';
+        return null;
+    };
 
     function columnTotal(supplierId: string) {
         const proposal = proposals.find(p => p.supplierId === supplierId);
@@ -652,7 +715,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
                 {Object.entries(itemsBySupplier).map(([supplierId, items]) => {
                     const proposal = proposals.find(p => p.supplierId === supplierId);
-                    const supplierLabel = proposal?.supplierName || "Fornecedor";
+                    const supplierLabel = getAnonymousName(supplierId);
                     const supplierTotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
                     const freight = 0;
 
@@ -741,6 +804,11 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     <p className="text-sm text-slate-500">
                         Compare preços, fretes e selecione o fornecedor para cada item ou grupo.
                     </p>
+                    <div className="mt-3">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${currentStatusBadge.color}`}>
+                            {currentStatusBadge.label}
+                        </span>
+                    </div>
                 </div>
                 <div className="flex flex-wrap gap-3">
                     <button
@@ -757,6 +825,42 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     </button>
                 </div>
             </div>
+
+            {/* Contador de Propostas Recebidas */}
+            <div className="mt-4 flex items-center gap-4">
+                <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-50 border border-indigo-200 rounded-xl">
+                    <div className="flex items-center justify-center w-8 h-8 bg-indigo-600 rounded-lg text-white font-bold text-sm">
+                        {totalPropostas || proposals.length}
+                    </div>
+                    <div>
+                        <p className="text-sm font-semibold text-indigo-900">
+                            {(totalPropostas || proposals.length) === 1 ? 'Cotação Recebida' : 'Cotações Recebidas'}
+                        </p>
+                        {totalPropostas > proposals.length && (
+                            <p className="text-xs text-indigo-500">Exibindo as {proposals.length} melhores</p>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Top 3 Fornecedores ranking */}
+            {proposals.length > 1 && (
+                <div className="mt-4 flex flex-wrap gap-3">
+                    {[...proposals]
+                        .sort((a, b) => a.totalValue - b.totalValue)
+                        .slice(0, 3)
+                        .map((p, idx) => (
+                            <div key={p.id} className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${idx === 0 ? 'bg-yellow-50 border-yellow-300' : idx === 1 ? 'bg-gray-50 border-gray-300' : 'bg-orange-50 border-orange-300'}`}>
+                                <span className="text-lg">{rankEmoji(idx + 1)}</span>
+                                <div>
+                                    <p className="text-sm font-semibold text-slate-900">{getAnonymousName(p.supplierId)}</p>
+                                    <p className="text-xs text-slate-500">R$ {p.totalValue.toFixed(2)}</p>
+                                </div>
+                            </div>
+                        ))
+                    }
+                </div>
+            )}
 
             {/* Delta Comparison Card */}
             {(() => {
@@ -801,7 +905,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 const percentSavings = bestPerItemTotal > 0 ? (delta / bestPerItemTotal) * 100 : 0;
                 const isBetterDeal = bestWithFreightMerchandise < bestPerItemTotal;
 
-                const bestSupplierName = proposals.find(p => p.supplierId === bestWithFreightSupplier)?.supplierName || "Fornecedor";
+                const bestSupplierName = bestWithFreightSupplier ? getAnonymousName(bestWithFreightSupplier) : 'Fornecedor';
 
                 return (
                     <div className="mt-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-6 shadow-sm">
@@ -846,7 +950,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             {proposals.map((proposal) => (
                                 <th key={proposal.id} className="border-b border-slate-100 px-4 py-3 text-black text-center">
                                     <div className="flex flex-col items-center gap-1">
-                                        <span>{proposal.supplierName}</span>
+                                        <span>{getAnonymousName(proposal.supplierId)}</span>
                                         <button
                                             onClick={() => setChatRecipient(proposal.supplierName)}
                                             className="text-xs font-normal text-blue-600 hover:text-blue-800 flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-full"
@@ -878,18 +982,21 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                         const total = getItemTotal(proposal, item.id);
                                         const isBest = highlight === proposal.supplierId && price > 0;
                                         const isSelected = selectedSuppliers[item.id] === proposal.supplierId;
+                                        const rank = price > 0 ? getSupplierRank(item.id, proposal.supplierId) : null;
+                                        const medal = rankEmoji(rank);
 
                                         return (
                                             <td
                                                 key={`${item.id}-${proposal.id}`}
                                                 onClick={() => price > 0 && handleSelectSupplier(item.id, proposal.supplierId)}
                                                 className={`border-b border-slate-100 px-4 py-3 text-center cursor-pointer transition-colors
-                                                    ${isSelected ? "bg-blue-100 ring-2 ring-inset ring-blue-500" : isBest ? "bg-emerald-50/80 hover:bg-emerald-100" : "hover:bg-slate-100"}
+                                                    ${isSelected ? "bg-blue-100 ring-2 ring-inset ring-blue-500" : isBest ? "bg-emerald-50/80 hover:bg-emerald-100" : rank && rank <= 3 ? "bg-green-50/40 hover:bg-green-50" : "hover:bg-slate-100"}
                                                 `}
                                             >
                                                 {price > 0 ? (
                                                     <>
                                                         <div className={`text-sm font-semibold ${isSelected ? "text-blue-900" : "text-slate-900"}`}>
+                                                            {medal && <span className="mr-1">{medal}</span>}
                                                             R$ {price.toFixed(2)}
                                                         </div>
                                                         <div className="text-xs text-slate-500">
