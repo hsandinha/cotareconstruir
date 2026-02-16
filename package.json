@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "npx -y node@22 ./node_modules/next/dist/bin/next dev --webpack",
     "dev:safe": "NEXT_DISABLE_WEBPACK_CACHE=1 npx -y node@22 ./node_modules/next/dist/bin/next dev --webpack",
-    "dev:force": "pkill -f \"next dev|next/dist/server/lib/start-server|next start\" || true; rm -rf .next .next-build; NEXT_DISABLE_WEBPACK_CACHE=1 npx -y node@22 ./node_modules/next/dist/bin/next dev --webpack",
+    "dev:force": "pkill -f \"next dev|next/dist/server/lib/start-server|next start\" || true; rm -rf .next; NEXT_DISABLE_WEBPACK_CACHE=1 npx -y node@22 ./node_modules/next/dist/bin/next dev --webpack",
     "build": "npx -y node@22 ./node_modules/next/dist/bin/next build --webpack",
     "start": "npx -y node@22 ./node_modules/next/dist/bin/next start",
     "lint": "eslint .",

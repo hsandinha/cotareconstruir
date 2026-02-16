@@ -9,16 +9,16 @@ function extractTaxesFromObservacoes(observacoes: string | null | undefined) {
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
-    
+
     // Tentar múltiplas fontes de token
     let token = authHeader?.replace('Bearer ', '');
-    
+
     if (!token) {
         // Tentar cookies do Supabase
         const supabaseAuthCookie = req.cookies
             .getAll()
             .find((cookie) => cookie.name.endsWith('-auth-token'))?.value;
-        
+
         if (supabaseAuthCookie) {
             try {
                 const parsed = JSON.parse(supabaseAuthCookie);
@@ -30,19 +30,19 @@ async function getAuthUser(req: NextRequest) {
             }
         }
     }
-    
+
     if (!token) {
         // Fallback para outros cookies
         token = req.cookies.get('authToken')?.value
             || req.cookies.get('token')?.value
             || req.cookies.get('sb-access-token')?.value;
     }
-    
+
     if (!token || !supabaseAdmin) {
         console.warn('Token não encontrado na requisição');
         return null;
     }
-    
+
     const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !user) {
         console.warn('Erro ao validar token:', error?.message);
