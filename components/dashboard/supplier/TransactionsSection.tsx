@@ -1,62 +1,103 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabaseAuth";
 
 export function SupplierTransactionsSection() {
-    const [transactions] = useState([
-        {
-            id: 1,
-            clientCode: "Cliente X-001",
-            clientName: "Construtora ABC Ltda", // Só aparece após aprovação
-            quotationId: "COT-2024-001",
-            status: "Aprovada",
-            totalValue: 15420.50,
-            approvedAt: "2024-11-15 14:30",
-            deliveryAddress: "Rua das Flores, 123 - Vila Madalena - São Paulo/SP",
-            contact: {
-                name: "João Silva",
-                phone: "(11) 99999-9999",
-                email: "joao@construtorabc.com"
-            },
-            canViewComparative: true
-        },
-        {
-            id: 2,
-            clientCode: "Cliente Y-002",
-            clientName: null, // Ainda não aprovada
-            quotationId: "COT-2024-002",
-            status: "Em Avaliação",
-            totalValue: 8900.00,
-            submittedAt: "2024-11-16 09:15",
-            canViewComparative: false
-        },
-        {
-            id: 3,
-            clientCode: "Cliente Z-003",
-            clientName: "Obras & Construções XYZ",
-            quotationId: "COT-2024-003",
-            status: "Finalizada",
-            totalValue: 22100.75,
-            approvedAt: "2024-11-10 16:20",
-            completedAt: "2024-11-14 10:00",
-            deliveryAddress: "Av. Paulista, 456 - Bela Vista - São Paulo/SP",
-            contact: {
-                name: "Maria Santos",
-                phone: "(11) 88888-8888",
-                email: "maria@obrasxyz.com"
-            },
-            canViewComparative: true
-        }
-    ]);
+    const [transactions, setTransactions] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let mounted = true;
+
+        const loadTransactions = async () => {
+            setLoading(true);
+            setError(null);
+
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+
+                if (session?.access_token) {
+                    headers['Authorization'] = `Bearer ${session.access_token}`;
+                }
+
+                const res = await fetch('/api/pedidos', { headers });
+                if (!res.ok) {
+                    throw new Error('Erro ao carregar transações');
+                }
+
+                const payload = await res.json();
+                if (!mounted) return;
+                setTransactions(payload?.data || []);
+            } catch (err: any) {
+                if (!mounted) return;
+                setError(err?.message || 'Não foi possível carregar suas transações.');
+                setTransactions([]);
+            } finally {
+                if (mounted) setLoading(false);
+            }
+        };
+
+        loadTransactions();
+
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
+    const stats = useMemo(() => {
+        const total = transactions.length;
+        const delivered = transactions.filter(t => t.status === 'entregue').length;
+        const inProgress = transactions.filter(t => ['confirmado', 'em_preparacao', 'enviado'].includes(t.status)).length;
+        const totalValue = transactions.reduce((acc, t) => acc + Number(t.valor_total || 0), 0);
+
+        return { total, delivered, inProgress, totalValue };
+    }, [transactions]);
 
     const getStatusColor = (status: string) => {
         switch (status) {
-            case 'Aprovada': return 'bg-green-100 text-green-800';
-            case 'Em Avaliação': return 'bg-yellow-100 text-yellow-800';
-            case 'Finalizada': return 'bg-blue-100 text-blue-800';
-            case 'Cancelada': return 'bg-red-100 text-red-800';
+            case 'confirmado': return 'bg-green-100 text-green-800';
+            case 'em_preparacao': return 'bg-yellow-100 text-yellow-800';
+            case 'enviado': return 'bg-blue-100 text-blue-800';
+            case 'entregue': return 'bg-emerald-100 text-emerald-800';
+            case 'cancelado': return 'bg-red-100 text-red-800';
             default: return 'bg-gray-100 text-gray-800';
         }
+    };
+
+    const formatStatus = (status: string) => {
+        const map: Record<string, string> = {
+            confirmado: 'Confirmado',
+            em_preparacao: 'Em Preparação',
+            enviado: 'Enviado',
+            entregue: 'Entregue',
+            cancelado: 'Cancelado',
+        };
+        return map[status] || status;
+    };
+
+    const formatDateTime = (value?: string | null) => {
+        if (!value) return null;
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return null;
+        return date.toLocaleString('pt-BR');
+    };
+
+    const formatDeliveryAddress = (raw: any) => {
+        if (!raw) return null;
+        if (typeof raw === 'string') return raw;
+
+        const fields = [
+            raw?.logradouro,
+            raw?.numero,
+            raw?.bairro,
+            raw?.cidade,
+            raw?.estado,
+        ].filter(Boolean);
+
+        return fields.length > 0 ? fields.join(' - ') : null;
     };
 
     return (
@@ -95,19 +136,19 @@ export function SupplierTransactionsSection() {
             <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="text-center">
-                        <div className="text-2xl font-bold text-blue-600">3</div>
-                        <div className="text-sm text-gray-500">Propostas Enviadas</div>
+                        <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
+                        <div className="text-sm text-gray-500">Subpedidos</div>
                     </div>
                     <div className="text-center">
-                        <div className="text-2xl font-bold text-green-600">1</div>
-                        <div className="text-sm text-gray-500">Aprovadas</div>
+                        <div className="text-2xl font-bold text-green-600">{stats.inProgress}</div>
+                        <div className="text-sm text-gray-500">Em andamento</div>
                     </div>
                     <div className="text-center">
-                        <div className="text-2xl font-bold text-yellow-600">1</div>
-                        <div className="text-sm text-gray-500">Em Avaliação</div>
+                        <div className="text-2xl font-bold text-yellow-600">{stats.delivered}</div>
+                        <div className="text-sm text-gray-500">Entregues</div>
                     </div>
                     <div className="text-center">
-                        <div className="text-2xl font-bold text-purple-600">R$ 46.421,25</div>
+                        <div className="text-2xl font-bold text-purple-600">R$ {stats.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
                         <div className="text-sm text-gray-500">Valor Total</div>
                     </div>
                 </div>
@@ -115,55 +156,64 @@ export function SupplierTransactionsSection() {
 
             {/* Lista de transações */}
             <div className="space-y-4">
-                {transactions.map((transaction) => (
+                {loading && (
+                    <div className="bg-white border border-gray-200 rounded-lg p-6 text-sm text-gray-500">
+                        Carregando transações...
+                    </div>
+                )}
+
+                {!loading && error && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-sm text-red-700">
+                        {error}
+                    </div>
+                )}
+
+                {!loading && !error && transactions.length === 0 && (
+                    <div className="bg-white border border-gray-200 rounded-lg p-6 text-sm text-gray-500">
+                        Nenhum subpedido encontrado para sua conta.
+                    </div>
+                )}
+
+                {!loading && !error && transactions.map((transaction) => (
                     <div key={transaction.id} className="bg-white border border-gray-200 rounded-lg p-6">
                         <div className="flex items-start justify-between mb-4">
                             <div>
                                 <div className="flex items-center space-x-3 mb-2">
                                     <h4 className="text-base font-medium text-gray-900">
-                                        {transaction.clientName || transaction.clientCode}
+                                        {transaction?._cliente?.nome || transaction?._cliente?.email || 'Cliente'}
                                     </h4>
                                     <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(transaction.status)}`}>
-                                        {transaction.status}
+                                        {formatStatus(transaction.status)}
                                     </span>
                                 </div>
                                 <div className="text-sm text-gray-600">
-                                    Cotação: {transaction.quotationId} | Valor: <span className="font-medium text-green-600">R$ {transaction.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                    Pedido: #{transaction.numero || String(transaction.id).slice(0, 8)}
+                                    {transaction.cotacao_id && <> | Cotação: {transaction.cotacao_id}</>}
+                                    {' '}| Valor: <span className="font-medium text-green-600">R$ {Number(transaction.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                                 </div>
                             </div>
                             <div className="flex space-x-2">
-                                {transaction.canViewComparative && (
-                                    <button className="px-3 py-1 text-xs font-medium text-purple-600 bg-purple-50 border border-purple-200 rounded-md hover:bg-purple-100">
-                                        Ver Comparativo*
-                                    </button>
-                                )}
                                 <button className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100">
                                     Detalhes
                                 </button>
                             </div>
                         </div>
 
-                        {/* Informações do cliente (só se aprovado) */}
-                        {transaction.contact && (
+                        {/* Informações da obra / entrega */}
+                        {(transaction?._obra?.nome || formatDeliveryAddress(transaction.endereco_entrega)) && (
                             <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                                <h5 className="text-sm font-medium text-gray-900 mb-2">Dados para Contato e Entrega</h5>
+                                <h5 className="text-sm font-medium text-gray-900 mb-2">Dados da Entrega</h5>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                                    <div>
-                                        <span className="font-medium text-gray-700">Responsável:</span>
-                                        <div className="text-gray-900">{transaction.contact.name}</div>
-                                    </div>
-                                    <div>
-                                        <span className="font-medium text-gray-700">Telefone:</span>
-                                        <div className="text-gray-900">{transaction.contact.phone}</div>
-                                    </div>
-                                    <div>
-                                        <span className="font-medium text-gray-700">E-mail:</span>
-                                        <div className="text-gray-900">{transaction.contact.email}</div>
-                                    </div>
-                                    {transaction.deliveryAddress && (
+                                    {transaction?._obra?.nome && (
+                                        <div>
+                                            <span className="font-medium text-gray-700">Obra:</span>
+                                            <div className="text-gray-900">{transaction._obra.nome}</div>
+                                        </div>
+                                    )}
+                                    {formatDeliveryAddress(transaction.endereco_entrega) && (
                                         <div>
                                             <span className="font-medium text-gray-700">Endereço de Entrega:</span>
-                                            <div className="text-gray-900">{transaction.deliveryAddress}</div>
+                                            <div className="text-gray-900">{formatDeliveryAddress(transaction.endereco_entrega)}</div>
                                         </div>
                                     )}
                                 </div>
@@ -173,19 +223,19 @@ export function SupplierTransactionsSection() {
                         {/* Timeline */}
                         <div className="border-t border-gray-200 pt-4">
                             <div className="flex items-center space-x-4 text-sm text-gray-600">
-                                {transaction.submittedAt && (
+                                {formatDateTime(transaction.created_at) && (
                                     <div>
-                                        <span className="font-medium">Enviada:</span> {transaction.submittedAt}
+                                        <span className="font-medium">Criado:</span> {formatDateTime(transaction.created_at)}
                                     </div>
                                 )}
-                                {transaction.approvedAt && (
+                                {formatDateTime(transaction.data_confirmacao) && (
                                     <div>
-                                        <span className="font-medium">Aprovada:</span> {transaction.approvedAt}
+                                        <span className="font-medium">Confirmado:</span> {formatDateTime(transaction.data_confirmacao)}
                                     </div>
                                 )}
-                                {transaction.completedAt && (
+                                {formatDateTime(transaction.data_entrega) && (
                                     <div>
-                                        <span className="font-medium">Finalizada:</span> {transaction.completedAt}
+                                        <span className="font-medium">Entregue:</span> {formatDateTime(transaction.data_entrega)}
                                     </div>
                                 )}
                             </div>

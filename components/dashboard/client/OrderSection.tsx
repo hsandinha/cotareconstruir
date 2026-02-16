@@ -132,6 +132,7 @@ export function ClientOrderSection() {
 
     useEffect(() => {
         if (orders.length === 0) return;
+        if (!searchParams) return;
 
         const cotacaoId = String(searchParams.get('cotacaoId') || '').trim();
         if (!cotacaoId) return;
@@ -150,7 +151,8 @@ export function ClientOrderSection() {
         params.delete('pedidoId');
         params.delete('chatRoom');
         const nextQuery = params.toString();
-        router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+        const currentPath = pathname || '/dashboard/cliente';
+        router.replace(nextQuery ? `${currentPath}?${nextQuery}` : currentPath);
     }, [orders, searchParams]);
 
     if (selectedOrder) {

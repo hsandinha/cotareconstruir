@@ -185,6 +185,7 @@ export function SupplierQuotationInboxSection() {
 
     useEffect(() => {
         if (!initialized || !user || quotations.length === 0) return;
+        if (!searchParams) return;
 
         const cotacaoId = String(searchParams.get('cotacaoId') || '').trim();
         const pedidoId = String(searchParams.get('pedidoId') || '').trim();
@@ -234,7 +235,8 @@ export function SupplierQuotationInboxSection() {
         params.delete('pedidoId');
         params.delete('chatRoom');
         const nextQuery = params.toString();
-        router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+        const currentPath = pathname || '/dashboard/fornecedor';
+        router.replace(nextQuery ? `${currentPath}?${nextQuery}` : currentPath);
     }, [initialized, user, quotations, searchParams]);
 
     const getUrgencyColor = (urgency: string) => {

@@ -7,7 +7,33 @@ import {
     PencilSquareIcon,
     TrashIcon,
 } from "@heroicons/react/24/outline";
-import { supabase } from "@/lib/supabaseAuth";
+import { supabase } from '@/lib/supabaseAuth';
+
+// Helper para obter headers com token (com fallback para localStorage)
+async function getAuthHeaders(): Promise<Record<string, string>> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+
+    // Tentar Supabase session primeiro
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`;
+            return headers;
+        }
+    } catch (e) {
+        console.warn('Erro ao obter sessão Supabase:', e);
+    }
+
+    // Fallback: localStorage (setado pelo login)
+    if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('token');
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+    }
+
+    return headers;
+}
 
 interface Manufacturer {
     id: string;
@@ -22,6 +48,8 @@ export function ManufacturersSection() {
     const [showAddForm, setShowAddForm] = useState(false);
     const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [sourceInfo, setSourceInfo] = useState<string | null>(null);
 
     const [formData, setFormData] = useState({
         name: "",
@@ -30,40 +58,51 @@ export function ManufacturersSection() {
         status: "Ativo"
     });
 
-    useEffect(() => {
-        const fetchManufacturers = async () => {
-            const { data, error } = await supabase
-                .from('manufacturers')
-                .select('*')
-                .order('name');
+    const fetchManufacturers = async () => {
+        setLoading(true);
+        setError(null);
+        setSourceInfo(null);
+        try {
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/admin/manufacturers', {
+                method: 'GET',
+                headers,
+                credentials: 'include',
+            });
 
-            if (!error && data) {
-                setManufacturers(data.map(item => ({
-                    id: item.id,
-                    name: item.name || '',
-                    category: item.category || '',
-                    contact: item.contact || '',
-                    status: item.status || 'Ativo'
-                })));
+            const payload = await res.json();
+
+            if (!res.ok) {
+                throw new Error(payload?.error || 'Erro ao carregar fabricantes');
             }
+
+            const data = payload?.manufacturers || [];
+
+            if (payload?.source && typeof payload.source === 'object') {
+                const manufacturersCount = Number(payload.source.manufacturers || 0);
+                const fabricantesCount = Number(payload.source.fabricantes || 0);
+                setSourceInfo(`Origem: manufacturers=${manufacturersCount}, fabricantes=${fabricantesCount}`);
+            } else if (payload?.source && typeof payload.source === 'string') {
+                setSourceInfo(`Origem: ${payload.source}`);
+            }
+
+            setManufacturers(data.map((item: any) => ({
+                id: item.id,
+                name: item.name || '',
+                category: item.category || '',
+                contact: item.contact || '',
+                status: item.status || 'Ativo'
+            })));
+        } catch (err: any) {
+            setManufacturers([]);
+            setError(err?.message || 'Erro ao carregar fabricantes.');
+        } finally {
             setLoading(false);
-        };
+        }
+    };
 
+    useEffect(() => {
         fetchManufacturers();
-
-        // Subscribe to real-time updates
-        const channel = supabase
-            .channel('manufacturers_changes')
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'manufacturers' },
-                () => fetchManufacturers()
-            )
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
     }, []);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -78,18 +117,21 @@ export function ManufacturersSection() {
         }
 
         try {
-            const { error } = await supabase
-                .from('manufacturers')
-                .insert({
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/admin/manufacturers', {
+                method: 'POST',
+                headers,
+                credentials: 'include',
+                body: JSON.stringify({
                     name: formData.name,
                     category: formData.category,
                     contact: formData.contact,
                     status: formData.status,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                });
+                }),
+            });
 
-            if (error) throw error;
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload?.error || 'Erro ao adicionar fabricante');
 
             setFormData({
                 name: "",
@@ -98,25 +140,29 @@ export function ManufacturersSection() {
                 status: "Ativo"
             });
             setShowAddForm(false);
+            await fetchManufacturers();
             alert("Fabricante adicionado com sucesso!");
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error adding manufacturer:", error);
-            alert("Erro ao adicionar fabricante.");
+            alert(error?.message || "Erro ao adicionar fabricante.");
         }
     };
 
     const handleDeleteManufacturer = async (id: string) => {
         if (confirm("Tem certeza que deseja excluir este fabricante?")) {
             try {
-                const { error } = await supabase
-                    .from('manufacturers')
-                    .delete()
-                    .eq('id', id);
-
-                if (error) throw error;
-            } catch (error) {
+                const headers = await getAuthHeaders();
+                const res = await fetch(`/api/admin/manufacturers?id=${id}`, {
+                    method: 'DELETE',
+                    headers,
+                    credentials: 'include',
+                });
+                const payload = await res.json();
+                if (!res.ok) throw new Error(payload?.error || 'Erro ao excluir fabricante');
+                await fetchManufacturers();
+            } catch (error: any) {
                 console.error("Error deleting manufacturer:", error);
-                alert("Erro ao excluir fabricante.");
+                alert(error?.message || "Erro ao excluir fabricante.");
             }
         }
     };
@@ -251,6 +297,16 @@ export function ManufacturersSection() {
 
             {/* List */}
             <div className="bg-white shadow overflow-hidden sm:rounded-md">
+                {error && (
+                    <div className="px-4 py-3 text-sm text-red-700 bg-red-50 border-b border-red-100">
+                        {error}
+                    </div>
+                )}
+                {sourceInfo && (
+                    <div className="px-4 py-2 text-xs text-slate-500 bg-slate-50 border-b border-slate-100">
+                        {sourceInfo}
+                    </div>
+                )}
                 <ul role="list" className="divide-y divide-gray-200">
                     {filteredManufacturers.map((manufacturer) => (
                         <li key={manufacturer.id}>

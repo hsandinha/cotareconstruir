@@ -9,13 +9,45 @@ function extractTaxesFromObservacoes(observacoes: string | null | undefined) {
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
-    const token = authHeader?.replace('Bearer ', '')
-        || req.cookies.get('authToken')?.value
-        || req.cookies.get('token')?.value
-        || req.cookies.get('sb-access-token')?.value;
-    if (!token || !supabaseAdmin) return null;
+    
+    // Tentar múltiplas fontes de token
+    let token = authHeader?.replace('Bearer ', '');
+    
+    if (!token) {
+        // Tentar cookies do Supabase
+        const supabaseAuthCookie = req.cookies
+            .getAll()
+            .find((cookie) => cookie.name.endsWith('-auth-token'))?.value;
+        
+        if (supabaseAuthCookie) {
+            try {
+                const parsed = JSON.parse(supabaseAuthCookie);
+                if (Array.isArray(parsed) && typeof parsed[0] === 'string') {
+                    token = parsed[0];
+                }
+            } catch {
+                // Ignorar erro de parse
+            }
+        }
+    }
+    
+    if (!token) {
+        // Fallback para outros cookies
+        token = req.cookies.get('authToken')?.value
+            || req.cookies.get('token')?.value
+            || req.cookies.get('sb-access-token')?.value;
+    }
+    
+    if (!token || !supabaseAdmin) {
+        console.warn('Token não encontrado na requisição');
+        return null;
+    }
+    
     const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-    if (error || !user) return null;
+    if (error || !user) {
+        console.warn('Erro ao validar token:', error?.message);
+        return null;
+    }
     return user;
 }
 
@@ -313,7 +345,8 @@ export async function POST(req: NextRequest) {
     try {
         const user = await getAuthUser(req);
         if (!user) {
-            return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
+            console.error('POST /api/cotacoes: Usuário não autenticado');
+            return NextResponse.json({ error: 'Não autenticado. Faça login novamente.' }, { status: 401 });
         }
 
         if (!supabaseAdmin) {

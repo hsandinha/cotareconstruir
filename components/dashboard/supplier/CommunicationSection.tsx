@@ -1,34 +1,91 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseAuth";
+import { useAuth } from "@/lib/useAuth";
+
+interface SupplierMessage {
+    id: string;
+    type: string;
+    title: string;
+    content: string;
+    timestamp: string;
+    isRead: boolean;
+}
 
 export function SupplierCommunicationSection() {
-    const [messages] = useState([
-        {
-            id: 1,
-            type: "system",
-            title: "Bem-vindo à plataforma!",
-            content: "Seu cadastro foi aprovado. Agora você pode receber consultas de cotação.",
-            timestamp: "2024-11-15 10:00",
-            isRead: true
-        },
-        {
-            id: 2,
-            type: "alert",
-            title: "Tentativa de contato direto detectada",
-            content: "O sistema detectou uma tentativa de compartilhamento de contato em sua última resposta. Esta ação foi bloqueada automaticamente.",
-            timestamp: "2024-11-16 14:30",
-            isRead: false
-        },
-        {
-            id: 3,
-            type: "notification",
-            title: "Nova consulta recebida",
-            content: "Você recebeu uma nova consulta de cotação do Cliente X-001. Prazo: 2 dias.",
-            timestamp: "2024-11-17 09:15",
-            isRead: false
+    const { user, initialized } = useAuth();
+    const [messages, setMessages] = useState<SupplierMessage[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!initialized || !user) {
+            setMessages([]);
+            setLoading(false);
+            return;
         }
-    ]);
+
+        let mounted = true;
+
+        const loadMessages = async () => {
+            setLoading(true);
+            setError(null);
+
+            const { data, error: fetchError } = await supabase
+                .from('notificacoes')
+                .select('id, titulo, mensagem, tipo, lida, created_at')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false });
+
+            if (!mounted) return;
+
+            if (fetchError) {
+                setError('Não foi possível carregar as mensagens.');
+                setMessages([]);
+                setLoading(false);
+                return;
+            }
+
+            setMessages(
+                (data || []).map((item: any) => ({
+                    id: item.id,
+                    type: item.tipo || 'system',
+                    title: item.titulo || 'Notificação',
+                    content: item.mensagem || '',
+                    timestamp: item.created_at ? new Date(item.created_at).toLocaleString('pt-BR') : '',
+                    isRead: Boolean(item.lida),
+                }))
+            );
+
+            setLoading(false);
+        };
+
+        loadMessages();
+
+        return () => {
+            mounted = false;
+        };
+    }, [initialized, user]);
+
+    const markAllAsRead = async () => {
+        if (!user) return;
+
+        const unreadIds = messages.filter(m => !m.isRead).map(m => m.id);
+        if (unreadIds.length === 0) return;
+
+        const { error: updateError } = await supabase
+            .from('notificacoes')
+            .update({ lida: true, data_leitura: new Date().toISOString() })
+            .in('id', unreadIds);
+
+        if (updateError) {
+            setError('Não foi possível marcar as mensagens como lidas.');
+            return;
+        }
+
+        setMessages(prev => prev.map(message => ({ ...message, isRead: true })));
+    };
 
     const getMessageIcon = (type: string) => {
         switch (type) {
@@ -113,10 +170,22 @@ export function SupplierCommunicationSection() {
             <div className="bg-white border border-gray-200 rounded-lg">
                 <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                     <h4 className="text-base font-medium text-gray-900">Central de Mensagens</h4>
-                    <button className="text-sm text-blue-600 hover:text-blue-800">Marcar todas como lidas</button>
+                    <button onClick={markAllAsRead} className="text-sm text-blue-600 hover:text-blue-800">Marcar todas como lidas</button>
                 </div>
                 <div className="divide-y divide-gray-200">
-                    {messages.map((message) => (
+                    {loading && (
+                        <div className="p-6 text-sm text-gray-500">Carregando mensagens...</div>
+                    )}
+
+                    {!loading && error && (
+                        <div className="p-6 text-sm text-red-700 bg-red-50">{error}</div>
+                    )}
+
+                    {!loading && !error && messages.length === 0 && (
+                        <div className="p-6 text-sm text-gray-500">Nenhuma mensagem registrada.</div>
+                    )}
+
+                    {!loading && !error && messages.map((message) => (
                         <div key={message.id} className={`p-6 ${!message.isRead ? 'bg-blue-50' : ''}`}>
                             <div className="flex items-start space-x-4">
                                 <div className="flex-shrink-0">

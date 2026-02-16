@@ -84,6 +84,8 @@ function ClienteDashboardContent() {
     }, [user, profile]);
 
     useEffect(() => {
+        if (!searchParams) return;
+
         const tabParam = searchParams.get('tab');
         if (!tabParam) return;
 

@@ -17,6 +17,11 @@ function ResetPasswordForm() {
     const [showPassword, setShowPassword] = useState(false);
 
     useEffect(() => {
+        if (!searchParams) {
+            setError('Link inválido. Solicite uma nova recuperação de senha.');
+            return;
+        }
+
         const tokenParam = searchParams.get('token');
         const emailParam = searchParams.get('email');
 

@@ -8,7 +8,7 @@ export function SupplierVerificationSection() {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [docType, setDocType] = useState("cnpj");
-    const [fileUrl, setFileUrl] = useState(""); // In a real app, this would be a file upload returning a URL
+    const [fileUrl, setFileUrl] = useState("");
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -16,7 +16,6 @@ export function SupplierVerificationSection() {
 
         setLoading(true);
         try {
-            // Mock file upload by just taking the string input as URL for now
             await submitDocument(user.id, docType, fileUrl);
             alert("Documento enviado para análise!");
             setFileUrl("");
@@ -49,7 +48,7 @@ export function SupplierVerificationSection() {
                 </div>
 
                 <div>
-                    <label className="block text-sm font-medium text-gray-700">URL do Documento (Simulação)</label>
+                    <label className="block text-sm font-medium text-gray-700">URL do Documento</label>
                     <input
                         type="text"
                         value={fileUrl}
@@ -58,9 +57,6 @@ export function SupplierVerificationSection() {
                         required
                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                     />
-                    <p className="mt-1 text-xs text-gray-500">
-                        * Em produção, isso seria um campo de upload de arquivo.
-                    </p>
                 </div>
 
                 <button

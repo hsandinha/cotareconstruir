@@ -12,6 +12,32 @@ import {
     Calendar, Clock, Layers, Zap, Filter
 } from "lucide-react";
 
+// Helper para obter headers com token (com fallback para localStorage)
+async function getAuthHeaders(): Promise<Record<string, string>> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+
+    // Tentar Supabase session primeiro
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`;
+            return headers;
+        }
+    } catch (e) {
+        console.warn('Erro ao obter sessão Supabase:', e);
+    }
+
+    // Fallback: localStorage (setado pelo login)
+    if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('token');
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+    }
+
+    return headers;
+}
+
 // Types
 interface Fase {
     id: string;
@@ -719,12 +745,8 @@ export function ClientSolicitationSection() {
 
         setLoading(true);
         try {
-            // Obter token de autenticação
-            const { data: { session } } = await supabase.auth.getSession();
-            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-            if (session?.access_token) {
-                headers['Authorization'] = `Bearer ${session.access_token}`;
-            }
+            // Obter headers com token de autenticação
+            const headers = await getAuthHeaders();
 
             // Criar cotação via API route (bypass RLS)
             const res = await fetch('/api/cotacoes', {
@@ -748,7 +770,9 @@ export function ClientSolicitationSection() {
 
             if (!res.ok) {
                 const err = await res.json();
-                throw new Error(err.error || 'Erro ao criar cotação');
+                const errorMsg = err.error || 'Erro ao criar cotação';
+                console.error('Erro na criação da cotação:', { status: res.status, error: errorMsg, details: err });
+                throw new Error(errorMsg);
             }
 
             const result = await res.json();
@@ -782,9 +806,10 @@ export function ClientSolicitationSection() {
                 setStep(1);
                 setSelectedObraId("");
             }, 3000);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Erro ao criar cotação:", error);
-            alert("Erro ao criar cotação.");
+            const errorMsg = error?.message || "Erro ao criar cotação. Tente novamente.";
+            alert(errorMsg);
         } finally {
             setLoading(false);
         }

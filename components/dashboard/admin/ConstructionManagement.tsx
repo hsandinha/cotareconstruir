@@ -252,7 +252,7 @@ export default function ConstructionManagement() {
 
             const manufacturersData = (manufacturersResult.data || []).map(doc => ({
                 id: doc.id,
-                name: doc.name || 'Sem nome'
+                name: (doc.name || '').trim() || doc.id
             }));
 
             setFases(fasesData);
