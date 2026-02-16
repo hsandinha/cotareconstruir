@@ -75,6 +75,12 @@ interface Obra {
     status?: string;
 }
 
+interface RemoteSearchCacheEntry {
+    materials: Material[];
+    nextOffset: number;
+    hasMore: boolean;
+}
+
 export function ClientSolicitationSection() {
     const { user, initialized } = useAuth();
 
@@ -103,6 +109,11 @@ export function ClientSolicitationSection() {
     const [success, setSuccess] = useState(false);
     const [successMeta, setSuccessMeta] = useState<{ cotacoes: number; grupos: number } | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
+    const [remoteMaterials, setRemoteMaterials] = useState<Material[]>([]);
+    const [isSearchingRemote, setIsSearchingRemote] = useState(false);
+    const [isLoadingMoreRemote, setIsLoadingMoreRemote] = useState(false);
+    const [remoteOffset, setRemoteOffset] = useState(0);
+    const [hasMoreRemoteResults, setHasMoreRemoteResults] = useState(false);
     const [showAddForm, setShowAddForm] = useState(false);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
     const [searchDropdownRect, setSearchDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -120,6 +131,9 @@ export function ClientSolicitationSection() {
     const unidades = ["unid", "kg", "m", "m²", "m³", "L", "pç", "sc", "cx", "tn"];
     const searchInputWrapperRef = useRef<HTMLDivElement | null>(null);
     const searchDropdownRef = useRef<HTMLDivElement | null>(null);
+    const remoteSearchCacheRef = useRef<Map<string, RemoteSearchCacheEntry>>(new Map());
+    const REMOTE_SEARCH_PAGE_SIZE = 80;
+    const MAX_REMOTE_SEARCH_CACHE_TERMS = 30;
 
     const normalizeGroupName = (value: string | null | undefined) =>
         String(value || "")
@@ -134,6 +148,96 @@ export function ClientSolicitationSection() {
             .toLowerCase()
             .normalize("NFD")
             .replace(/[\u0300-\u036f]/g, "");
+
+    const escapeIlikePattern = (value: string) =>
+        value.replace(/[\\%_]/g, "");
+
+    const getRemoteSearchCacheKey = (term: string) => normalizeText(term);
+
+    const setRemoteSearchCacheEntry = (key: string, entry: RemoteSearchCacheEntry) => {
+        const cache = remoteSearchCacheRef.current;
+
+        if (cache.has(key)) {
+            cache.delete(key);
+        }
+        cache.set(key, entry);
+
+        if (cache.size > MAX_REMOTE_SEARCH_CACHE_TERMS) {
+            const oldestKey = cache.keys().next().value;
+            if (oldestKey) cache.delete(oldestKey);
+        }
+    };
+
+    const fetchRemoteMaterialsPage = async (term: string, offset: number) => {
+        const safeTerm = escapeIlikePattern(term);
+        const from = offset;
+        const to = offset + REMOTE_SEARCH_PAGE_SIZE - 1;
+
+        const { data: materiaisData, error: materiaisError } = await supabase
+            .from("materiais")
+            .select("id, nome, unidade")
+            .ilike("nome", `%${safeTerm}%`)
+            .order("nome", { ascending: true })
+            .range(from, to);
+
+        if (materiaisError) throw materiaisError;
+
+        const materialRows = materiaisData || [];
+        if (materialRows.length === 0) {
+            return {
+                materials: [] as Material[],
+                nextOffset: offset,
+                hasMore: false,
+            };
+        }
+
+        const materialIds = materialRows.map(material => material.id);
+        const { data: materialGrupoRows } = await supabase
+            .from("material_grupo")
+            .select("material_id, grupo_id")
+            .in("material_id", materialIds);
+
+        const materialGroupMap: Record<string, string[]> = {};
+        (materialGrupoRows || []).forEach(link => {
+            if (!materialGroupMap[link.material_id]) {
+                materialGroupMap[link.material_id] = [];
+            }
+            materialGroupMap[link.material_id].push(link.grupo_id);
+        });
+
+        const mappedMaterials: Material[] = materialRows.map(material => ({
+            id: material.id,
+            nome: material.nome,
+            unidade: material.unidade,
+            gruposInsumoIds: materialGroupMap[material.id] || [],
+        }));
+
+        return {
+            materials: mappedMaterials,
+            nextOffset: offset + mappedMaterials.length,
+            hasMore: materialRows.length === REMOTE_SEARCH_PAGE_SIZE,
+        };
+    };
+
+    const scoreMaterialMatch = (materialName: string, normalizedTerm: string) => {
+        const name = normalizeText(materialName);
+        if (!name || !normalizedTerm) return -1;
+
+        const term = normalizedTerm.replace(/[^a-z0-9]/g, "");
+        const compactName = name.replace(/[^a-z0-9]/g, "");
+        const words = name.split(/[^a-z0-9]+/).filter(Boolean);
+
+        if (name === normalizedTerm || compactName === term) return 1000;
+        if (name.startsWith(normalizedTerm)) return 900;
+        if (words.some(word => word === normalizedTerm)) return 850;
+        if (words.some(word => word.startsWith(normalizedTerm))) return 760;
+
+        // Match parcial ainda é válido, mas com baixa prioridade para evitar ruído (ex.: "saco" ao buscar "aço")
+        if (words.some(word => word.includes(normalizedTerm))) return 240;
+        if (name.includes(normalizedTerm) || compactName.includes(term)) return 150;
+
+        return -1;
+    };
 
     // Carregar dados iniciais
     useEffect(() => {
@@ -307,18 +411,139 @@ export function ClientSolicitationSection() {
 
     // Filtrar materiais na busca
     const filteredMaterials = useMemo(() => {
-        if (!searchTerm || materiais.length === 0) return [];
+        if (!searchTerm) return [];
+
         const normalizedTerm = normalizeText(searchTerm);
-        return materiais
-            .filter(m => normalizeText(m.nome).includes(normalizedTerm))
+        if (!normalizedTerm) return [];
+
+        const mergedMap = new Map<string, Material>();
+        [...remoteMaterials, ...materiais].forEach(material => {
+            const existing = mergedMap.get(material.id);
+            if (!existing) {
+                mergedMap.set(material.id, material);
+                return;
+            }
+
+            const existingGroupsCount = existing.gruposInsumoIds?.length || 0;
+            const incomingGroupsCount = material.gruposInsumoIds?.length || 0;
+            if (incomingGroupsCount > existingGroupsCount) {
+                mergedMap.set(material.id, material);
+            }
+        });
+
+        const searchableMaterials = Array.from(mergedMap.values());
+
+        return searchableMaterials
+            .map(material => ({
+                material,
+                score: scoreMaterialMatch(material.nome, normalizedTerm),
+            }))
+            .filter(result => result.score >= 0)
             .sort((a, b) => {
-                const aStarts = normalizeText(a.nome).startsWith(normalizedTerm) ? 1 : 0;
-                const bStarts = normalizeText(b.nome).startsWith(normalizedTerm) ? 1 : 0;
-                if (aStarts !== bStarts) return bStarts - aStarts;
-                return a.nome.localeCompare(b.nome, 'pt-BR');
+                if (a.score !== b.score) return b.score - a.score;
+                return a.material.nome.localeCompare(b.material.nome, 'pt-BR');
             })
-            .slice(0, 50);
-    }, [searchTerm, materiais]);
+            .slice(0, 80)
+            .map(result => result.material);
+    }, [searchTerm, materiais, remoteMaterials]);
+
+    useEffect(() => {
+        const trimmedTerm = searchTerm.trim();
+        const cacheKey = getRemoteSearchCacheKey(trimmedTerm);
+
+        if (
+            step !== 2 ||
+            quotationMode !== "search" ||
+            trimmedTerm.length < 2
+        ) {
+            setRemoteMaterials([]);
+            setIsSearchingRemote(false);
+            setIsLoadingMoreRemote(false);
+            setRemoteOffset(0);
+            setHasMoreRemoteResults(false);
+            return;
+        }
+
+        let isCancelled = false;
+
+        const timeoutId = window.setTimeout(async () => {
+            setIsSearchingRemote(true);
+            setIsLoadingMoreRemote(false);
+
+            try {
+                const cached = remoteSearchCacheRef.current.get(cacheKey);
+                if (cached) {
+                    if (!isCancelled) {
+                        setRemoteMaterials(cached.materials);
+                        setRemoteOffset(cached.nextOffset);
+                        setHasMoreRemoteResults(cached.hasMore);
+                    }
+                    return;
+                }
+
+                const firstPage = await fetchRemoteMaterialsPage(trimmedTerm, 0);
+
+                if (!isCancelled) {
+                    setRemoteMaterials(firstPage.materials);
+                    setRemoteOffset(firstPage.nextOffset);
+                    setHasMoreRemoteResults(firstPage.hasMore);
+                    setRemoteSearchCacheEntry(cacheKey, {
+                        materials: firstPage.materials,
+                        nextOffset: firstPage.nextOffset,
+                        hasMore: firstPage.hasMore,
+                    });
+                }
+            } catch (error) {
+                console.error("Erro na busca remota de materiais:", error);
+                if (!isCancelled) {
+                    setRemoteMaterials([]);
+                    setRemoteOffset(0);
+                    setHasMoreRemoteResults(false);
+                }
+            } finally {
+                if (!isCancelled) setIsSearchingRemote(false);
+            }
+        }, 280);
+
+        return () => {
+            isCancelled = true;
+            window.clearTimeout(timeoutId);
+        };
+    }, [searchTerm, step, quotationMode]);
+
+    const handleSearchDropdownScroll = async (event: React.UIEvent<HTMLDivElement>) => {
+        const target = event.currentTarget;
+        const nearBottom = target.scrollTop + target.clientHeight >= target.scrollHeight - 64;
+
+        if (!nearBottom) return;
+        if (isSearchingRemote || isLoadingMoreRemote || !hasMoreRemoteResults) return;
+
+        const trimmedTerm = searchTerm.trim();
+        const cacheKey = getRemoteSearchCacheKey(trimmedTerm);
+        if (step !== 2 || quotationMode !== "search" || trimmedTerm.length < 2) return;
+
+        setIsLoadingMoreRemote(true);
+        try {
+            const nextPage = await fetchRemoteMaterialsPage(trimmedTerm, remoteOffset);
+            const merged = new Map<string, Material>();
+            [...remoteMaterials, ...nextPage.materials].forEach(material => merged.set(material.id, material));
+            const mergedMaterials = Array.from(merged.values());
+
+            setRemoteMaterials(mergedMaterials);
+            setRemoteOffset(nextPage.nextOffset);
+            setHasMoreRemoteResults(nextPage.hasMore);
+            setRemoteSearchCacheEntry(cacheKey, {
+                materials: mergedMaterials,
+                nextOffset: nextPage.nextOffset,
+                hasMore: nextPage.hasMore,
+            });
+        } catch (error) {
+            console.error("Erro ao carregar mais materiais:", error);
+            setHasMoreRemoteResults(false);
+        } finally {
+            setIsLoadingMoreRemote(false);
+        }
+    };
 
     // Filtrar categorias
     const filteredGroups = useMemo(() => {
@@ -333,7 +558,7 @@ export function ClientSolicitationSection() {
         quotationMode === "search" &&
         isSearchFocused &&
         searchTerm.trim().length > 0 &&
-        filteredMaterials.length > 0;
+        (filteredMaterials.length > 0 || isSearchingRemote || isLoadingMoreRemote);
 
     useEffect(() => {
         if (!showExternalSearchDropdown) {
@@ -955,6 +1180,10 @@ export function ClientSolicitationSection() {
                                             <p className="mt-2 text-xs text-slate-500">Nenhum material encontrado para "{searchTerm}". Tente termo parcial (ex.: "arei").</p>
                                         )}
 
+                                        {isSearchingRemote && searchTerm.trim().length >= 2 && (
+                                            <p className="mt-2 text-xs text-blue-600">Buscando materiais no catálogo completo...</p>
+                                        )}
+
                                         {searchTerm.trim().length === 0 && items.length === 0 && (
                                             <p className="mt-2 text-xs text-slate-500">Dica: digite parte do nome do material para ver sugestões rápidas.</p>
                                         )}
@@ -1127,6 +1356,7 @@ export function ClientSolicitationSection() {
                 <div
                     ref={(el) => { searchDropdownRef.current = el; }}
                     className="fixed z-[80] bg-white border border-slate-200 rounded-xl shadow-2xl max-h-80 overflow-y-auto"
+                    onScroll={handleSearchDropdownScroll}
                     style={{
                         top: `${searchDropdownRect.top}px`,
                         left: `${searchDropdownRect.left}px`,
@@ -1155,6 +1385,14 @@ export function ClientSolicitationSection() {
                             </button>
                         );
                     })}
+
+                    {isSearchingRemote && filteredMaterials.length === 0 && (
+                        <div className="px-4 py-3 text-xs text-blue-600">Buscando materiais...</div>
+                    )}
+
+                    {isLoadingMoreRemote && filteredMaterials.length > 0 && (
+                        <div className="px-4 py-3 text-xs text-slate-500 border-t border-slate-100">Carregando mais resultados...</div>
+                    )}
                 </div>,
                 document.body
             )}
