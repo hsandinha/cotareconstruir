@@ -31,10 +31,11 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
     const [taxValue, setTaxValue] = useState("");
     const [loading, setLoading] = useState(false);
 
+    // Extract resumo outside useEffect so it's accessible in JSX
+    const resumo = quotation?._proposta_resumo;
+
     useEffect(() => {
         if (mode !== 'update') return;
-
-        const resumo = quotation?._proposta_resumo;
         if (!resumo) return;
 
         setFreightValue(String(resumo.freightValue ?? ""));
