@@ -32,16 +32,19 @@ interface ClientComparativeSectionProps {
 
 export function ClientComparativeSection({ orderId, status }: ClientComparativeSectionProps) {
     const [quotation, setQuotation] = useState<any>(null);
+    const [allProposals, setAllProposals] = useState<any[]>([]);
     const [proposals, setProposals] = useState<any[]>([]);
     const [orders, setOrders] = useState<any[]>([]);
+    const [showOnlyDelayedSuborders, setShowOnlyDelayedSuborders] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [finalizingOrder, setFinalizingOrder] = useState(false);
     const [totalPropostas, setTotalPropostas] = useState(0);
 
     // State for selection logic
     const [selectedSuppliers, setSelectedSuppliers] = useState<{ [itemId: string]: string }>({}); // itemId -> supplierId
     const [rejectedSuppliers, setRejectedSuppliers] = useState<string[]>([]);
     const [view, setView] = useState<"map" | "oc">("map");
-    const [chatRecipient, setChatRecipient] = useState<string | null>(null);
+    const [chatContext, setChatContext] = useState<{ recipientName: string; recipientId?: string; roomId: string } | null>(null);
     const [negotiationModal, setNegotiationModal] = useState<{
         isOpen: boolean;
         supplier: any;
@@ -96,7 +99,10 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 const mappedProposals = (propostasData || []).map((p: any) => {
                     const frete = parseFloat(p.valor_frete) || 0;
                     const valorTotal = parseFloat(p.valor_total) || 0;
-                    const prazoEntrega = Number.isFinite(p.prazo_entrega) ? Number(p.prazo_entrega) : null;
+                    const prazoEntregaParsed = Number.parseInt(String(p.prazo_entrega ?? ''), 10);
+                    const prazoEntrega = Number.isFinite(prazoEntregaParsed) && prazoEntregaParsed >= 0
+                        ? prazoEntregaParsed
+                        : null;
                     // valor_total do DB já inclui frete, separar mercadoria
                     const merchandiseTotal = valorTotal - frete;
                     return {
@@ -124,8 +130,10 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     };
                 });
 
+                setAllProposals(mappedProposals);
+
                 const top3Proposals = [...mappedProposals]
-                    .sort((a, b) => a.totalValue - b.totalValue)
+                    .sort((a, b) => (a.totalValue + (a.freightPrice || 0)) - (b.totalValue + (b.freightPrice || 0)))
                     .slice(0, 3);
 
                 setProposals(top3Proposals);
@@ -152,7 +160,16 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             unitPrice: item.preco_unitario,
                             total: item.subtotal
                         })) || [],
-                        freight: 0,
+                        freight: parseFloat(order?.endereco_entrega?.summary?.freight) || 0,
+                        deliveryDays: Number.isFinite(order?.endereco_entrega?.summary?.deliveryDays)
+                            ? Number(order.endereco_entrega.summary.deliveryDays)
+                            : null,
+                        paymentMethod: order?.endereco_entrega?.summary?.paymentMethod || null,
+                        summary: order?.endereco_entrega?.summary || {},
+                        dataConfirmacao: order?.data_confirmacao || null,
+                        dataPrevisaoEntrega: order?.data_previsao_entrega || null,
+                        dataEntrega: order?.data_entrega || null,
+                        createdAt: order?.created_at || null,
                         subtotal: order.valor_total || 0,
                         total: order.valor_total || 0,
                         status: order.status
@@ -237,7 +254,16 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             unitPrice: item.preco_unitario,
                             total: item.subtotal
                         })) || [],
-                        freight: 0,
+                        freight: parseFloat(order?.endereco_entrega?.summary?.freight) || 0,
+                        deliveryDays: Number.isFinite(order?.endereco_entrega?.summary?.deliveryDays)
+                            ? Number(order.endereco_entrega.summary.deliveryDays)
+                            : null,
+                        paymentMethod: order?.endereco_entrega?.summary?.paymentMethod || null,
+                        summary: order?.endereco_entrega?.summary || {},
+                        dataConfirmacao: order?.data_confirmacao || null,
+                        dataPrevisaoEntrega: order?.data_previsao_entrega || null,
+                        dataEntrega: order?.data_entrega || null,
+                        createdAt: order?.created_at || null,
                         subtotal: order.valor_total || 0,
                         total: order.valor_total || 0,
                         status: order.status
@@ -261,7 +287,89 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         totalPropostas || proposals.length
     );
 
+    const getOrderStatusMeta = (orderStatus: string) => {
+        if (orderStatus === 'entregue') {
+            return { label: 'Entregue', color: 'bg-green-100 text-green-800' };
+        }
+        if (orderStatus === 'enviado') {
+            return { label: 'Em transporte', color: 'bg-blue-100 text-blue-800' };
+        }
+        if (orderStatus === 'em_preparacao') {
+            return { label: 'Em separação', color: 'bg-indigo-100 text-indigo-800' };
+        }
+        if (orderStatus === 'confirmado') {
+            return { label: 'Em faturamento', color: 'bg-purple-100 text-purple-800' };
+        }
+        if (orderStatus === 'cancelado') {
+            return { label: 'Cancelado', color: 'bg-red-100 text-red-800' };
+        }
+        return { label: 'Aguardando confirmação', color: 'bg-yellow-100 text-yellow-800' };
+    };
+
+    const getSuborderStepState = (orderStatus: string) => {
+        const billingDone = ['em_preparacao', 'enviado', 'entregue'].includes(orderStatus);
+        const pickingDone = ['enviado', 'entregue'].includes(orderStatus);
+        const deliveryDone = orderStatus === 'entregue';
+
+        const billingActive = orderStatus === 'confirmado' || orderStatus === 'pendente';
+        const pickingActive = orderStatus === 'em_preparacao';
+        const deliveryActive = orderStatus === 'enviado';
+
+        return {
+            billing: billingDone ? 'done' : billingActive ? 'active' : 'pending',
+            picking: pickingDone ? 'done' : pickingActive ? 'active' : 'pending',
+            delivery: deliveryDone ? 'done' : deliveryActive ? 'active' : 'pending',
+        } as const;
+    };
+
+    const stepStyle = (state: 'done' | 'active' | 'pending') => {
+        if (state === 'done') return 'bg-green-50 border-green-200 text-green-700';
+        if (state === 'active') return 'bg-blue-50 border-blue-200 text-blue-700';
+        return 'bg-gray-50 border-gray-200 text-gray-500';
+    };
+
+    const formatDateTime = (value?: string | null) => {
+        if (!value) return null;
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return null;
+        return parsed.toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    };
+
+    const getExpectedDeliveryDate = (order: any): Date | null => {
+        if (order?.dataPrevisaoEntrega) {
+            const explicit = new Date(order.dataPrevisaoEntrega);
+            if (!Number.isNaN(explicit.getTime())) return explicit;
+        }
+
+        const deliveryDays = Number(order?.summary?.deliveryDays);
+        const createdAt = order?.createdAt ? new Date(order.createdAt) : null;
+
+        if (!createdAt || Number.isNaN(createdAt.getTime()) || !Number.isFinite(deliveryDays) || deliveryDays < 0) {
+            return null;
+        }
+
+        const expected = new Date(createdAt);
+        expected.setDate(expected.getDate() + deliveryDays);
+        return expected;
+    };
+
+    const isOrderDelayed = (order: any) => {
+        const expectedDeliveryDate = getExpectedDeliveryDate(order);
+        if (!expectedDeliveryDate) return false;
+        if (order.status === 'entregue') return false;
+        return Date.now() > expectedDeliveryDate.getTime();
+    };
+
     if (quotation?.status === 'fechada') {
+        const generalOrderCode = String(quotation?.id || orderId || '').slice(0, 8);
+        const delayedOrdersCount = orders.filter(isOrderDelayed).length;
+        const visibleOrders = showOnlyDelayedSuborders ? orders.filter(isOrderDelayed) : orders;
         return (
             <div className="space-y-6">
                 <div className="bg-green-50 border border-green-200 rounded-lg p-6 text-center">
@@ -281,58 +389,122 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     )}
                 </div>
 
-                <div className="grid gap-6">
-                    {orders.map((order) => (
-                        <div key={order.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                            <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-                                <div>
-                                    <h3 className="text-lg font-bold text-gray-900">{order.supplierName}</h3>
-                                    <p className="text-sm text-gray-500">Pedido #{order.numero}</p>
-                                </div>
-                                <div className="text-right">
-                                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium
-                                        ${order.status === 'confirmado' ? 'bg-green-100 text-green-800' :
-                                            order.status === 'pendente' ? 'bg-yellow-100 text-yellow-800' :
-                                                'bg-gray-100 text-gray-800'}`}>
-                                        {order.status === 'pendente' ? 'Aguardando Confirmação' :
-                                            order.status === 'confirmado' ? 'Confirmado pelo Fornecedor' :
-                                                order.status === 'entregue' ? 'Entregue' :
-                                                    order.status}
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="p-6">
-                                <table className="min-w-full text-sm mb-4">
-                                    <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                        <tr>
-                                            <th className="px-4 py-2 text-left">Item</th>
-                                            <th className="px-4 py-2 text-center">Qtde</th>
-                                            <th className="px-4 py-2 text-right">Unitário</th>
-                                            <th className="px-4 py-2 text-right">Total</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-100">
-                                        {order.items.map((item: any) => (
-                                            <tr key={item.id}>
-                                                <td className="px-4 py-2 font-medium text-gray-900">{item.descricao || item.name}</td>
-                                                <td className="px-4 py-2 text-center">{item.quantidade || item.quantity}</td>
-                                                <td className="px-4 py-2 text-right">R$ {item.unitPrice?.toFixed(2)}</td>
-                                                <td className="px-4 py-2 text-right">R$ {item.total?.toFixed(2)}</td>
-                                            </tr>
-                                        ))}
-                                        <tr>
-                                            <td colSpan={3} className="px-4 py-2 text-right font-semibold text-gray-700">Frete</td>
-                                            <td className="px-4 py-2 text-right font-semibold text-gray-700">R$ {order.freight?.toFixed(2)}</td>
-                                        </tr>
-                                        <tr>
-                                            <td colSpan={3} className="px-4 py-2 text-right font-bold text-gray-900">Total</td>
-                                            <td className="px-4 py-2 text-right font-bold text-gray-900">R$ {order.total?.toFixed(2)}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
+                <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pedido Geral</p>
+                            <h3 className="text-lg font-bold text-gray-900">#{generalOrderCode}</h3>
                         </div>
-                    ))}
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setShowOnlyDelayedSuborders((prev) => !prev)}
+                                className={`px-3 py-1 rounded-full text-xs font-semibold border ${showOnlyDelayedSuborders
+                                    ? 'bg-red-100 text-red-800 border-red-200'
+                                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                                    }`}
+                            >
+                                {showOnlyDelayedSuborders ? 'Mostrando atrasados' : 'Somente atrasados'}
+                            </button>
+                            <div className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-sm font-semibold border border-blue-200">
+                                {orders.length} {orders.length === 1 ? 'subpedido' : 'subpedidos'}
+                            </div>
+                            {delayedOrdersCount > 0 && (
+                                <div className="px-3 py-1 rounded-full bg-red-50 text-red-700 text-sm font-semibold border border-red-200">
+                                    {delayedOrdersCount} atrasado{delayedOrdersCount === 1 ? '' : 's'}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid gap-6">
+                    {visibleOrders.map((order, index) => {
+                        const statusMeta = getOrderStatusMeta(order.status);
+                        const steps = getSuborderStepState(order.status);
+                        const billingAt = formatDateTime(order?.summary?.billingCompletedAt || order?.summary?.billingStartedAt || order?.dataConfirmacao);
+                        const pickingAt = formatDateTime(order?.summary?.pickingCompletedAt || order?.summary?.pickingStartedAt);
+                        const deliveryAt = formatDateTime(order?.summary?.deliveryCompletedAt || order?.summary?.deliveryStartedAt || order?.dataEntrega);
+                        const expectedDeliveryDate = getExpectedDeliveryDate(order);
+                        const isDelayed = isOrderDelayed(order);
+                        const expectedDeliveryLabel = expectedDeliveryDate ? expectedDeliveryDate.toLocaleDateString('pt-BR') : null;
+
+                        return (
+                            <div key={order.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                                <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-gray-900">{order.supplierName}</h3>
+                                        <p className="text-sm text-gray-500">Subpedido 1.{index + 1} • Pedido #{order.numero}</p>
+                                        {expectedDeliveryLabel && (
+                                            <p className="text-xs text-gray-500 mt-1">Previsão de entrega: {expectedDeliveryLabel}</p>
+                                        )}
+                                    </div>
+                                    <div className="text-right space-y-2">
+                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${statusMeta.color}`}>
+                                            {statusMeta.label}
+                                        </span>
+                                        {isDelayed && (
+                                            <div>
+                                                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                    Atrasado
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="p-6">
+                                    <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-2">
+                                        <div className={`rounded-lg border px-3 py-2 ${stepStyle(steps.billing)}`}>
+                                            <div className="text-xs font-semibold">Faturamento</div>
+                                            {billingAt && <div className="mt-0.5 text-[11px]">{billingAt}</div>}
+                                        </div>
+                                        <div className={`rounded-lg border px-3 py-2 ${stepStyle(steps.picking)}`}>
+                                            <div className="text-xs font-semibold">Separação</div>
+                                            {pickingAt && <div className="mt-0.5 text-[11px]">{pickingAt}</div>}
+                                        </div>
+                                        <div className={`rounded-lg border px-3 py-2 ${stepStyle(steps.delivery)}`}>
+                                            <div className="text-xs font-semibold">Entrega</div>
+                                            {deliveryAt && <div className="mt-0.5 text-[11px]">{deliveryAt}</div>}
+                                        </div>
+                                    </div>
+
+                                    <table className="min-w-full text-sm mb-4">
+                                        <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                            <tr>
+                                                <th className="px-4 py-2 text-left">Item</th>
+                                                <th className="px-4 py-2 text-center">Qtde</th>
+                                                <th className="px-4 py-2 text-right">Unitário</th>
+                                                <th className="px-4 py-2 text-right">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {order.items.map((item: any) => (
+                                                <tr key={item.id}>
+                                                    <td className="px-4 py-2 font-medium text-gray-900">{item.descricao || item.name}</td>
+                                                    <td className="px-4 py-2 text-center">{item.quantidade || item.quantity}</td>
+                                                    <td className="px-4 py-2 text-right">R$ {item.unitPrice?.toFixed(2)}</td>
+                                                    <td className="px-4 py-2 text-right">R$ {item.total?.toFixed(2)}</td>
+                                                </tr>
+                                            ))}
+                                            <tr>
+                                                <td colSpan={3} className="px-4 py-2 text-right font-semibold text-gray-700">Frete</td>
+                                                <td className="px-4 py-2 text-right font-semibold text-gray-700">R$ {order.freight?.toFixed(2)}</td>
+                                            </tr>
+                                            <tr>
+                                                <td colSpan={3} className="px-4 py-2 text-right font-bold text-gray-900">Total</td>
+                                                <td className="px-4 py-2 text-right font-bold text-gray-900">R$ {order.total?.toFixed(2)}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        );
+                    })}
+
+                    {visibleOrders.length === 0 && showOnlyDelayedSuborders && (
+                        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center text-gray-500">
+                            Nenhum subpedido atrasado no momento.
+                        </div>
+                    )}
                 </div>
             </div>
         );
@@ -423,11 +595,13 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
     // Mapa de nomes anônimos para o mapa comparativo (oculta nome real do fornecedor)
     const anonymousNameMap = new Map<string, string>();
     [...proposals]
-        .sort((a, b) => a.totalValue - b.totalValue)
+        .sort((a, b) => (a.totalValue + (a.freightPrice || 0)) - (b.totalValue + (b.freightPrice || 0)))
         .forEach((p, idx) => {
-            anonymousNameMap.set(p.supplierId, `Fornecedor ${idx + 1}`);
+            anonymousNameMap.set(String(p.supplierId), `Fornecedor ${idx + 1}`);
         });
-    const getAnonymousName = (supplierId: string) => anonymousNameMap.get(supplierId) || 'Fornecedor';
+    const getAnonymousName = (supplierId: string | number) => anonymousNameMap.get(String(supplierId)) || 'Fornecedor';
+    const findProposalBySupplierId = (supplierId: string | number) =>
+        proposals.find((p) => String(p.supplierId) === String(supplierId));
 
     // Helper to find price of an item in a proposal
     const getItemPrice = (proposal: any, itemId: string | number) => {
@@ -476,7 +650,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
     };
 
     function columnTotal(supplierId: string) {
-        const proposal = proposals.find(p => p.supplierId === supplierId);
+        const proposal = findProposalBySupplierId(supplierId);
         return proposal ? proposal.totalValue : 0;
     }
 
@@ -498,21 +672,71 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         setSelectedSuppliers(newSelections);
     }
 
-
-    function handleSelectBestWithFreight() {
-        // Simplified logic: Find supplier with lowest total for ALL items
-        // In a real scenario, we would check if they quoted all items and add freight
-
+    function getBestTotalStrategy() {
         let bestSupplierId: string | null = null;
-        let bestTotal: number = Infinity;
+        let bestMerchandiseTotal = 0;
+        let bestFreight = 0;
+        let bestGrandTotal = Infinity;
 
         proposals.forEach((proposal) => {
-            // Check if proposal covers all items (optional check, for now assuming partials are allowed but we want best total)
-            if (proposal.totalValue < bestTotal) {
-                bestTotal = proposal.totalValue;
-                bestSupplierId = proposal.supplierId;
+            const coversAllItems = quotation.items.every((item: any) => getItemPrice(proposal, item.id) > 0);
+            if (!coversAllItems) return;
+
+            const merchandiseTotal = quotation.items.reduce((sum: number, item: any) => {
+                return sum + getItemTotal(proposal, item.id);
+            }, 0);
+
+            const freight = proposal.freightPrice || 0;
+            const grandTotal = merchandiseTotal + freight;
+
+            if (grandTotal < bestGrandTotal) {
+                bestGrandTotal = grandTotal;
+                bestSupplierId = String(proposal.supplierId);
+                bestMerchandiseTotal = merchandiseTotal;
+                bestFreight = freight;
             }
         });
+
+        return {
+            supplierId: bestSupplierId,
+            merchandiseTotal: bestMerchandiseTotal,
+            freight: bestFreight,
+            total: Number.isFinite(bestGrandTotal) ? bestGrandTotal : 0
+        };
+    }
+
+    function getBestPerItemStrategy() {
+        let merchandiseTotal = 0;
+        const selectedSupplierIds = new Set<string>();
+
+        quotation.items.forEach((item: any) => {
+            const best = bestSupplier(item.id);
+            if (!best) return;
+
+            const proposal = findProposalBySupplierId(best);
+            if (!proposal) return;
+
+            selectedSupplierIds.add(String(best));
+            merchandiseTotal += getItemTotal(proposal, item.id);
+        });
+
+        const freightTotal = Array.from(selectedSupplierIds).reduce((sum, supplierId) => {
+            const proposal = findProposalBySupplierId(supplierId);
+            return sum + (proposal?.freightPrice || 0);
+        }, 0);
+
+        return {
+            merchandiseTotal,
+            freightSuppliersCount: selectedSupplierIds.size,
+            freightTotal,
+            total: merchandiseTotal + freightTotal
+        };
+    }
+
+
+    function handleSelectBestWithFreight() {
+        const strategy = getBestTotalStrategy();
+        const bestSupplierId = strategy.supplierId;
 
         if (bestSupplierId) {
             const newSelections: { [itemId: string]: string } = {};
@@ -536,8 +760,10 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
     async function handleFinalizeOrder() {
         if (!quotation || !orderId) return;
+        if (finalizingOrder) return;
 
         try {
+            setFinalizingOrder(true);
             // Group items by supplier
             const supplierGroups: any[] = [];
             const groupedBySupplier: { [key: string]: any[] } = {};
@@ -549,7 +775,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         groupedBySupplier[selectedId] = [];
                     }
 
-                    const proposal = proposals.find(p => p.supplierId === selectedId);
+                    const proposal = findProposalBySupplierId(selectedId);
                     const price = getItemPrice(proposal, item.id);
                     const total = price * item.quantidade;
 
@@ -566,7 +792,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
             });
 
             for (const [supplierId, items] of Object.entries(groupedBySupplier)) {
-                const proposal = proposals.find(p => p.supplierId === supplierId);
+                const proposal = findProposalBySupplierId(supplierId);
                 supplierGroups.push({
                     supplierId,
                     proposalId: proposal?.id,
@@ -579,6 +805,9 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         phone: '',
                         address: ''
                     },
+                    freightPrice: proposal?.freightPrice || 0,
+                    deliveryDays: proposal?.deliveryDays ?? null,
+                    paymentMethod: proposal?.paymentMethod || null,
                     items
                 });
             }
@@ -606,6 +835,8 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         } catch (error) {
             console.error("Error finalizing order:", error);
             alert("Erro ao finalizar pedido. Tente novamente.");
+        } finally {
+            setFinalizingOrder(false);
         }
     }
 
@@ -633,6 +864,16 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                 <div className="text-right">
                                     <p className="text-sm text-slate-500">Total Pedido</p>
                                     <p className="text-lg font-bold text-slate-900">R$ {order.total.toFixed(2)}</p>
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        Prazo de entrega: {order.deliveryDays === null || order.deliveryDays === undefined
+                                            ? 'N/A'
+                                            : order.deliveryDays === 0
+                                                ? 'Hoje'
+                                                : `${order.deliveryDays} dias`}
+                                    </p>
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        Pagamento: {order.paymentMethod || 'N/A'}
+                                    </p>
                                     <button
                                         onClick={() => setReviewModal({ isOpen: true, supplierId: order.supplierId, supplierName: order.supplierName })}
                                         className="mt-2 text-xs font-medium text-indigo-600 hover:text-indigo-800 flex items-center justify-end gap-1 ml-auto"
@@ -681,8 +922,6 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
         // Group items by selected supplier
         const itemsBySupplier: { [key: string]: any[] } = {};
-        let totalGlobal = 0;
-
         quotation.items.forEach((item: any) => {
             const selectedId = selectedSuppliers[item.id];
             if (selectedId) {
@@ -690,7 +929,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     itemsBySupplier[selectedId] = [];
                 }
 
-                const proposal = proposals.find(p => p.supplierId === selectedId);
+                const proposal = findProposalBySupplierId(selectedId);
                 const price = getItemPrice(proposal, item.id);
                 const total = price * item.quantidade;
 
@@ -699,9 +938,15 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     unitPrice: price,
                     total: total
                 });
-                totalGlobal += total;
             }
         });
+
+        const totalGlobal = Object.entries(itemsBySupplier).reduce((sum, [supplierId, items]) => {
+            const supplierTotal = (items as any[]).reduce((itemsSum: number, item: any) => itemsSum + item.total, 0);
+            const proposal = findProposalBySupplierId(supplierId);
+            const freight = proposal?.freightPrice || 0;
+            return sum + supplierTotal + freight;
+        }, 0);
 
         return (
             <div className="space-y-6">
@@ -716,10 +961,12 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 </div>
 
                 {Object.entries(itemsBySupplier).map(([supplierId, items]) => {
-                    const proposal = proposals.find(p => p.supplierId === supplierId);
+                    const proposal = findProposalBySupplierId(supplierId);
                     const supplierLabel = getAnonymousName(supplierId);
                     const supplierTotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
-                    const freight = 0;
+                    const freight = proposal?.freightPrice || 0;
+                    const deliveryDays = proposal?.deliveryDays;
+                    const paymentMethod = proposal?.paymentMethod;
 
                     return (
                         <div key={supplierId} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -731,6 +978,16 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                 <div className="text-right">
                                     <p className="text-sm text-slate-500">Total Pedido</p>
                                     <p className="text-lg font-bold text-slate-900">R$ {(supplierTotal + freight).toFixed(2)}</p>
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        Prazo de entrega: {deliveryDays === null || deliveryDays === undefined
+                                            ? 'N/A'
+                                            : deliveryDays === 0
+                                                ? 'Hoje'
+                                                : `${deliveryDays} dias`}
+                                    </p>
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        Pagamento: {paymentMethod || 'N/A'}
+                                    </p>
                                     {status === "fechada" && (
                                         <button
                                             onClick={() => setReviewModal({ isOpen: true, supplierId, supplierName: supplierLabel })}
@@ -783,9 +1040,10 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         <p className="text-2xl font-bold text-slate-900 mb-4">R$ {totalGlobal.toFixed(2)}</p>
                         <button
                             onClick={handleFinalizeOrder}
+                            disabled={finalizingOrder}
                             className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-6 py-3 text-base font-semibold text-white shadow-lg hover:bg-green-700 transition-all"
                         >
-                            Confirmar e Finalizar Pedidos
+                            {finalizingOrder ? 'Finalizando...' : 'Confirmar e Finalizar Pedidos'}
                         </button>
                     </div>
                 </div>
@@ -812,20 +1070,6 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         </span>
                     </div>
                 </div>
-                <div className="flex flex-wrap gap-3">
-                    <button
-                        onClick={handleSelectBestWithFreight}
-                        className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-blue-700 transition-colors"
-                    >
-                        Melhor Preço Total
-                    </button>
-                    <button
-                        onClick={handleSelectBestPerItem}
-                        className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-emerald-700 transition-colors"
-                    >
-                        Melhor Preço por Item
-                    </button>
-                </div>
             </div>
 
             {/* Contador de Propostas Recebidas */}
@@ -845,97 +1089,41 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 </div>
             </div>
 
-            {/* Top 3 Fornecedores ranking */}
-            {proposals.length > 1 && (
-                <div className="mt-4 flex flex-wrap gap-3">
-                    {[...proposals]
-                        .sort((a, b) => a.totalValue - b.totalValue)
-                        .slice(0, 3)
-                        .map((p, idx) => (
-                            <div key={p.id} className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${idx === 0 ? 'bg-yellow-50 border-yellow-300' : idx === 1 ? 'bg-gray-50 border-gray-300' : 'bg-orange-50 border-orange-300'}`}>
-                                <span className="text-lg">{rankEmoji(idx + 1)}</span>
-                                <div>
-                                    <p className="text-sm font-semibold text-slate-900">{getAnonymousName(p.supplierId)}</p>
-                                    <p className="text-xs text-slate-500">R$ {p.totalValue.toFixed(2)}</p>
-                                </div>
-                            </div>
-                        ))
-                    }
-                </div>
-            )}
-
-            {/* Delta Comparison Card */}
             {(() => {
-                // Calcular soma dos melhores preços por item (SEM frete)
-                let bestPerItemTotal = 0;
-
-                quotation.items.forEach((item: any) => {
-                    const best = bestSupplier(item.id);
-                    if (best) {
-                        const proposal = proposals.find(p => p.supplierId === best);
-                        if (proposal) {
-                            bestPerItemTotal += getItemTotal(proposal, item.id);
-                        }
-                    }
-                });
-
-                // Calcular melhor preço com frete (fornecedor único com todos os itens)
-                let bestWithFreightMerchandise = Infinity;
-                let bestWithFreightSupplier: string | null = null;
-                let bestWithFreightCost = 0;
-
-                proposals.forEach((proposal) => {
-                    // Check if supplier covers all items
-                    const coversAllItems = quotation.items.every((item: any) => getItemPrice(proposal, item.id) > 0);
-                    if (!coversAllItems) return;
-
-                    const merchandiseTotal = proposal.totalValue;
-                    const freight = proposal.freightPrice || 0;
-                    const totalWithFreight = merchandiseTotal + freight;
-
-                    if (totalWithFreight < bestWithFreightMerchandise + bestWithFreightCost) {
-                        bestWithFreightMerchandise = merchandiseTotal;
-                        bestWithFreightSupplier = proposal.supplierId;
-                        bestWithFreightCost = freight;
-                    }
-                });
-
-                if (!bestWithFreightSupplier) return null;
-
-                const bestWithFreightTotal = bestWithFreightMerchandise + bestWithFreightCost;
-                const delta = bestPerItemTotal - bestWithFreightMerchandise;
-                const percentSavings = bestPerItemTotal > 0 ? (delta / bestPerItemTotal) * 100 : 0;
-                const isBetterDeal = bestWithFreightMerchandise < bestPerItemTotal;
-
-                const bestSupplierName = bestWithFreightSupplier ? getAnonymousName(bestWithFreightSupplier) : 'Fornecedor';
+                const bestTotal = getBestTotalStrategy();
+                const bestPerItem = getBestPerItemStrategy();
+                const bestSupplierName = bestTotal.supplierId ? getAnonymousName(bestTotal.supplierId) : 'Sem cobertura total';
 
                 return (
-                    <div className="mt-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-6 shadow-sm">
-                        <h3 className="text-sm font-bold text-gray-900 uppercase mb-4">Análise de Economia</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div className="bg-white rounded-xl p-4 border border-gray-200">
-                                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Melhores Preços por Item</p>
-                                <p className="text-2xl font-bold text-gray-900">R$ {bestPerItemTotal.toFixed(2)}</p>
-                                <p className="text-xs text-gray-500 mt-1">Múltiplos fornecedores (sem frete)</p>
+                    <div className="mt-6 sticky top-4 z-20 rounded-2xl border border-slate-200 bg-slate-50/95 backdrop-blur-sm p-4 shadow-sm">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+                            <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Melhor Preço Total</p>
+                                <p className="mt-2 text-base font-semibold text-slate-900">{bestSupplierName}</p>
+                                <p className="mt-2 text-sm text-slate-700">Total R$ {bestTotal.total.toFixed(2)}</p>
+                                <p className="text-sm text-slate-700">Frete R$ {bestTotal.freight.toFixed(2)}</p>
                             </div>
-                            <div className="bg-white rounded-xl p-4 border border-gray-200">
-                                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Fornecedor Único</p>
-                                <p className="text-2xl font-bold text-blue-600">R$ {bestWithFreightMerchandise.toFixed(2)}</p>
-                                <p className="text-xs text-gray-500 mt-1">{bestSupplierName} (sem frete)</p>
+
+                            <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Melhor Preço por Item</p>
+                                <p className="mt-2 text-sm text-slate-700">Total R$ {bestPerItem.total.toFixed(2)}</p>
+                                <p className="text-sm text-slate-700">Qde de frete: {bestPerItem.freightSuppliersCount}</p>
+                                <p className="text-sm text-slate-700">Frete total R$ {bestPerItem.freightTotal.toFixed(2)}</p>
                             </div>
-                            <div className="bg-white rounded-xl p-4 border border-gray-200">
-                                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Frete</p>
-                                <p className="text-2xl font-bold text-gray-900">R$ {bestWithFreightCost.toFixed(2)}</p>
-                                <p className="text-xs text-gray-500 mt-1">Total com frete: R$ {bestWithFreightTotal.toFixed(2)}</p>
-                            </div>
-                            <div className={`bg-white rounded-xl p-4 border-2 ${isBetterDeal ? 'border-green-400' : 'border-red-400'}`}>
-                                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Economia na Mercadoria</p>
-                                <p className={`text-2xl font-bold ${isBetterDeal ? 'text-green-600' : 'text-red-600'}`}>
-                                    {isBetterDeal ? '-' : '+'} R$ {Math.abs(delta).toFixed(2)}
-                                </p>
-                                <p className={`text-xs font-semibold mt-1 ${isBetterDeal ? 'text-green-600' : 'text-red-600'}`}>
-                                    {isBetterDeal ? '↓' : '↑'} {Math.abs(percentSavings).toFixed(1)}%
-                                </p>
+
+                            <div className="rounded-xl border border-slate-200 bg-white p-4 flex flex-col gap-2 justify-center">
+                                <button
+                                    onClick={handleSelectBestWithFreight}
+                                    className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-blue-700 transition-colors"
+                                >
+                                    Melhor Preço Total
+                                </button>
+                                <button
+                                    onClick={handleSelectBestPerItem}
+                                    className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-emerald-700 transition-colors"
+                                >
+                                    Melhor Preço por Item
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -954,7 +1142,14 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                     <div className="flex flex-col items-center gap-1">
                                         <span>{getAnonymousName(proposal.supplierId)}</span>
                                         <button
-                                            onClick={() => setChatRecipient(proposal.supplierName)}
+                                            onClick={() => {
+                                                if (!orderId) return;
+                                                setChatContext({
+                                                    recipientName: proposal.supplierName,
+                                                    recipientId: proposal.supplierUserId,
+                                                    roomId: `${orderId}::${proposal.supplierId}`,
+                                                });
+                                            }}
                                             className="text-xs font-normal text-blue-600 hover:text-blue-800 flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-full"
                                         >
                                             <ChatBubbleLeftRightIcon className="h-3 w-3" />
@@ -968,10 +1163,37 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     <tbody>
                         {quotation.items.map((item: any) => {
                             const highlight = bestSupplier(item.id);
+                            const bestPriceInTop3 = proposals.reduce((best: number | null, proposal: any) => {
+                                const price = getItemPrice(proposal, item.id);
+                                if (price <= 0) return best;
+                                if (best === null || price < best) return price;
+                                return best;
+                            }, null);
+
+                            const bestPriceOutsideTop3 = allProposals
+                                .filter((proposal: any) => !proposals.some((top: any) => String(top.id) === String(proposal.id)))
+                                .reduce((best: number | null, proposal: any) => {
+                                    const price = getItemPrice(proposal, item.id);
+                                    if (price <= 0) return best;
+                                    if (best === null || price < best) return price;
+                                    return best;
+                                }, null);
+
+                            const shouldShowExternalBest =
+                                bestPriceOutsideTop3 !== null
+                                && (bestPriceInTop3 === null || bestPriceOutsideTop3 < bestPriceInTop3);
+
                             return (
                                 <tr key={item.id} className="odd:bg-white even:bg-slate-50/60">
                                     <td className="border-b border-slate-100 px-4 py-3">
-                                        <p className="font-semibold text-slate-900">{item.descricao}</p>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <p className="font-semibold text-slate-900">{item.descricao}</p>
+                                            {shouldShowExternalBest && (
+                                                <span className="text-xs font-semibold text-amber-700 whitespace-nowrap">
+                                                    Fora Top 3: R$ {bestPriceOutsideTop3!.toFixed(2)}
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="border-b border-slate-100 px-4 py-3 text-center text-slate-900 font-medium">
                                         {item.quantidade}
@@ -1098,11 +1320,14 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 </button>
             </div>
 
-            {chatRecipient && (
+            {chatContext && (
                 <ChatInterface
-                    recipientName={chatRecipient}
-                    isOpen={!!chatRecipient}
-                    onClose={() => setChatRecipient(null)}
+                    recipientName={chatContext.recipientName}
+                    recipientId={chatContext.recipientId}
+                    orderId={chatContext.roomId}
+                    orderTitle="Negociação da Cotação"
+                    isOpen={!!chatContext}
+                    onClose={() => setChatContext(null)}
                 />
             )}
 

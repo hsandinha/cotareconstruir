@@ -37,6 +37,7 @@ interface SaleOrder {
     id: string;
     numero: string;
     quotationId: string;
+    clientId: string;
     clientCode: string;
     clientName?: string;
     workName?: string;
@@ -97,7 +98,7 @@ export function SupplierSalesSection() {
     const { user, initialized } = useAuth();
     const [activeTab, setActiveTab] = useState<"all" | "pending" | "negotiating" | "approved">("all");
     const [selectedOrder, setSelectedOrder] = useState<SaleOrder | null>(null);
-    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [openChats, setOpenChats] = useState<Array<{ recipientName: string; recipientId: string; roomId: string; orderTitle?: string }>>([]);
     const [searchTerm, setSearchTerm] = useState("");
     const [orders, setOrders] = useState<SaleOrder[]>([]);
     const [loading, setLoading] = useState(true);
@@ -137,6 +138,7 @@ export function SupplierSalesSection() {
                     id: pedido.id,
                     numero: pedido.numero || pedido.id.slice(0, 8),
                     quotationId: pedido.cotacao_id || '',
+                    clientId: pedido.user_id || '',
                     clientCode: cliente?.nome || cliente?.email || pedido.user_id || '',
                     clientName: cliente?.nome || extraData.clientDetails?.name || '',
                     workName: obra?.nome || extraData.workName || 'Obra sem nome',
@@ -269,8 +271,28 @@ export function SupplierSalesSection() {
         }
     };
 
+    const openChatForOrder = (order: SaleOrder) => {
+        const context = {
+            recipientName: order.clientName || order.clientCode,
+            recipientId: order.clientId,
+            roomId: order.id,
+            orderTitle: order.workName,
+        };
+
+        setOpenChats((prev) => {
+            if (prev.some((chat) => chat.roomId === context.roomId)) {
+                return prev;
+            }
+            return [...prev, context];
+        });
+    };
+
+    const closeChat = (roomId: string) => {
+        setOpenChats((prev) => prev.filter((chat) => chat.roomId !== roomId));
+    };
+
     if (loading) {
-        return <div className="p-8 text-center text-gray-500">Carregando vendas...</div>;
+        return <div className="p-8 text-center text-gray-500">Carregando pedidos...</div>;
     }
 
     return (
@@ -280,7 +302,7 @@ export function SupplierSalesSection() {
                 {/* Header & Filters */}
                 <div className="p-4 border-b border-gray-200 space-y-4">
                     <div className="flex items-center justify-between">
-                        <h2 className="text-lg font-bold text-gray-900">Minhas Vendas</h2>
+                        <h2 className="text-lg font-bold text-gray-900">Meus Pedidos</h2>
                         <div className="flex gap-2">
                             <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg">
                                 <FunnelIcon className="h-5 w-5" />
@@ -333,7 +355,7 @@ export function SupplierSalesSection() {
                 <div className="flex-1 overflow-y-auto">
                     {filteredOrders.length === 0 ? (
                         <div className="p-8 text-center text-gray-500 text-sm">
-                            Nenhuma venda encontrada.
+                            Nenhum pedido encontrado.
                         </div>
                     ) : (
                         <div className="divide-y divide-gray-100">
@@ -397,7 +419,7 @@ export function SupplierSalesSection() {
                             </div>
                             <div className="flex gap-3">
                                 <button
-                                    onClick={() => setIsChatOpen(true)}
+                                    onClick={() => openChatForOrder(selectedOrder)}
                                     className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
                                 >
                                     <ChatBubbleLeftRightIcon className="h-5 w-5" />
@@ -409,7 +431,7 @@ export function SupplierSalesSection() {
                                         className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
                                     >
                                         <CheckCircleIcon className="h-5 w-5" />
-                                        Aprovar Venda
+                                        Aprovar Pedido
                                     </button>
                                 )}
                             </div>
@@ -510,22 +532,24 @@ export function SupplierSalesSection() {
                 ) : (
                     <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
                         <DocumentTextIcon className="h-16 w-16 mb-4 text-gray-300" />
-                        <p className="text-lg font-medium">Selecione uma venda para ver os detalhes</p>
+                        <p className="text-lg font-medium">Selecione um pedido para ver os detalhes</p>
                     </div>
                 )}
             </div>
 
             {/* Chat Interface */}
-            {isChatOpen && selectedOrder && (
+            {openChats.map((chat, index) => (
                 <ChatInterface
-                    isOpen={isChatOpen}
-                    onClose={() => setIsChatOpen(false)}
-                    recipientName={selectedOrder.clientName || selectedOrder.clientCode}
-                    recipientId={selectedOrder.clientCode} // Should be actual client ID
-                    orderId={selectedOrder.id}
-                    orderTitle={selectedOrder.workName}
+                    key={chat.roomId}
+                    isOpen={true}
+                    onClose={() => closeChat(chat.roomId)}
+                    recipientName={chat.recipientName}
+                    recipientId={chat.recipientId}
+                    orderId={chat.roomId}
+                    orderTitle={chat.orderTitle}
+                    offsetIndex={index}
                 />
-            )}
+            ))}
         </div>
     );
 }

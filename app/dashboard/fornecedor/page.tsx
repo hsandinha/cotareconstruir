@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SupplierProfileSection } from "../../../components/dashboard/supplier/ProfileSection";
 import { SupplierMaterialsSection } from "../../../components/dashboard/supplier/MaterialsSection";
 import { SupplierMyProductsSection } from "../../../components/dashboard/supplier/MyProductsSection";
@@ -22,7 +22,7 @@ const tabs: { id: SupplierTabId; label: string }[] = [
     { id: "perfil", label: "Cadastro & Perfil" },
     { id: "materiais", label: "Cadastro de Materiais" },
     { id: "ofertas", label: "Minhas Ofertas" },
-    { id: "vendas-cotacoes", label: "Vendas & Cotações" },
+    { id: "vendas-cotacoes", label: "Pedidos" },
 ];
 
 
@@ -44,6 +44,58 @@ export default function FornecedorDashboard() {
 
     const { user, profile, initialized, logout } = useAuth();
 
+    const fetchDashboardData = useCallback(async () => {
+        if (!user) return;
+
+        try {
+            setUserId(user.id);
+            setUserEmail(user.email || "");
+
+            if (profile) {
+                const name = profile.nome || user.email || "Fornecedor";
+                setUserName(name);
+                setUserInitial(name.charAt(0).toUpperCase());
+                setUserRoles(profile.roles || []);
+
+                if (!profile.fornecedor_id && profile.roles?.includes('fornecedor')) {
+                    setShowPendingProfileModal(true);
+                }
+            }
+
+            const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session?.access_token) {
+                    authHeaders['Authorization'] = `Bearer ${session.access_token}`;
+                }
+            } catch (e) { /* ignore */ }
+            if (!authHeaders['Authorization'] && typeof window !== 'undefined') {
+                const token = localStorage.getItem('token');
+                if (token) authHeaders['Authorization'] = `Bearer ${token}`;
+            }
+
+            const [cotacoesRes, pedidosRes, materiaisRes] = await Promise.all([
+                fetch('/api/cotacoes', { headers: authHeaders }).then(r => r.ok ? r.json() : { data: [] }),
+                fetch('/api/pedidos', { headers: authHeaders }).then(r => r.ok ? r.json() : { data: [] }),
+                fetch('/api/fornecedor-materiais' + (profile?.fornecedor_id ? `?fornecedor_id=${profile.fornecedor_id}` : ''), { headers: authHeaders }).then(r => r.ok ? r.json() : { data: [] }),
+            ]);
+
+            const cotacoesData = cotacoesRes.data || [];
+            const pedidosData = pedidosRes.data || [];
+            const materiaisData = materiaisRes.data || [];
+            const cotacoesAbertas = cotacoesData.filter((c: any) => c.status !== 'fechada');
+
+            setStats({
+                activeConsultations: cotacoesAbertas.length,
+                sentProposals: pedidosData.length,
+                registeredMaterials: materiaisData.length,
+                approvals: pedidosData.filter((p: any) => p.status === 'confirmado' || p.status === 'entregue').length,
+            });
+        } catch (error) {
+            console.error("Error fetching stats:", error);
+        }
+    }, [user, profile]);
+
     useEffect(() => {
         if (!initialized) return;
 
@@ -52,59 +104,31 @@ export default function FornecedorDashboard() {
             return;
         }
 
-        const loadData = async () => {
-            try {
-                setUserId(user.id);
-                setUserEmail(user.email || "");
+        fetchDashboardData();
 
-                if (profile) {
-                    const name = profile.nome || user.email || "Fornecedor";
-                    setUserName(name);
-                    setUserInitial(name.charAt(0).toUpperCase());
-                    setUserRoles(profile.roles || []);
+        const handleFocus = () => {
+            fetchDashboardData();
+        };
 
-                    // Verificar se tem fornecedor_id vinculado
-                    if (!profile.fornecedor_id && profile.roles?.includes('fornecedor')) {
-                        setShowPendingProfileModal(true);
-                    }
-                }
-
-                // Buscar estatísticas via API routes (bypass RLS)
-                const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-                try {
-                    const { data: { session } } = await supabase.auth.getSession();
-                    if (session?.access_token) {
-                        authHeaders['Authorization'] = `Bearer ${session.access_token}`;
-                    }
-                } catch (e) { /* ignore */ }
-                if (!authHeaders['Authorization'] && typeof window !== 'undefined') {
-                    const token = localStorage.getItem('token');
-                    if (token) authHeaders['Authorization'] = `Bearer ${token}`;
-                }
-
-                const [cotacoesRes, pedidosRes, materiaisRes] = await Promise.all([
-                    fetch('/api/cotacoes', { headers: authHeaders }).then(r => r.ok ? r.json() : { data: [] }),
-                    fetch('/api/pedidos', { headers: authHeaders }).then(r => r.ok ? r.json() : { data: [] }),
-                    fetch('/api/fornecedor-materiais' + (profile?.fornecedor_id ? `?fornecedor_id=${profile.fornecedor_id}` : ''), { headers: authHeaders }).then(r => r.ok ? r.json() : { data: [] }),
-                ]);
-
-                const cotacoesData = cotacoesRes.data || [];
-                const pedidosData = pedidosRes.data || [];
-                const materiaisData = materiaisRes.data || [];
-
-                setStats({
-                    activeConsultations: cotacoesData.length,
-                    sentProposals: pedidosData.length,
-                    registeredMaterials: materiaisData.length,
-                    approvals: pedidosData.filter((p: any) => p.status === 'confirmado' || p.status === 'entregue').length,
-                });
-            } catch (error) {
-                console.error("Error fetching stats:", error);
+        const handleVisibilityChange = () => {
+            if (!document.hidden) {
+                fetchDashboardData();
             }
         };
 
-        loadData();
-    }, [user, profile, initialized, router]);
+        const intervalId = window.setInterval(() => {
+            fetchDashboardData();
+        }, 30000);
+
+        window.addEventListener('focus', handleFocus);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            window.clearInterval(intervalId);
+            window.removeEventListener('focus', handleFocus);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [user, initialized, router, fetchDashboardData]);
 
     function renderTabContent() {
         switch (tab) {

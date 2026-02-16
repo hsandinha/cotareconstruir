@@ -100,6 +100,7 @@ export function ClientSolicitationSection() {
     const [quotationMode, setQuotationMode] = useState<"search" | "phases">("phases");
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
+    const [successMeta, setSuccessMeta] = useState<{ cotacoes: number; grupos: number } | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
     const [showAddForm, setShowAddForm] = useState(false);
 
@@ -114,6 +115,13 @@ export function ClientSolicitationSection() {
     });
 
     const unidades = ["unid", "kg", "m", "m²", "m³", "L", "pç", "sc", "cx", "tn"];
+
+    const normalizeGroupName = (value: string | null | undefined) =>
+        String(value || "")
+            .trim()
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
 
     // Carregar dados iniciais
     useEffect(() => {
@@ -324,10 +332,14 @@ export function ClientSolicitationSection() {
     // Adicionar material da busca
     const addMaterialFromSearch = (material: Material) => {
         const grupo = grupos.find(g => material.gruposInsumoIds.includes(g.id));
+        if (!grupo?.nome) {
+            alert("Este material não possui grupo de insumo válido e não pode ser adicionado.");
+            return;
+        }
         setItems(prev => [...prev, {
             id: Date.now(),
             descricao: material.nome,
-            categoria: grupo?.nome || "Outros",
+            categoria: grupo.nome,
             quantidade: 1,
             unidade: material.unidade,
             observacao: "",
@@ -339,6 +351,12 @@ export function ClientSolicitationSection() {
     // Adicionar item manual
     const handleAddManualItem = () => {
         if (!form.descricao.trim() || form.quantidade < 1) return;
+
+        const allowedGroups = new Set(availableGroups.map(g => normalizeGroupName(g)));
+        if (!allowedGroups.has(normalizeGroupName(form.categoria))) {
+            alert("Selecione um grupo de insumo válido para adicionar o item.");
+            return;
+        }
 
         setItems(prev => [...prev, {
             id: Date.now(),
@@ -370,6 +388,14 @@ export function ClientSolicitationSection() {
     // Finalizar cotação
     const handleSubmit = async () => {
         if (!user || !selectedObraId || items.length === 0) return;
+
+        const allowedGroups = new Set(availableGroups.map(g => normalizeGroupName(g)));
+        const invalidItems = items.filter(item => !allowedGroups.has(normalizeGroupName(item.categoria)));
+        if (invalidItems.length > 0) {
+            alert("Existem itens sem grupo de insumo válido. Corrija antes de enviar.");
+            setStep(2);
+            return;
+        }
 
         setLoading(true);
         try {
@@ -406,6 +432,8 @@ export function ClientSolicitationSection() {
             }
 
             const result = await res.json();
+            const cotacoesCreated = Number(result?.cotacoes_created || 1);
+            const gruposCreated = Number(result?.groups_created || cotacoesCreated);
 
             // Notificar fornecedores da região por email (best effort)
             if (selectedObra?.cidade && result.suppliers_notified > 0) {
@@ -426,9 +454,11 @@ export function ClientSolicitationSection() {
             }
 
             setSuccess(true);
+            setSuccessMeta({ cotacoes: cotacoesCreated, grupos: gruposCreated });
             setItems([]);
             setTimeout(() => {
                 setSuccess(false);
+                setSuccessMeta(null);
                 setStep(1);
                 setSelectedObraId("");
             }, 3000);
@@ -449,7 +479,11 @@ export function ClientSolicitationSection() {
                         <CheckCircle2 className="w-10 h-10 text-white" />
                     </div>
                     <h2 className="text-2xl font-bold text-slate-900 mb-2">Cotação Enviada!</h2>
-                    <p className="text-slate-500 mb-6">Fornecedores da região serão notificados</p>
+                    <p className="text-slate-500 mb-6">
+                        {successMeta
+                            ? `${successMeta.cotacoes} solicitação${successMeta.cotacoes > 1 ? 'ões' : ''} gerada${successMeta.cotacoes > 1 ? 's' : ''} em ${successMeta.grupos} grupo${successMeta.grupos > 1 ? 's' : ''}`
+                            : 'Fornecedores da região serão notificados'}
+                    </p>
                     <div className="flex items-center justify-center gap-2 text-sm text-emerald-600">
                         <Loader2 className="w-4 h-4 animate-spin" />
                         Redirecionando...

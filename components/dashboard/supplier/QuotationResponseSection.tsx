@@ -17,9 +17,10 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 interface SupplierQuotationResponseSectionProps {
     quotation: any;
     onBack: () => void;
+    mode?: 'create' | 'update';
 }
 
-export function SupplierQuotationResponseSection({ quotation, onBack }: SupplierQuotationResponseSectionProps) {
+export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'create' }: SupplierQuotationResponseSectionProps) {
     const { user, profile } = useAuth();
     const [responses, setResponses] = useState<{ [key: string]: { preco: string, disponibilidade: string } }>({});
     const [paymentMethod, setPaymentMethod] = useState("");
@@ -27,7 +28,33 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
     const [deliveryDays, setDeliveryDays] = useState("");
     const [observations, setObservations] = useState("");
     const [freightValue, setFreightValue] = useState("");
+    const [taxValue, setTaxValue] = useState("");
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (mode !== 'update') return;
+
+        const resumo = quotation?._proposta_resumo;
+        if (!resumo) return;
+
+        setFreightValue(String(resumo.freightValue ?? ""));
+        setTaxValue(String(resumo.taxValue ?? ""));
+        setDeliveryDays(resumo.deliveryDays === null || resumo.deliveryDays === undefined ? "" : String(resumo.deliveryDays));
+        setPaymentMethod(resumo.paymentTerms || "");
+
+        const initialResponses: { [key: string]: { preco: string, disponibilidade: string } } = {};
+        (quotation.items || []).forEach((item: any) => {
+            const itemResumo = resumo.items?.[item.id];
+            if (itemResumo) {
+                initialResponses[item.id] = {
+                    preco: String(itemResumo.unitPrice ?? ""),
+                    disponibilidade: 'disponivel'
+                };
+            }
+        });
+
+        setResponses(initialResponses);
+    }, [mode, quotation]);
 
     // Mapeamento de dias da semana
     const dayLabels: Record<string, string> = {
@@ -106,6 +133,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
 
             // Calcular valor do frete
             const freteVal = parseFloat(freightValue) || 0;
+            const impostosVal = parseFloat(taxValue) || 0;
             const prazoEntrega = deliveryDays ? Math.max(0, parseInt(deliveryDays, 10) || 0) : null;
 
             // Send via API route (bypasses RLS)
@@ -116,8 +144,9 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                 body: JSON.stringify({
                     action: 'create',
                     cotacao_id: quotation.id,
-                    valor_total: totalValue + freteVal,
+                    valor_total: totalValue + freteVal + impostosVal,
                     valor_frete: freteVal,
+                    valor_impostos: impostosVal,
                     prazo_entrega: prazoEntrega,
                     condicoes_pagamento: paymentMethod,
                     observacoes: observations,
@@ -131,7 +160,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                 throw new Error(err.error || 'Erro ao enviar proposta');
             }
 
-            alert("Proposta enviada com sucesso!");
+            alert(mode === 'update' ? "Proposta atualizada com sucesso!" : "Proposta enviada com sucesso!");
             onBack();
         } catch (error) {
             console.error("Erro ao enviar proposta:", error);
@@ -141,25 +170,32 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
         }
     };
 
+    const materialsTotal = quotation.items
+        ? quotation.items.reduce((total: number, item: any) => {
+            const response = responses[item.id];
+            if (response?.preco) {
+                return total + (parseFloat(response.preco) * item.quantidade);
+            }
+            return total;
+        }, 0)
+        : 0;
+
     return (
         <div className="space-y-6">
-            {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
                     <h3 className="text-lg font-medium text-gray-900">Resposta à Cotação</h3>
                     <p className="mt-1 text-sm text-gray-600">
-                        Insira sua proposta comercial para os materiais solicitados
+                        {mode === 'update'
+                            ? 'Atualize sua proposta comercial conforme negociação'
+                            : 'Insira sua proposta comercial para os materiais solicitados'}
                     </p>
                 </div>
-                <button
-                    onClick={onBack}
-                    className="text-sm text-gray-500 hover:text-gray-700"
-                >
+                <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-700">
                     Voltar
                 </button>
             </div>
 
-            {/* Informações da consulta */}
             <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div>
@@ -181,7 +217,6 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                 </div>
             </div>
 
-            {/* Informações de Entrega da Obra */}
             {quotation.obraHorarioEntrega && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <div className="flex items-start gap-3">
@@ -207,15 +242,12 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                             {quotation.obraRestricoesEntrega && (
                                 <p className="mt-2 text-xs text-blue-700"><strong>Restrição:</strong> {quotation.obraRestricoesEntrega}</p>
                             )}
-                            <p className="mt-2 text-xs text-blue-500">
-                                ⚠️ Considere esses horários ao calcular o frete.
-                            </p>
+                            <p className="mt-2 text-xs text-blue-500">⚠️ Considere esses horários ao calcular o frete.</p>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Alerta de segurança */}
             <div className="bg-red-50 border border-red-200 rounded-md px-4 py-3 flex items-center gap-3">
                 <svg className="h-4 w-4 text-red-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -225,7 +257,6 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                 </p>
             </div>
 
-            {/* Tabela de cotação */}
             <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
                     <div>
@@ -250,7 +281,13 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                             {quotation.items && quotation.items.map((item: any) => {
                                 const response = responses[item.id] || { preco: '', disponibilidade: '' };
                                 const subtotal = response.preco ? (parseFloat(response.preco) * item.quantidade).toFixed(2) : '0.00';
-                                const dispColor = response.disponibilidade === 'disponivel' ? 'text-green-700 bg-green-50 border-green-200' : response.disponibilidade === 'sob_consulta' ? 'text-amber-700 bg-amber-50 border-amber-200' : response.disponibilidade === 'indisponivel' ? 'text-red-700 bg-red-50 border-red-200' : 'text-gray-600 bg-white border-gray-300';
+                                const dispColor = response.disponibilidade === 'disponivel'
+                                    ? 'text-green-700 bg-green-50 border-green-200'
+                                    : response.disponibilidade === 'sob_consulta'
+                                        ? 'text-amber-700 bg-amber-50 border-amber-200'
+                                        : response.disponibilidade === 'indisponivel'
+                                            ? 'text-red-700 bg-red-50 border-red-200'
+                                            : 'text-gray-600 bg-white border-gray-300';
 
                                 return (
                                     <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
@@ -294,22 +331,13 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                         <tfoot className="bg-gray-50">
                             <tr>
                                 <td colSpan={5} className="px-4 py-3 text-right text-sm font-medium text-gray-700">Total Materiais:</td>
-                                <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">
-                                    R$ {quotation.items ? quotation.items.reduce((total: number, item: any) => {
-                                        const response = responses[item.id];
-                                        if (response?.preco) {
-                                            return total + (parseFloat(response.preco) * item.quantidade);
-                                        }
-                                        return total;
-                                    }, 0).toFixed(2) : '0.00'}
-                                </td>
+                                <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">R$ {materialsTotal.toFixed(2)}</td>
                             </tr>
                         </tfoot>
                     </table>
                 </div>
             </div>
 
-            {/* Frete e Resumo */}
             <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                     <div>
@@ -336,26 +364,23 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                                 <div className="flex items-center gap-6">
                                     <div className="text-center">
                                         <div className="text-xs text-gray-500">Materiais</div>
-                                        <div className="text-sm font-semibold text-gray-800">R$ {quotation.items ? quotation.items.reduce((total: number, item: any) => {
-                                            const response = responses[item.id];
-                                            if (response?.preco) return total + (parseFloat(response.preco) * item.quantidade);
-                                            return total;
-                                        }, 0).toFixed(2) : '0.00'}</div>
+                                        <div className="text-sm font-semibold text-gray-800">R$ {materialsTotal.toFixed(2)}</div>
                                     </div>
                                     <div className="text-gray-300 text-lg">+</div>
                                     <div className="text-center">
                                         <div className="text-xs text-gray-500">Frete</div>
-                                        <div className="text-sm font-semibold text-gray-800">R$ {freightValue ? parseFloat(freightValue).toFixed(2) : '0.00'}</div>
+                                        <div className="text-sm font-semibold text-gray-800">R$ {(parseFloat(freightValue) || 0).toFixed(2)}</div>
+                                    </div>
+                                    <div className="text-gray-300 text-lg">+</div>
+                                    <div className="text-center">
+                                        <div className="text-xs text-gray-500">Impostos</div>
+                                        <div className="text-sm font-semibold text-gray-800">R$ {(parseFloat(taxValue) || 0).toFixed(2)}</div>
                                     </div>
                                     <div className="text-gray-300 text-lg">=</div>
                                 </div>
                                 <div className="text-right bg-white rounded-md px-4 py-2 border border-green-200 shadow-sm">
                                     <div className="text-xs text-gray-500">Total Geral</div>
-                                    <div className="text-lg font-bold text-green-700">R$ {((quotation.items ? quotation.items.reduce((total: number, item: any) => {
-                                        const response = responses[item.id];
-                                        if (response?.preco) return total + (parseFloat(response.preco) * item.quantidade);
-                                        return total;
-                                    }, 0) : 0) + (parseFloat(freightValue) || 0)).toFixed(2)}</div>
+                                    <div className="text-lg font-bold text-green-700">R$ {(materialsTotal + (parseFloat(freightValue) || 0) + (parseFloat(taxValue) || 0)).toFixed(2)}</div>
                                 </div>
                             </div>
                         </div>
@@ -363,10 +388,9 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                 </div>
             </div>
 
-            {/* Condições comerciais */}
             <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <h4 className="text-sm font-semibold text-gray-900 mb-3">Condições Comerciais</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Forma de Pagamento</label>
                         <select
@@ -408,7 +432,19 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                             placeholder="Ex: 7"
                         />
                     </div>
-                    <div className="md:col-span-3">
+                    <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Impostos (R$)</label>
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={taxValue}
+                            onChange={(e) => setTaxValue(e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Ex: 15,00"
+                        />
+                    </div>
+                    <div className="md:col-span-4">
                         <label className="block text-xs font-medium text-gray-600 mb-1">Observações</label>
                         <textarea
                             rows={2}
@@ -421,7 +457,6 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                 </div>
             </div>
 
-            {/* Ações */}
             <div className="flex justify-end items-center gap-3 pt-2">
                 <button
                     onClick={onBack}
@@ -436,13 +471,18 @@ export function SupplierQuotationResponseSection({ quotation, onBack }: Supplier
                 >
                     {loading ? (
                         <>
-                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                            Enviando...
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            {mode === 'update' ? 'Atualizando...' : 'Enviando...'}
                         </>
                     ) : (
                         <>
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" /></svg>
-                            Enviar Proposta
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+                            </svg>
+                            {mode === 'update' ? 'Atualizar Proposta' : 'Enviar Proposta'}
                         </>
                     )}
                 </button>

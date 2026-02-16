@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ClientProfileSection } from "../../../components/dashboard/client/ProfileSection";
 import { ClientWorksSection } from "../../../components/dashboard/client/WorksSection";
 import { ClientOrderSection } from "../../../components/dashboard/client/OrderSection";
@@ -46,6 +46,42 @@ export default function ClienteDashboard() {
 
     const { user, profile, initialized, logout } = useAuth();
 
+    const fetchDashboardData = useCallback(async () => {
+        if (!user) return;
+
+        try {
+            setUserId(user.id);
+            setUserEmail(user.email || "");
+
+            if (profile) {
+                const name = profile.nome || user.email || "Cliente";
+                setUserName(name);
+                setUserInitial(name.charAt(0).toUpperCase());
+                setUserRoles(profile.roles || []);
+
+                if (!profile.cliente_id && profile.roles?.includes('cliente')) {
+                    setShowPendingProfileModal(true);
+                }
+            }
+
+            const [obrasResult, cotacoesResult, pedidosResult, propostasResult] = await Promise.all([
+                supabase.from('obras').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
+                supabase.from('cotacoes').select('*', { count: 'exact', head: true }).eq('user_id', user.id).in('status', ['rascunho', 'enviada', 'respondida']),
+                supabase.from('pedidos').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
+                supabase.from('propostas').select('cotacao_id, cotacoes!inner(user_id)', { count: 'exact', head: true }).eq('cotacoes.user_id', user.id)
+            ]);
+
+            setStats({
+                works: obrasResult.count || 0,
+                quotations: cotacoesResult.count || 0,
+                orders: pedidosResult.count || 0,
+                propostas: propostasResult.count || 0,
+            });
+        } catch (error) {
+            console.error("Error fetching stats:", error);
+        }
+    }, [user, profile]);
+
     useEffect(() => {
         if (!initialized) return;
 
@@ -54,44 +90,31 @@ export default function ClienteDashboard() {
             return;
         }
 
-        const loadData = async () => {
-            try {
-                setUserId(user.id);
-                setUserEmail(user.email || "");
+        fetchDashboardData();
 
-                if (profile) {
-                    const name = profile.nome || user.email || "Cliente";
-                    setUserName(name);
-                    setUserInitial(name.charAt(0).toUpperCase());
-                    setUserRoles(profile.roles || []);
+        const handleFocus = () => {
+            fetchDashboardData();
+        };
 
-                    // Verificar se tem cliente_id vinculado
-                    if (!profile.cliente_id && profile.roles?.includes('cliente')) {
-                        setShowPendingProfileModal(true);
-                    }
-                }
-
-                // Buscar estatísticas via Supabase
-                const [obrasResult, cotacoesResult, pedidosResult, propostasResult] = await Promise.all([
-                    supabase.from('obras').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
-                    supabase.from('cotacoes').select('*', { count: 'exact', head: true }).eq('user_id', user.id).in('status', ['rascunho', 'enviada', 'respondida']),
-                    supabase.from('pedidos').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
-                    supabase.from('propostas').select('cotacao_id, cotacoes!inner(user_id)', { count: 'exact', head: true }).eq('cotacoes.user_id', user.id)
-                ]);
-
-                setStats({
-                    works: obrasResult.count || 0,
-                    quotations: cotacoesResult.count || 0,
-                    orders: pedidosResult.count || 0,
-                    propostas: propostasResult.count || 0,
-                });
-            } catch (error) {
-                console.error("Error fetching stats:", error);
+        const handleVisibilityChange = () => {
+            if (!document.hidden) {
+                fetchDashboardData();
             }
         };
 
-        loadData();
-    }, [user, profile, initialized, router]);
+        const intervalId = window.setInterval(() => {
+            fetchDashboardData();
+        }, 30000);
+
+        window.addEventListener('focus', handleFocus);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            window.clearInterval(intervalId);
+            window.removeEventListener('focus', handleFocus);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [user, initialized, router, fetchDashboardData]);
 
     function renderTabContent() {
         switch (tab) {

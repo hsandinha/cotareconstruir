@@ -56,6 +56,9 @@ export enum AuditAction {
 
     // Webhooks
     WEBHOOK_RECEIVED = 'WEBHOOK_RECEIVED',
+
+    // Chat
+    CHAT_MESSAGE_BLOCKED = 'CHAT_MESSAGE_BLOCKED',
 }
 
 export interface AuditLogEntry {

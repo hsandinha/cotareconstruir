@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { BellIcon } from "@heroicons/react/24/outline";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
+import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -16,6 +17,7 @@ export interface Notification {
     type: "info" | "success" | "warning";
     timestamp: any;
     createdAt?: any;
+    link?: string | null;
 }
 
 interface NotificationBellProps {
@@ -26,7 +28,8 @@ export function NotificationBell({ initialNotifications }: NotificationBellProps
     const [isOpen, setIsOpen] = useState(false);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const dropdownRef = useRef<HTMLDivElement>(null);
-    const { user, initialized } = useAuth();
+    const { user, profile, initialized } = useAuth();
+    const router = useRouter();
 
     useEffect(() => {
         if (!initialized || !user) {
@@ -53,7 +56,8 @@ export function NotificationBell({ initialNotifications }: NotificationBellProps
                         read: item.lida || false,
                         type: item.tipo || "info",
                         timestamp: timestamp.getTime(),
-                        createdAt: item.created_at
+                        createdAt: item.created_at,
+                        link: item.link || null,
                     };
                 });
                 setNotifications(newNotifications);
@@ -96,12 +100,28 @@ export function NotificationBell({ initialNotifications }: NotificationBellProps
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    const getDefaultDashboardLink = () => {
+        const roles = profile?.roles || [];
+        if (roles.includes('admin') || profile?.role === 'admin') return '/dashboard/admin';
+        if (roles.includes('fornecedor') || profile?.role === 'fornecedor') return '/dashboard/fornecedor';
+        return '/dashboard/cliente';
+    };
+
+    const resolveNotificationLink = (notification: Notification) => {
+        if (!notification.link || notification.link === '/dashboard') {
+            return getDefaultDashboardLink();
+        }
+        return notification.link;
+    };
+
     const markAsRead = async (id: string) => {
         try {
             await supabase
                 .from('notificacoes')
-                .update({ lida: true })
+                .update({ lida: true, data_leitura: new Date().toISOString() })
                 .eq('id', id);
+
+            setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
         } catch (error) {
             console.error("Error marking notification as read:", error);
         }
@@ -109,7 +129,17 @@ export function NotificationBell({ initialNotifications }: NotificationBellProps
 
     const markAllAsRead = async () => {
         const unread = notifications.filter(n => !n.read);
-        unread.forEach(n => markAsRead(n.id));
+        await Promise.all(unread.map(n => markAsRead(n.id)));
+    };
+
+    const handleNotificationClick = async (notification: Notification) => {
+        await markAsRead(notification.id);
+        setIsOpen(false);
+
+        const targetLink = resolveNotificationLink(notification);
+        if (targetLink) {
+            router.push(targetLink);
+        }
     };
 
     return (
@@ -149,7 +179,7 @@ export function NotificationBell({ initialNotifications }: NotificationBellProps
                                     <div
                                         key={notification.id}
                                         className={`p-4 hover:bg-gray-50 transition-colors cursor-pointer ${!notification.read ? 'bg-blue-50/50' : ''}`}
-                                        onClick={() => markAsRead(notification.id)}
+                                        onClick={() => handleNotificationClick(notification)}
                                     >
                                         <div className="flex justify-between items-start">
                                             <p className={`text-sm font-medium ${!notification.read ? 'text-gray-900' : 'text-gray-600'}`}>
@@ -168,7 +198,13 @@ export function NotificationBell({ initialNotifications }: NotificationBellProps
                         )}
                     </div>
                     <div className="p-3 border-t border-gray-100 bg-gray-50 text-center">
-                        <button className="text-xs font-medium text-gray-600 hover:text-gray-900">
+                        <button
+                            onClick={() => {
+                                setIsOpen(false);
+                                router.push('/dashboard/notificacoes');
+                            }}
+                            className="text-xs font-medium text-gray-600 hover:text-gray-900"
+                        >
                             Ver histórico completo
                         </button>
                     </div>

@@ -123,7 +123,8 @@ export default function AdminDashboard() {
     const [stats, setStats] = useState({
         users: 0,
         suppliers: 0,
-        quotations: 0
+        quotations: 0,
+        chatBlockedToday: 0,
     });
     const [recentUsers, setRecentUsers] = useState<any[]>([]);
     const [usersPage, setUsersPage] = useState<any[]>([]);
@@ -198,17 +199,26 @@ export default function AdminDashboard() {
 
     const fetchOverview = async () => {
         try {
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
+
             // Buscar contagens usando Supabase
-            const [usersResult, suppliersResult, cotacoesResult] = await Promise.all([
+            const [usersResult, suppliersResult, cotacoesResult, chatBlockedTodayResult] = await Promise.all([
                 supabase.from('users').select('*', { count: 'exact', head: true }),
                 supabase.from('fornecedores').select('*', { count: 'exact', head: true }),
-                supabase.from('cotacoes').select('*', { count: 'exact', head: true })
+                supabase.from('cotacoes').select('*', { count: 'exact', head: true }),
+                supabase
+                    .from('audit_logs')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('action', 'CHAT_MESSAGE_BLOCKED')
+                    .gte('created_at', todayStart.toISOString())
             ]);
 
             setStats({
                 users: usersResult.count || 0,
                 suppliers: suppliersResult.count || 0,
-                quotations: cotacoesResult.count || 0
+                quotations: cotacoesResult.count || 0,
+                chatBlockedToday: chatBlockedTodayResult.count || 0,
             });
 
             // Buscar usuários recentes
@@ -361,6 +371,63 @@ export default function AdminDashboard() {
             fetchReportsPage(0);
         }
     }, [activeTab, isAdmin, roleFilter, statusFilter, userSortDir, searchTerm, auditSortDir, auditSearchTerm, auditActionFilter, reportStatusFilter, reportsSortDir, reportTypeFilter]);
+
+    useEffect(() => {
+        if (!isAdmin) return;
+
+        const refreshCurrentTab = () => {
+            fetchOverview();
+
+            if (activeTab === "users") {
+                fetchUsersPage(usersPageIndex);
+            }
+            if (activeTab === "audit") {
+                fetchAuditPage(auditPageIndex);
+            }
+            if (activeTab === "reports") {
+                fetchReportsPage(reportsPageIndex);
+            }
+        };
+
+        const handleFocus = () => {
+            refreshCurrentTab();
+        };
+
+        const handleVisibilityChange = () => {
+            if (!document.hidden) {
+                refreshCurrentTab();
+            }
+        };
+
+        const intervalId = window.setInterval(() => {
+            refreshCurrentTab();
+        }, 30000);
+
+        window.addEventListener('focus', handleFocus);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            window.clearInterval(intervalId);
+            window.removeEventListener('focus', handleFocus);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [
+        isAdmin,
+        activeTab,
+        usersPageIndex,
+        auditPageIndex,
+        reportsPageIndex,
+        roleFilter,
+        statusFilter,
+        userSortDir,
+        searchTerm,
+        auditSortDir,
+        auditSearchTerm,
+        auditActionFilter,
+        reportStatusFilter,
+        reportsSortDir,
+        reportTypeFilter,
+    ]);
 
     const handleResolveReport = async (reportId: string) => {
         if (!confirm("Marcar denúncia como resolvida?")) return;
@@ -643,10 +710,11 @@ export default function AdminDashboard() {
             <div className="section-shell space-y-6 py-8">
                 {activeTab === "overview" && (
                     <>
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                             <StatCard title="Total de Usuários" value={stats.users} accent="bg-blue-600" />
                             <StatCard title="Fornecedores" value={stats.suppliers} accent="bg-violet-600" />
                             <StatCard title="Cotações" value={stats.quotations} accent="bg-emerald-600" />
+                            <StatCard title="Bloqueios de Chat Hoje" value={stats.chatBlockedToday} accent="bg-rose-600" />
                         </div>
 
                         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -1010,6 +1078,7 @@ export default function AdminDashboard() {
                                 >
                                     <option value="all">Todas</option>
                                     <option value="LOGIN">LOGIN</option>
+                                    <option value="CHAT_MESSAGE_BLOCKED">CHAT_MESSAGE_BLOCKED</option>
                                     <option value="RESOLVE_REPORT">RESOLVE_REPORT</option>
                                     <option value="TOGGLE_STATUS">TOGGLE_STATUS</option>
                                     <option value="UPDATE_ROLE">UPDATE_ROLE</option>
@@ -1044,10 +1113,10 @@ export default function AdminDashboard() {
                                     ) : (
                                         auditPage.map((log) => (
                                             <tr key={log.id} className="border-t border-slate-100">
-                                                <td className="px-4 py-3 text-sm text-slate-600">{log.timestamp?.toDate ? log.timestamp.toDate().toLocaleString() : 'N/A'}</td>
-                                                <td className="px-4 py-3 text-sm text-slate-600">{log.userId}</td>
+                                                <td className="px-4 py-3 text-sm text-slate-600">{log.created_at ? new Date(log.created_at).toLocaleString() : (log.timestamp?.toDate ? log.timestamp.toDate().toLocaleString() : 'N/A')}</td>
+                                                <td className="px-4 py-3 text-sm text-slate-600">{log.user_id || log.userId || '-'}</td>
                                                 <td className="px-4 py-3 text-sm font-semibold text-slate-900">{log.action}</td>
-                                                <td className="px-4 py-3 text-sm text-slate-600">{log.details}</td>
+                                                <td className="px-4 py-3 text-sm text-slate-600 whitespace-pre-wrap break-words">{typeof log.details === 'string' ? log.details : JSON.stringify(log.details || {})}</td>
                                             </tr>
                                         ))
                                     )}
@@ -1073,14 +1142,14 @@ export default function AdminDashboard() {
                                         <div className="flex items-center justify-between mb-2">
                                             <span className="text-xs font-semibold text-slate-900">{log.action}</span>
                                             <span className="text-[10px] text-slate-500">
-                                                {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleString() : 'N/A'}
+                                                {log.created_at ? new Date(log.created_at).toLocaleString() : (log.timestamp?.toDate ? log.timestamp.toDate().toLocaleString() : 'N/A')}
                                             </span>
                                         </div>
                                         <div className="text-xs text-slate-600 mb-1">
-                                            <span className="font-medium">User:</span> {log.userId}
+                                            <span className="font-medium">User:</span> {log.user_id || log.userId || '-'}
                                         </div>
                                         <div className="text-xs text-slate-500 bg-slate-50 p-2 rounded border border-slate-100">
-                                            {log.details}
+                                            {typeof log.details === 'string' ? log.details : JSON.stringify(log.details || {})}
                                         </div>
                                     </div>
                                 ))

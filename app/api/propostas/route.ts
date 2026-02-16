@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
+function buildObservacoesWithTaxes(observacoes: string | null | undefined, taxesValue: number) {
+    const base = String(observacoes || '').replace(/\s*\[IMPOSTOS=[^\]]*\]\s*/g, '').trim();
+    if (taxesValue > 0) {
+        return `${base}${base ? '\n' : ''}[IMPOSTOS=${taxesValue.toFixed(2)}]`;
+    }
+    return base || null;
+}
+
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.replace('Bearer ', '')
@@ -58,6 +66,7 @@ export async function POST(req: NextRequest) {
                 cotacao_id,
                 valor_total,
                 valor_frete,
+                valor_impostos,
                 prazo_entrega,
                 condicoes_pagamento,
                 observacoes,
@@ -68,6 +77,7 @@ export async function POST(req: NextRequest) {
             const prazoEntregaValue = Number.isInteger(prazo_entrega) && prazo_entrega >= 0
                 ? prazo_entrega
                 : null;
+            const impostosValue = parseFloat(valor_impostos) || 0;
 
             if (!cotacao_id || !itens || !Array.isArray(itens)) {
                 return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 });
@@ -84,9 +94,24 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: 'Cotação não encontrada' }, { status: 404 });
             }
 
-            // Only allow proposals on open cotações
-            if (cotacao.status !== 'enviada' && cotacao.status !== 'respondida') {
-                return NextResponse.json({ error: 'Esta cotação já foi fechada e não aceita mais propostas' }, { status: 400 });
+            // Allow updates on open cotações OR won closed cotações while pedido is still negotiable
+            let canEditProposal = cotacao.status === 'enviada' || cotacao.status === 'respondida';
+            let linkedPedido: any = null;
+
+            if (!canEditProposal && cotacao.status === 'fechada') {
+                const { data: pedidoData } = await supabaseAdmin
+                    .from('pedidos')
+                    .select('id, status')
+                    .eq('cotacao_id', cotacao_id)
+                    .eq('fornecedor_id', fornecedorId)
+                    .single();
+
+                linkedPedido = pedidoData || null;
+                canEditProposal = !!linkedPedido && ['pendente', 'confirmado'].includes(linkedPedido.status);
+            }
+
+            if (!canEditProposal) {
+                return NextResponse.json({ error: 'Esta cotação/pedido não aceita mais atualização de proposta neste estágio' }, { status: 400 });
             }
 
             // Check if fornecedor already responded
@@ -97,27 +122,51 @@ export async function POST(req: NextRequest) {
                 .eq('fornecedor_id', fornecedorId)
                 .limit(1);
 
-            if (existing && existing.length > 0) {
-                return NextResponse.json({ error: 'Você já enviou uma proposta para esta cotação' }, { status: 409 });
-            }
+            const propostaPayload = {
+                cotacao_id,
+                fornecedor_id: fornecedorId,
+                status: 'enviada',
+                valor_total: valor_total || 0,
+                valor_frete: valor_frete || 0,
+                prazo_entrega: prazoEntregaValue,
+                condicoes_pagamento: condicoes_pagamento || null,
+                observacoes: buildObservacoesWithTaxes(observacoes, impostosValue),
+                data_envio: new Date().toISOString(),
+                data_validade: data_validade || null
+            };
 
-            // 1. Create proposta
-            const { data: proposta, error: propostaError } = await supabaseAdmin
-                .from('propostas')
-                .insert({
-                    cotacao_id,
-                    fornecedor_id: fornecedorId,
-                    status: 'enviada',
-                    valor_total: valor_total || 0,
-                    valor_frete: valor_frete || 0,
-                    prazo_entrega: prazoEntregaValue,
-                    condicoes_pagamento: condicoes_pagamento || null,
-                    observacoes: observacoes || null,
-                    data_envio: new Date().toISOString(),
-                    data_validade: data_validade || null
-                })
-                .select()
-                .single();
+            let proposta: any = null;
+            let propostaError: any = null;
+
+            // 1. Create or update proposta
+            if (existing && existing.length > 0) {
+                const existingId = existing[0].id;
+                const updateRes = await supabaseAdmin
+                    .from('propostas')
+                    .update(propostaPayload)
+                    .eq('id', existingId)
+                    .select()
+                    .single();
+
+                proposta = updateRes.data;
+                propostaError = updateRes.error;
+
+                if (!propostaError) {
+                    await supabaseAdmin
+                        .from('proposta_itens')
+                        .delete()
+                        .eq('proposta_id', existingId);
+                }
+            } else {
+                const insertRes = await supabaseAdmin
+                    .from('propostas')
+                    .insert(propostaPayload)
+                    .select()
+                    .single();
+
+                proposta = insertRes.data;
+                propostaError = insertRes.error;
+            }
 
             if (propostaError) {
                 console.error('Erro ao criar proposta:', propostaError);
@@ -142,9 +191,94 @@ export async function POST(req: NextRequest) {
 
             if (itensError) {
                 console.error('Erro ao criar proposta_itens:', itensError);
-                // Rollback proposta
-                await supabaseAdmin.from('propostas').delete().eq('id', proposta.id);
+                if (!(existing && existing.length > 0)) {
+                    await supabaseAdmin.from('propostas').delete().eq('id', proposta.id);
+                }
                 return NextResponse.json({ error: itensError.message }, { status: 500 });
+            }
+
+            // 2.1 If there's a linked won order still negotiable, sync pedido with updated negotiated values
+            const shouldSyncPedido = linkedPedido && ['pendente', 'confirmado'].includes(linkedPedido.status);
+            if (shouldSyncPedido) {
+                const pedidoId = linkedPedido.id;
+
+                const { data: cotacaoItens } = await supabaseAdmin
+                    .from('cotacao_itens')
+                    .select('id, nome')
+                    .eq('cotacao_id', cotacao_id);
+
+                const cotacaoItemNameById = new Map((cotacaoItens || []).map((ci: any) => [ci.id, ci.nome]));
+
+                const { data: pedidoItens } = await supabaseAdmin
+                    .from('pedido_itens')
+                    .select('id, material_id, nome, unidade')
+                    .eq('pedido_id', pedidoId);
+
+                const itensByNome = new Map<string, any>();
+                (itens || []).forEach((item: any) => {
+                    const nome = cotacaoItemNameById.get(item.cotacao_item_id);
+                    if (nome) {
+                        itensByNome.set(nome, item);
+                    }
+                });
+
+                const updates = (pedidoItens || []).map((pedidoItem: any) => {
+                    const matched = itensByNome.get(pedidoItem.nome) as any;
+                    if (!matched) return null;
+
+                    return supabaseAdmin!
+                        .from('pedido_itens')
+                        .update({
+                            preco_unitario: matched.preco_unitario || 0,
+                            subtotal: matched.subtotal || 0,
+                            quantidade: matched.quantidade || 0,
+                            unidade: pedidoItem.unidade || 'UN'
+                        })
+                        .eq('id', pedidoItem.id);
+                }).filter(Boolean);
+
+                if (updates.length > 0) {
+                    await Promise.all(updates as any);
+                }
+
+                const { data: refreshedItens } = await supabaseAdmin
+                    .from('pedido_itens')
+                    .select('subtotal')
+                    .eq('pedido_id', pedidoId);
+
+                const subtotal = (refreshedItens || []).reduce((sum: number, item: any) => sum + (parseFloat(item.subtotal) || 0), 0);
+                const freight = parseFloat(valor_frete) || 0;
+                const taxes = impostosValue;
+                const totalPedido = subtotal + freight + taxes;
+
+                const { data: pedidoAtual } = await supabaseAdmin
+                    .from('pedidos')
+                    .select('endereco_entrega')
+                    .eq('id', pedidoId)
+                    .single();
+
+                const enderecoAtual = pedidoAtual?.endereco_entrega || {};
+                const summaryAtual = enderecoAtual.summary || {};
+
+                await supabaseAdmin
+                    .from('pedidos')
+                    .update({
+                        valor_total: totalPedido,
+                        condicoes_pagamento: condicoes_pagamento || null,
+                        endereco_entrega: {
+                            ...enderecoAtual,
+                            summary: {
+                                ...summaryAtual,
+                                subtotal,
+                                freight,
+                                taxes,
+                                deliveryDays: prazoEntregaValue,
+                                paymentMethod: condicoes_pagamento || null
+                            }
+                        },
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', pedidoId);
             }
 
             // 3. Create notification for the client
@@ -162,8 +296,10 @@ export async function POST(req: NextRequest) {
                     .from('notificacoes')
                     .insert({
                         user_id: cotacao.user_id,
-                        titulo: 'Nova Proposta Recebida',
-                        mensagem: `${supplierName} enviou uma proposta para sua cotação.`,
+                        titulo: existing && existing.length > 0 ? 'Proposta Atualizada' : 'Nova Proposta Recebida',
+                        mensagem: existing && existing.length > 0
+                            ? `${supplierName} atualizou os valores da proposta.`
+                            : `${supplierName} enviou uma proposta para sua cotação.`,
                         tipo: 'success',
                         lida: false,
                         link: '/dashboard/cliente'

@@ -129,8 +129,24 @@ export async function GET(req: NextRequest) {
                 .select('*, pedido_itens(*)')
                 .eq('cotacao_id', cotacaoId);
 
+            const uniquePedidosBySupplier = new Map<string, any>();
+            const pedidosSorted = [...(pedidosData || [])].sort((a: any, b: any) => {
+                const aTime = new Date(a.created_at || 0).getTime();
+                const bTime = new Date(b.created_at || 0).getTime();
+                return bTime - aTime;
+            });
+
+            for (const pedido of pedidosSorted) {
+                const key = String(pedido.fornecedor_id);
+                if (!uniquePedidosBySupplier.has(key)) {
+                    uniquePedidosBySupplier.set(key, pedido);
+                }
+            }
+
+            const dedupedPedidosData = Array.from(uniquePedidosBySupplier.values());
+
             // Enrich pedidos with fornecedor data
-            const pedidoFornecedorIds = [...new Set((pedidosData || []).map(p => p.fornecedor_id).filter(Boolean))];
+            const pedidoFornecedorIds = [...new Set((dedupedPedidosData || []).map(p => p.fornecedor_id).filter(Boolean))];
             const missingIds = pedidoFornecedorIds.filter(id => !fornecedorMap.has(id));
 
             if (missingIds.length > 0) {
@@ -142,7 +158,7 @@ export async function GET(req: NextRequest) {
                 (moreFornecedores || []).forEach(f => fornecedorMap.set(f.id, f));
             }
 
-            pedidos = (pedidosData || []).map(p => ({
+            pedidos = (dedupedPedidosData || []).map(p => ({
                 ...p,
                 fornecedor: fornecedorMap.get(p.fornecedor_id) || null
             }));
@@ -202,13 +218,52 @@ export async function POST(req: NextRequest) {
                 phone: clientData?.telefone || ""
             };
 
+            const { data: existingOrdersForCotacao, error: existingOrdersError } = await supabaseAdmin
+                .from('pedidos')
+                .select('id, fornecedor_id, proposta_id')
+                .eq('cotacao_id', cotacaoId)
+                .eq('user_id', user.id);
+
+            if (existingOrdersError) {
+                console.error('Erro ao verificar pedidos existentes:', existingOrdersError);
+                return NextResponse.json({ error: 'Erro ao validar pedidos existentes' }, { status: 500 });
+            }
+
+            const existingOrderKeys = new Set(
+                (existingOrdersForCotacao || []).map((order: any) => String(order.fornecedor_id))
+            );
+
             const createdOrders: any[] = [];
+            const selectedProposalIds = new Set<string>();
+            const processedSupplierKeys = new Set<string>();
 
             // Create orders for each supplier
             for (const supplierGroup of itemsBySupplier) {
-                const { supplierId, proposalId, supplierUserId, supplierName, supplierDetails, items } = supplierGroup;
+                const { supplierId, proposalId, supplierUserId, supplierName, supplierDetails, items, freightPrice, deliveryDays, paymentMethod } = supplierGroup;
 
-                const supplierTotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
+                const supplierKey = String(supplierId);
+                if (processedSupplierKeys.has(supplierKey)) {
+                    continue;
+                }
+                processedSupplierKeys.add(supplierKey);
+
+                if (existingOrderKeys.has(supplierKey)) {
+                    continue;
+                }
+
+                if (proposalId) {
+                    selectedProposalIds.add(proposalId);
+                }
+
+                const supplierSubtotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
+                const freightValue = parseFloat(freightPrice) || 0;
+                const deliveryDaysValue = Number.isInteger(deliveryDays) && deliveryDays >= 0
+                    ? deliveryDays
+                    : null;
+                const paymentMethodValue = typeof paymentMethod === 'string' && paymentMethod.trim().length > 0
+                    ? paymentMethod.trim()
+                    : null;
+                const supplierTotal = supplierSubtotal + freightValue;
 
                 // Create pedido
                 const { data: orderData, error: orderError } = await supabaseAdmin
@@ -224,7 +279,13 @@ export async function POST(req: NextRequest) {
                         endereco_entrega: {
                             clientDetails,
                             supplierDetails,
-                            items
+                            items,
+                            summary: {
+                                subtotal: supplierSubtotal,
+                                freight: freightValue,
+                                deliveryDays: deliveryDaysValue,
+                                paymentMethod: paymentMethodValue
+                            }
                         },
                         observacoes: 'Pedido gerado via mapa comparativo'
                     })
@@ -233,7 +294,10 @@ export async function POST(req: NextRequest) {
 
                 if (orderError) {
                     console.error('Error creating order:', orderError);
-                    continue;
+                    return NextResponse.json({
+                        error: 'Erro ao criar pedido para o fornecedor selecionado',
+                        details: orderError.message || null
+                    }, { status: 500 });
                 }
 
                 createdOrders.push(orderData);
@@ -256,14 +320,6 @@ export async function POST(req: NextRequest) {
                     console.error('Error creating order items:', itemsError);
                 }
 
-                // Update proposal status
-                if (proposalId) {
-                    await supabaseAdmin
-                        .from('propostas')
-                        .update({ status: 'aceita' })
-                        .eq('id', proposalId);
-                }
-
                 // Create notification for the supplier's user
                 if (supplierUserId) {
                     await supabaseAdmin
@@ -279,9 +335,13 @@ export async function POST(req: NextRequest) {
                 }
             }
 
+            if (createdOrders.length === 0) {
+                return NextResponse.json({ error: 'Nenhum pedido foi criado ao finalizar a cotação' }, { status: 500 });
+            }
+
             // ========================================================
-            // Fechar cotação: manter apenas as 3 melhores propostas,
-            // deletar as demais, e armazenar o total de propostas recebidas
+            // Fechar cotação: marcar propostas aceitas/recusadas e
+            // armazenar total de propostas recebidas
             // ========================================================
 
             // 1. Contar total de propostas recebidas ANTES de deletar
@@ -298,24 +358,40 @@ export async function POST(req: NextRequest) {
                 .order('valor_total', { ascending: true });
 
             const top3Ids = (allPropostas || []).slice(0, 3).map(p => p.id);
-            const toDeleteIds = (allPropostas || []).slice(3).map(p => p.id);
+            const selectedIds = Array.from(selectedProposalIds);
+            const rejectedIds = (allPropostas || [])
+                .map((p: any) => p.id)
+                .filter((id: string) => !selectedProposalIds.has(id));
 
-            // 3. Deletar proposta_itens das propostas que não são top 3
-            if (toDeleteIds.length > 0) {
-                await supabaseAdmin
-                    .from('proposta_itens')
-                    .delete()
-                    .in('proposta_id', toDeleteIds);
-
-                // 4. Deletar as propostas que não são top 3
-                await supabaseAdmin
+            // 3. Marcar propostas selecionadas/recusadas
+            if (selectedIds.length > 0) {
+                const { error: acceptedError } = await supabaseAdmin
                     .from('propostas')
-                    .delete()
-                    .in('id', toDeleteIds);
+                    .update({ status: 'aceita' })
+                    .eq('cotacao_id', cotacaoId)
+                    .in('id', selectedIds);
+
+                if (acceptedError) {
+                    console.error('Erro ao marcar propostas aceitas:', acceptedError);
+                    return NextResponse.json({ error: 'Erro ao marcar propostas selecionadas' }, { status: 500 });
+                }
             }
 
-            // 5. Atualizar cotação: status fechada + total de propostas recebidas
-            const { error: quotationError } = await supabaseAdmin
+            if (rejectedIds.length > 0) {
+                const { error: rejectedError } = await supabaseAdmin
+                    .from('propostas')
+                    .update({ status: 'recusada' })
+                    .eq('cotacao_id', cotacaoId)
+                    .in('id', rejectedIds);
+
+                if (rejectedError) {
+                    console.error('Erro ao marcar propostas recusadas:', rejectedError);
+                    return NextResponse.json({ error: 'Erro ao marcar propostas não selecionadas' }, { status: 500 });
+                }
+            }
+
+            // 4. Atualizar cotação: status fechada + total de propostas recebidas
+            let { error: quotationError } = await supabaseAdmin
                 .from('cotacoes')
                 .update({
                     status: 'fechada',
@@ -324,8 +400,31 @@ export async function POST(req: NextRequest) {
                 .eq('id', cotacaoId);
 
             if (quotationError) {
+                const message = String(quotationError.message || '').toLowerCase();
+                const details = String((quotationError as any).details || '').toLowerCase();
+                const hint = String((quotationError as any).hint || '').toLowerCase();
+                const missingTotalPropostasColumn =
+                    quotationError.code === '42703'
+                    || message.includes('total_propostas_recebidas')
+                    || details.includes('total_propostas_recebidas')
+                    || hint.includes('total_propostas_recebidas');
+
+                if (missingTotalPropostasColumn) {
+                    const fallback = await supabaseAdmin
+                        .from('cotacoes')
+                        .update({ status: 'fechada' })
+                        .eq('id', cotacaoId);
+
+                    quotationError = fallback.error;
+                }
+            }
+
+            if (quotationError) {
                 console.error('Error updating cotação:', quotationError);
-                return NextResponse.json({ error: 'Erro ao fechar cotação' }, { status: 500 });
+                return NextResponse.json({
+                    error: 'Erro ao fechar cotação',
+                    details: quotationError.message || null
+                }, { status: 500 });
             }
 
             return NextResponse.json({
@@ -333,7 +432,7 @@ export async function POST(req: NextRequest) {
                 orders: createdOrders,
                 total_propostas_recebidas: totalPropostasRecebidas || 0,
                 propostas_mantidas: top3Ids.length,
-                propostas_removidas: toDeleteIds.length
+                propostas_removidas: 0
             });
         }
 
