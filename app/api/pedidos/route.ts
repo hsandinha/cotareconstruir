@@ -317,6 +317,7 @@ export async function POST(req: NextRequest) {
             const statusNotification = getClientStatusNotification(status, pedidoNumero);
 
             if (statusNotification) {
+                const pedidoLink = `/dashboard/cliente?tab=pedidos&pedidoId=${encodeURIComponent(pedido_id)}`;
                 await supabaseAdmin
                     .from('notificacoes')
                     .insert({
@@ -325,7 +326,7 @@ export async function POST(req: NextRequest) {
                         mensagem: statusNotification.mensagem,
                         tipo: statusNotification.tipo,
                         lida: false,
-                        link: '/dashboard/cliente'
+                        link: pedidoLink
                     });
             }
 
@@ -348,7 +349,7 @@ export async function POST(req: NextRequest) {
                         mensagem: atrasoMsg,
                         tipo: 'warning',
                         lida: false,
-                        link: '/dashboard/cliente'
+                        link: `/dashboard/cliente?tab=pedidos&pedidoId=${encodeURIComponent(pedido_id)}`
                     });
             }
 

@@ -302,7 +302,7 @@ export async function POST(req: NextRequest) {
                             : `${supplierName} enviou uma proposta para sua cotação.`,
                         tipo: 'success',
                         lida: false,
-                        link: '/dashboard/cliente'
+                        link: `/dashboard/cliente?tab=pedidos&cotacaoId=${encodeURIComponent(cotacao_id)}`
                     });
             }
 

@@ -330,7 +330,7 @@ export async function POST(req: NextRequest) {
                             mensagem: 'Você recebeu um novo pedido de compra.',
                             tipo: 'success',
                             lida: false,
-                            link: '/dashboard/fornecedor'
+                            link: `/dashboard/fornecedor?tab=vendas-cotacoes&pedidoId=${encodeURIComponent(orderData.id)}&cotacaoId=${encodeURIComponent(cotacaoId)}`
                         });
                 }
             }

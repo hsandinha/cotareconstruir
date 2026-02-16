@@ -11,7 +11,7 @@ import { ProfileSwitcher } from "../../../components/ProfileSwitcher";
 import PendingProfileModal from "../../../components/PendingProfileModal";
 import { useAuth } from "@/lib/useAuth";
 import { supabase } from "@/lib/supabaseAuth";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export type TabId =
     | "perfil"
@@ -30,6 +30,7 @@ const tabs: { id: TabId; label: string }[] = [
 
 export default function ClienteDashboard() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [tab, setTab] = useState<TabId>("perfil");
     const [userName, setUserName] = useState("Cliente");
     const [userInitial, setUserInitial] = useState("C");
@@ -81,6 +82,16 @@ export default function ClienteDashboard() {
             console.error("Error fetching stats:", error);
         }
     }, [user, profile]);
+
+    useEffect(() => {
+        const tabParam = searchParams.get('tab');
+        if (!tabParam) return;
+
+        const isValidTab = tabs.some((t) => t.id === tabParam);
+        if (isValidTab) {
+            setTab(tabParam as TabId);
+        }
+    }, [searchParams]);
 
     useEffect(() => {
         if (!initialized) return;

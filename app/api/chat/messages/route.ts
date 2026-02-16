@@ -163,6 +163,45 @@ async function resolveChatAccess(roomId: string, userId: string) {
     return { allowed: true, recipientId: cotacao.user_id };
 }
 
+async function buildChatNotificationLink(recipientId: string, roomId: string) {
+    if (!supabaseAdmin) return '/dashboard';
+
+    const { data: recipientUser } = await supabaseAdmin
+        .from('users')
+        .select('role, roles')
+        .eq('id', recipientId)
+        .single();
+
+    const roleList = Array.isArray(recipientUser?.roles) ? recipientUser.roles : [];
+    const primaryRole = recipientUser?.role;
+    const isSupplier = roleList.includes('fornecedor') || primaryRole === 'fornecedor';
+    const isClient = roleList.includes('cliente') || primaryRole === 'cliente';
+
+    const params = new URLSearchParams();
+    params.set('chatRoom', roomId);
+
+    if (roomId.includes('::')) {
+        const [cotacaoId] = roomId.split('::');
+        if (cotacaoId) {
+            params.set('cotacaoId', cotacaoId);
+        }
+    } else if (roomId) {
+        params.set('pedidoId', roomId);
+    }
+
+    if (isSupplier) {
+        params.set('tab', 'vendas-cotacoes');
+        return `/dashboard/fornecedor?${params.toString()}`;
+    }
+
+    if (isClient) {
+        params.set('tab', 'pedidos');
+        return `/dashboard/cliente?${params.toString()}`;
+    }
+
+    return '/dashboard';
+}
+
 export async function GET(req: NextRequest) {
     try {
         const user = await getAuthUser(req);
@@ -275,6 +314,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (access.recipientId) {
+            const link = await buildChatNotificationLink(access.recipientId, roomId);
             await supabaseAdmin
                 .from('notificacoes')
                 .insert({
@@ -283,7 +323,7 @@ export async function POST(req: NextRequest) {
                     mensagem: 'Você recebeu uma nova mensagem em uma negociação.',
                     tipo: 'info',
                     lida: false,
-                    link: '/dashboard'
+                    link
                 });
         }
 
