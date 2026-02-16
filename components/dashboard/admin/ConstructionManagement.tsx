@@ -404,11 +404,15 @@ export default function ConstructionManagement() {
     }, [grupos, searchQuery, filterItem]);
 
     const filteredMateriais = useMemo(() => {
-        if (!searchQuery) return materiais;
+        const sortByNome = (a: Material, b: Material) =>
+            a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
+
+        if (!searchQuery) return [...materiais].sort(sortByNome);
+
         return materiais.filter(m => {
             const gruposNomes = m.gruposInsumoIds.map(gid => grupoById.get(gid)?.nome || '').join(' ');
             return filterItem(m.nome, searchQuery) || filterItem(m.unidade, searchQuery) || filterItem(gruposNomes, searchQuery);
-        });
+        }).sort(sortByNome);
     }, [materiais, searchQuery, grupoById, filterItem]);
 
     // --- Actions ---
@@ -1125,8 +1129,12 @@ export default function ConstructionManagement() {
             </div>
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-4">
                 {filteredMateriais.map(material => {
-                    const gruposVinculados = material.gruposInsumoIds.map(id => grupoById.get(id)).filter(Boolean) as GrupoInsumo[];
-                    const servicosVinculados = servicosByMaterialId.get(material.id) || [];
+                    const gruposVinculados = material.gruposInsumoIds
+                        .map(id => grupoById.get(id))
+                        .filter((g): g is GrupoInsumo => Boolean(g))
+                        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }));
+                    const servicosVinculados = [...(servicosByMaterialId.get(material.id) || [])]
+                        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }));
                     const fasesVinculadas = fasesByMaterialId.get(material.id) || [];
                     return (
                         <TreeItem

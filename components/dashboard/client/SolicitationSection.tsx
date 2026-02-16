@@ -152,6 +152,12 @@ export function ClientSolicitationSection() {
     const escapeIlikePattern = (value: string) =>
         value.replace(/[\\%_]/g, "");
 
+    const getSearchVariants = (term: string) => {
+        const raw = term.trim().toLowerCase();
+        const normalized = normalizeText(term);
+        return Array.from(new Set([raw, normalized].filter(Boolean)));
+    };
+
     const getRemoteSearchCacheKey = (term: string) => normalizeText(term);
 
     const setRemoteSearchCacheEntry = (key: string, entry: RemoteSearchCacheEntry) => {
@@ -169,16 +175,25 @@ export function ClientSolicitationSection() {
     };
 
     const fetchRemoteMaterialsPage = async (term: string, offset: number) => {
-        const safeTerm = escapeIlikePattern(term);
+        const variants = getSearchVariants(term);
         const from = offset;
         const to = offset + REMOTE_SEARCH_PAGE_SIZE - 1;
 
-        const { data: materiaisData, error: materiaisError } = await supabase
+        let query = supabase
             .from("materiais")
             .select("id, nome, unidade")
-            .ilike("nome", `%${safeTerm}%`)
-            .order("nome", { ascending: true })
-            .range(from, to);
+            .order("nome", { ascending: true });
+
+        if (variants.length === 1) {
+            query = query.ilike("nome", `%${escapeIlikePattern(variants[0])}%`);
+        } else {
+            const orFilter = variants
+                .map(variant => `nome.ilike.%${escapeIlikePattern(variant)}%`)
+                .join(',');
+            query = query.or(orFilter);
+        }
+
+        const { data: materiaisData, error: materiaisError } = await query.range(from, to);
 
         if (materiaisError) throw materiaisError;
 
