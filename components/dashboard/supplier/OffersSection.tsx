@@ -13,16 +13,10 @@ import {
 import { CheckCircleIcon } from "@heroicons/react/24/solid";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
+import { getAuthHeaders } from "@/lib/authHeaders";
 
 // Helper para obter headers com token de autenticação
-async function getAuthHeaders(): Promise<Record<string, string>> {
-    const { data: { session } } = await supabase.auth.getSession();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-    }
-    return headers;
-}
+
 
 interface Oferta {
     id: string;
@@ -54,7 +48,7 @@ interface FornecedorMaterial {
 }
 
 export function SupplierOffersSection() {
-    const { user, profile, initialized } = useAuth();
+    const { user, profile, session, initialized } = useAuth();
     const [ofertas, setOfertas] = useState<Oferta[]>([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -108,7 +102,7 @@ export function SupplierOffersSection() {
             setLoading(true);
 
             try {
-                const headers = await getAuthHeaders();
+                const headers = await getAuthHeaders(session?.access_token);
                 const [ofertasRes, materiaisRes] = await Promise.all([
                     supabase
                         .from('ofertas')
@@ -412,16 +406,16 @@ export function SupplierOffersSection() {
                         <div
                             key={oferta.id}
                             className={`bg-white border rounded-xl p-5 shadow-sm transition-all ${oferta.ativo
-                                    ? 'border-green-200 hover:border-green-300'
-                                    : 'border-gray-200 opacity-70'
+                                ? 'border-green-200 hover:border-green-300'
+                                : 'border-gray-200 opacity-70'
                                 }`}
                         >
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                                 {/* Material info */}
                                 <div className="flex items-center gap-4">
                                     <div className={`p-3 rounded-full ${oferta.ativo
-                                            ? 'bg-green-100 text-green-600'
-                                            : 'bg-gray-100 text-gray-500'
+                                        ? 'bg-green-100 text-green-600'
+                                        : 'bg-gray-100 text-gray-500'
                                         }`}>
                                         <TagIcon className="h-6 w-6" />
                                     </div>
@@ -464,8 +458,8 @@ export function SupplierOffersSection() {
                                     <button
                                         onClick={() => toggleOfertaAtivo(oferta)}
                                         className={`p-2 rounded-lg transition-colors ${oferta.ativo
-                                                ? 'text-amber-600 hover:bg-amber-50'
-                                                : 'text-green-600 hover:bg-green-50'
+                                            ? 'text-amber-600 hover:bg-amber-50'
+                                            : 'text-green-600 hover:bg-green-50'
                                             }`}
                                         title={oferta.ativo ? 'Pausar oferta' : 'Ativar oferta'}
                                     >

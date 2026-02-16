@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
+import { getAuthHeaders } from "@/lib/authHeaders";
 import { formatCepBr, formatCnpjBr, formatPhoneBr, isValidCNPJ } from "../../../lib/utils";
 import { useToast } from "@/components/ToastProvider";
 import { SupplierVerificationSection } from "./VerificationSection";
@@ -12,7 +13,7 @@ import {
 } from "lucide-react";
 
 export function SupplierProfileSection() {
-    const { user, profile, initialized } = useAuth();
+    const { user, profile, session, initialized } = useAuth();
     const { showToast } = useToast();
 
     const [loading, setLoading] = useState(true);
@@ -77,25 +78,6 @@ export function SupplierProfileSection() {
         setProfileComplete(Math.round((filled / fields.length) * 100));
     }, [company, manager]);
 
-    // Helper para obter headers com token
-    const getAuthHeaders = async (): Promise<Record<string, string>> => {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.access_token) {
-                headers['Authorization'] = `Bearer ${session.access_token}`;
-                return headers;
-            }
-        } catch (e) {
-            console.warn('Erro ao obter sessão:', e);
-        }
-        if (typeof window !== 'undefined') {
-            const token = localStorage.getItem('token');
-            if (token) headers['Authorization'] = `Bearer ${token}`;
-        }
-        return headers;
-    };
-
     // Carregar perfil via API (users + fornecedores combinados)
     useEffect(() => {
         if (!initialized || !user) return;
@@ -103,7 +85,7 @@ export function SupplierProfileSection() {
         const loadProfile = async () => {
             setUserUid(user.id);
             try {
-                const headers = await getAuthHeaders();
+                const headers = await getAuthHeaders(session?.access_token);
                 if (!headers['Authorization']) {
                     setLoading(false);
                     return;
@@ -244,7 +226,7 @@ export function SupplierProfileSection() {
 
         setSaving(true);
         try {
-            const headers = await getAuthHeaders();
+            const headers = await getAuthHeaders(session?.access_token);
             const res = await fetch('/api/supplier/profile', {
                 method: 'PUT',
                 headers,
@@ -283,7 +265,7 @@ export function SupplierProfileSection() {
 
         setSavingGroups(true);
         try {
-            const headers = await getAuthHeaders();
+            const headers = await getAuthHeaders(session?.access_token);
             const res = await fetch('/api/supplier/profile', {
                 method: 'POST',
                 headers,

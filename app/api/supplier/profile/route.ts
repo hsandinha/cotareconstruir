@@ -13,11 +13,39 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
-    const token = authHeader?.replace('Bearer ', '')
-        || req.cookies.get('authToken')?.value
-        || req.cookies.get('token')?.value
-        || req.cookies.get('sb-access-token')?.value;
-    if (!token) return null;
+
+    // Tentar múltiplas fontes de token
+    let token = authHeader?.replace('Bearer ', '');
+
+    if (!token) {
+        // Tentar cookies do Supabase (formato: sb-<ref>-auth-token)
+        const allCookies = req.cookies.getAll();
+        const supabaseAuthCookie = allCookies
+            .find((cookie) => cookie.name.endsWith('-auth-token'))?.value;
+
+        if (supabaseAuthCookie) {
+            try {
+                const parsed = JSON.parse(supabaseAuthCookie);
+                if (Array.isArray(parsed) && typeof parsed[0] === 'string') {
+                    token = parsed[0];
+                }
+            } catch {
+                // Ignorar erro de parse
+            }
+        }
+    }
+
+    if (!token) {
+        // Fallback para outros cookies
+        token = req.cookies.get('authToken')?.value
+            || req.cookies.get('token')?.value
+            || req.cookies.get('sb-access-token')?.value;
+    }
+
+    if (!token) {
+        return null;
+    }
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const { data: { user }, error } = await supabase.auth.getUser(token);
     if (error || !user) return null;

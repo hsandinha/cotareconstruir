@@ -2,8 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseAuth";
+import { useAuth } from "@/lib/useAuth";
+import { getAuthHeaders } from "@/lib/authHeaders";
 
 export function SupplierTransactionsSection() {
+    const { session } = useAuth();
     const [transactions, setTransactions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -16,12 +19,7 @@ export function SupplierTransactionsSection() {
             setError(null);
 
             try {
-                const { data: { session } } = await supabase.auth.getSession();
-                const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-
-                if (session?.access_token) {
-                    headers['Authorization'] = `Bearer ${session.access_token}`;
-                }
+                const headers = await getAuthHeaders(session?.access_token);
 
                 const res = await fetch('/api/pedidos', { headers });
                 if (!res.ok) {

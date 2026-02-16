@@ -15,16 +15,10 @@ import {
 import { CheckCircleIcon, ClockIcon } from "@heroicons/react/24/solid";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
+import { getAuthHeaders } from "@/lib/authHeaders";
 
 // Helper para obter headers com token de autenticação
-async function getAuthHeaders(): Promise<Record<string, string>> {
-    const { data: { session } } = await supabase.auth.getSession();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-    }
-    return headers;
-}
+
 
 // Interfaces
 interface MaterialBase {
@@ -49,7 +43,7 @@ interface GrupoInsumo {
 }
 
 export function SupplierMaterialsSection() {
-    const { user, profile, initialized } = useAuth();
+    const { user, profile, session, initialized } = useAuth();
     const [searchTerm, setSearchTerm] = useState("");
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
     const [loading, setLoading] = useState(true);
@@ -216,7 +210,7 @@ export function SupplierMaterialsSection() {
 
         const loadFornecedorMateriais = async () => {
             try {
-                const headers = await getAuthHeaders();
+                const headers = await getAuthHeaders(session?.access_token);
                 const res = await fetch(`/api/fornecedor-materiais?fornecedor_id=${fornecedorId}`, { headers });
                 const json = await res.json();
 
@@ -362,7 +356,7 @@ export function SupplierMaterialsSection() {
         if (!fornecedorId || !editingMaterial) return;
 
         try {
-            const headers = await getAuthHeaders();
+            const headers = await getAuthHeaders(session?.access_token);
             const res = await fetch('/api/fornecedor-materiais', {
                 method: 'POST',
                 headers,
@@ -405,7 +399,7 @@ export function SupplierMaterialsSection() {
         if (!fornecedorId) return;
 
         try {
-            const headers = await getAuthHeaders();
+            const headers = await getAuthHeaders(session?.access_token);
             const res = await fetch('/api/fornecedor-materiais', {
                 method: 'POST',
                 headers,
@@ -450,7 +444,7 @@ export function SupplierMaterialsSection() {
 
         setSendingRequest(true);
         try {
-            const headers = await getAuthHeaders();
+            const headers = await getAuthHeaders(session?.access_token);
             const res = await fetch('/api/fornecedor-materiais', {
                 method: 'POST',
                 headers,

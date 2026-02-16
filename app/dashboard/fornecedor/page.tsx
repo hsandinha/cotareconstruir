@@ -10,7 +10,9 @@ import { ProfileSwitcher } from "../../../components/ProfileSwitcher";
 import PendingProfileModal from "../../../components/PendingProfileModal";
 import { useAuth } from "@/lib/useAuth";
 import { supabase } from "@/lib/supabaseAuth";
+import { getAuthHeaders } from "@/lib/authHeaders";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ChatNotificationListener } from "@/components/ChatNotificationListener";
 
 export type SupplierTabId =
     | "perfil"
@@ -43,7 +45,7 @@ function FornecedorDashboardContent() {
         approvals: 0,
     });
 
-    const { user, profile, initialized, logout } = useAuth();
+    const { user, profile, session, initialized, logout } = useAuth();
 
     const fetchDashboardData = useCallback(async () => {
         if (!user) return;
@@ -63,17 +65,7 @@ function FornecedorDashboardContent() {
                 }
             }
 
-            const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-            try {
-                const { data: { session } } = await supabase.auth.getSession();
-                if (session?.access_token) {
-                    authHeaders['Authorization'] = `Bearer ${session.access_token}`;
-                }
-            } catch (e) { /* ignore */ }
-            if (!authHeaders['Authorization'] && typeof window !== 'undefined') {
-                const token = localStorage.getItem('token');
-                if (token) authHeaders['Authorization'] = `Bearer ${token}`;
-            }
+            const authHeaders = await getAuthHeaders(session?.access_token);
 
             const [cotacoesRes, pedidosRes, materiaisRes] = await Promise.all([
                 fetch('/api/cotacoes', { headers: authHeaders }).then(r => r.ok ? r.json() : { data: [] }),
@@ -88,14 +80,14 @@ function FornecedorDashboardContent() {
 
             setStats({
                 activeConsultations: cotacoesAbertas.length,
-                sentProposals: pedidosData.length,
+                sentProposals: cotacoesData.filter((c: any) => c._proposta_status).length,
                 registeredMaterials: materiaisData.length,
                 approvals: pedidosData.filter((p: any) => p.status === 'confirmado' || p.status === 'entregue').length,
             });
         } catch (error) {
             console.error("Error fetching stats:", error);
         }
-    }, [user, profile]);
+    }, [user, profile, session]);
 
     useEffect(() => {
         if (!searchParams) return;
@@ -289,6 +281,8 @@ function FornecedorDashboardContent() {
                     }, 1000);
                 }}
             />
+
+            <ChatNotificationListener />
         </div>
     );
 }

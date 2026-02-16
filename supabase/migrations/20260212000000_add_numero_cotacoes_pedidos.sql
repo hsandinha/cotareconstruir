@@ -9,6 +9,21 @@ ALTER TABLE public.cotacoes ADD COLUMN IF NOT EXISTS numero TEXT UNIQUE;
 CREATE SEQUENCE IF NOT EXISTS cotacao_numero_seq START WITH 10001;
 CREATE SEQUENCE IF NOT EXISTS pedido_numero_seq START WITH 10001;
 
+-- RPC function to get next value from sequence (for TypeScript access)
+CREATE OR REPLACE FUNCTION public.get_next_pedido_numero()
+RETURNS TEXT AS $$
+BEGIN
+    RETURN nextval('pedido_numero_seq')::TEXT;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.get_next_cotacao_numero()
+RETURNS TEXT AS $$
+BEGIN
+    RETURN nextval('cotacao_numero_seq')::TEXT;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Function to auto-generate cotacao numero
 CREATE OR REPLACE FUNCTION generate_cotacao_numero()
 RETURNS TRIGGER AS $$
@@ -20,11 +35,25 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to auto-generate pedido numero
+-- Function to auto-generate pedido numero (herda da cotação quando possível)
 CREATE OR REPLACE FUNCTION generate_pedido_numero()
 RETURNS TRIGGER AS $$
+DECLARE
+    cotacao_num TEXT;
 BEGIN
     IF NEW.numero IS NULL THEN
+        -- Tentar herdar o numero da cotação vinculada
+        IF NEW.cotacao_id IS NOT NULL THEN
+            SELECT numero INTO cotacao_num FROM public.cotacoes WHERE id = NEW.cotacao_id;
+            IF cotacao_num IS NOT NULL THEN
+                -- Verificar se já existe pedido com esse numero
+                IF NOT EXISTS (SELECT 1 FROM public.pedidos WHERE numero = cotacao_num) THEN
+                    NEW.numero := cotacao_num;
+                    RETURN NEW;
+                END IF;
+            END IF;
+        END IF;
+        -- Fallback: usar sequência independente
         NEW.numero := nextval('pedido_numero_seq')::TEXT;
     END IF;
     RETURN NEW;

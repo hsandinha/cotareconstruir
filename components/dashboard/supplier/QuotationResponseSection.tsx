@@ -3,16 +3,10 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "../../../lib/useAuth";
+import { getAuthHeaders } from "@/lib/authHeaders";
 
 // Helper para obter headers com token de autenticação
-async function getAuthHeaders(): Promise<Record<string, string>> {
-    const { data: { session } } = await supabase.auth.getSession();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-    }
-    return headers;
-}
+
 
 interface SupplierQuotationResponseSectionProps {
     quotation: any;
@@ -21,7 +15,7 @@ interface SupplierQuotationResponseSectionProps {
 }
 
 export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'create' }: SupplierQuotationResponseSectionProps) {
-    const { user, profile } = useAuth();
+    const { user, profile, session } = useAuth();
     const [responses, setResponses] = useState<{ [key: string]: { preco: string, disponibilidade: string } }>({});
     const [paymentMethod, setPaymentMethod] = useState("");
     const [validity, setValidity] = useState("");
@@ -138,7 +132,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
             const prazoEntrega = deliveryDays ? Math.max(0, parseInt(deliveryDays, 10) || 0) : null;
 
             // Send via API route (bypasses RLS)
-            const headers = await getAuthHeaders();
+            const headers = await getAuthHeaders(session?.access_token);
             const res = await fetch('/api/propostas', {
                 method: 'POST',
                 headers,

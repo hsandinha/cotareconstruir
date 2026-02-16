@@ -3,29 +3,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
+import { getAuthHeaders } from "@/lib/authHeaders";
 import { SupplierQuotationResponseSection } from "./QuotationResponseSection";
 import { ChatInterface } from "@/components/ChatInterface";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-const MAX_INVOICE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
-const ALLOWED_INVOICE_TYPES = new Set([
-    'application/pdf',
-    'image/jpeg',
-    'image/png',
-]);
-
-// Helper para obter headers com token de autenticação
-async function getAuthHeaders(): Promise<Record<string, string>> {
-    const { data: { session } } = await supabase.auth.getSession();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-    }
-    return headers;
-}
-
 export function SupplierQuotationInboxSection() {
-    const { user, profile, initialized } = useAuth();
+    const { user, profile, session, initialized } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -33,9 +17,7 @@ export function SupplierQuotationInboxSection() {
     const [loading, setLoading] = useState(true);
     const [isInactive, setIsInactive] = useState(false);
     const [selectedQuotation, setSelectedQuotation] = useState<any | null>(null);
-    const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-    const [invoiceFiles, setInvoiceFiles] = useState<Record<string, File | null>>({});
-    const [openChats, setOpenChats] = useState<Array<{ recipientName: string; recipientId: string; roomId: string }>>([]);
+    const [openChats, setOpenChats] = useState<Array<{ recipientName: string; recipientId: string; initialRoomId: string; initialRoomTitle?: string }>>([]);
     const [fornecedorId, setFornecedorId] = useState<string | null>(null);
     const [filters, setFilters] = useState({
         regions: [] as string[],
@@ -44,23 +26,29 @@ export function SupplierQuotationInboxSection() {
     const [statusFilter, setStatusFilter] = useState<"all" | "received" | "responded" | "won" | "lost">("all");
     const deepLinkHandledRef = useRef<string | null>(null);
 
-    const openChat = (context: { recipientName: string; recipientId: string; roomId: string }) => {
+    const openChat = (context: { recipientName: string; recipientId: string; roomId: string; roomTitle?: string }) => {
         setOpenChats((prev) => {
-            if (prev.some((chat) => chat.roomId === context.roomId)) {
-                return prev;
+            const existing = prev.find((chat) => chat.recipientId === context.recipientId);
+            if (existing) {
+                return prev.map(c => c.recipientId === context.recipientId
+                    ? { ...c, initialRoomId: context.roomId, initialRoomTitle: context.roomTitle }
+                    : c
+                );
             }
-            return [...prev, context];
+            return [...prev, { recipientName: context.recipientName, recipientId: context.recipientId, initialRoomId: context.roomId, initialRoomTitle: context.roomTitle }];
         });
+        window.dispatchEvent(new CustomEvent('chat-room-opened', { detail: { recipientId: context.recipientId } }));
     };
 
-    const closeChat = (roomId: string) => {
-        setOpenChats((prev) => prev.filter((chat) => chat.roomId !== roomId));
+    const closeChat = (recipientId: string) => {
+        setOpenChats((prev) => prev.filter((chat) => chat.recipientId !== recipientId));
+        window.dispatchEvent(new CustomEvent('chat-room-closed', { detail: { recipientId } }));
     };
 
     // Fetch cotações via API route (bypasses RLS)
     const fetchQuotations = useCallback(async () => {
         try {
-            const headers = await getAuthHeaders();
+            const headers = await getAuthHeaders(session?.access_token);
             const res = await fetch('/api/cotacoes', { headers });
 
             if (!res.ok) {
@@ -95,6 +83,7 @@ export function SupplierQuotationInboxSection() {
                 const cliente = doc._cliente;
                 return {
                     id: doc.id,
+                    numero: doc.numero || null,
                     user_id: doc.user_id,
                     obra_id: doc.obra_id,
                     status: doc.status,
@@ -153,7 +142,7 @@ export function SupplierQuotationInboxSection() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [session]);
 
     useEffect(() => {
         if (!initialized || !user) return;
@@ -171,6 +160,17 @@ export function SupplierQuotationInboxSection() {
                     event: '*',
                     schema: 'public',
                     table: 'cotacoes'
+                },
+                () => {
+                    fetchQuotations();
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'propostas'
                 },
                 () => {
                     fetchQuotations();
@@ -225,6 +225,7 @@ export function SupplierQuotationInboxSection() {
                 recipientName: targetQuotation.clientCode,
                 recipientId: targetQuotation.user_id,
                 roomId: chatRoom,
+                roomTitle: chatRoom.includes('::') ? 'Cotação' : 'Pedido',
             });
         }
 
@@ -290,154 +291,19 @@ export function SupplierQuotationInboxSection() {
         return quotation._proposta_status ? 'responded' : 'received';
     };
 
-    const mapOrderWorkflowStatus = (pedidoStatus: string | null): 'aprovado' | 'emissao_nota' | 'em_separacao' | 'a_caminho' | 'entregue' => {
-        if (pedidoStatus === 'entregue') return 'entregue';
-        if (pedidoStatus === 'enviado') return 'a_caminho';
-        if (pedidoStatus === 'em_preparacao') return 'em_separacao';
-        if (pedidoStatus === 'confirmado') return 'emissao_nota';
-        return 'aprovado';
-    };
+    // Cotações que viraram pedido (ganhou) não devem aparecer na tela de cotações
+    // Elas aparecem na seção de Pedidos Confirmados
+    const openQuotations = quotations.filter(q => !(q.status === 'fechada' && q._closed_with_me));
 
-    const getOrderWorkflowLabel = (workflow: 'aprovado' | 'emissao_nota' | 'em_separacao' | 'a_caminho' | 'entregue') => {
-        const labels = {
-            aprovado: 'Aprovado',
-            emissao_nota: 'Emissão de nota',
-            em_separacao: 'Em separação',
-            a_caminho: 'A caminho',
-            entregue: 'Entregue'
-        };
-        return labels[workflow];
-    };
+    const activeQuotationsCount = openQuotations.filter(q => getUnifiedPedidoStatus(q) === 'received').length;
+    const respondedOpenCount = openQuotations.filter(q => getUnifiedPedidoStatus(q) === 'responded').length;
+    const receivedOpenCount = openQuotations.filter(q => getUnifiedPedidoStatus(q) === 'received').length;
+    const lostClosedCount = openQuotations.filter(q => q.status === 'fechada' && q._closed_with_other).length;
 
-    const getOrderActionByStep = (step: 'aprovado' | 'emissao_nota' | 'em_separacao' | 'a_caminho' | 'entregue') => {
-        const actionMap = {
-            aprovado: { label: 'Aprovar pedido', nextStatus: 'confirmado' },
-            emissao_nota: { label: 'Anexar nota e avançar', nextStatus: 'em_preparacao' },
-            em_separacao: { label: 'Marcar a caminho', nextStatus: 'enviado' },
-            a_caminho: { label: 'Marcar entregue', nextStatus: 'entregue' },
-            entregue: null
-        } as const;
-        return actionMap[step];
-    };
-
-    const canNegotiate = (quotation: any) => {
-        const unifiedStatus = getUnifiedPedidoStatus(quotation);
-        if (unifiedStatus === 'received' || unifiedStatus === 'responded') return true;
-        if (unifiedStatus === 'won') {
-            const step = mapOrderWorkflowStatus(quotation._pedido_status);
-            return step === 'aprovado' || step === 'emissao_nota';
-        }
-        return false;
-    };
-
-    const fileToBase64 = async (file: File): Promise<string> => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-                const result = String(reader.result || '');
-                const base64 = result.includes(',') ? result.split(',')[1] : result;
-                resolve(base64);
-            };
-            reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
-            reader.readAsDataURL(file);
-        });
-    };
-
-    const handleAdvanceWonOrder = async (quotation: any) => {
-        const workflowStatus = mapOrderWorkflowStatus(quotation._pedido_status);
-        const action = getOrderActionByStep(workflowStatus);
-        if (!action || !quotation._pedido_id) return;
-
-        const summaryUpdate: Record<string, any> = {};
-        const nowIso = new Date().toISOString();
-
-        if (workflowStatus === 'aprovado') {
-            summaryUpdate.billingStartedAt = nowIso;
-        }
-
-        if (workflowStatus === 'emissao_nota') {
-            summaryUpdate.billingCompletedAt = nowIso;
-            summaryUpdate.pickingStartedAt = nowIso;
-        }
-
-        if (workflowStatus === 'em_separacao') {
-            summaryUpdate.pickingCompletedAt = nowIso;
-            summaryUpdate.deliveryStartedAt = nowIso;
-        }
-
-        if (workflowStatus === 'a_caminho') {
-            summaryUpdate.deliveryCompletedAt = nowIso;
-        }
-
-        if (workflowStatus === 'emissao_nota') {
-            const selectedFile = invoiceFiles[quotation.id];
-            if (!selectedFile) {
-                alert('Selecione a nota fiscal para avançar para Em separação.');
-                return;
-            }
-        }
-
-        setActionLoadingId(quotation.id);
-        try {
-            const headers = await getAuthHeaders();
-            let invoiceFilePayload: any = undefined;
-
-            if (workflowStatus === 'emissao_nota') {
-                const selectedFile = invoiceFiles[quotation.id];
-                if (!selectedFile) {
-                    throw new Error('Selecione a nota fiscal para avançar.');
-                }
-
-                const fileBase64 = await fileToBase64(selectedFile);
-                invoiceFilePayload = {
-                    fileName: selectedFile.name,
-                    fileType: selectedFile.type || 'application/octet-stream',
-                    fileSize: selectedFile.size,
-                    fileBase64,
-                };
-            }
-
-            const res = await fetch('/api/pedidos', {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
-                    action: 'update_status',
-                    pedido_id: quotation._pedido_id,
-                    status: action.nextStatus,
-                    summary_update: Object.keys(summaryUpdate).length > 0 ? summaryUpdate : undefined,
-                    invoice_file: invoiceFilePayload,
-                })
-            });
-
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.error || 'Erro ao avançar pedido');
-            }
-
-            if (workflowStatus === 'emissao_nota') {
-                setInvoiceFiles(prev => ({ ...prev, [quotation.id]: null }));
-            }
-
-            await fetchQuotations();
-        } catch (error: any) {
-            console.error('Erro ao avançar pedido:', error);
-            alert(error?.message || 'Erro ao avançar pedido.');
-        } finally {
-            setActionLoadingId(null);
-        }
-    };
-
-    const activeQuotationsCount = quotations.filter(q => getUnifiedPedidoStatus(q) === 'received').length;
-    const respondedOpenCount = quotations.filter(q => getUnifiedPedidoStatus(q) === 'responded').length;
-    const receivedOpenCount = quotations.filter(q => getUnifiedPedidoStatus(q) === 'received').length;
-    const wonClosedCount = quotations.filter(q => q.status === 'fechada' && q._closed_with_me).length;
-    const lostClosedCount = quotations.filter(q => q.status === 'fechada' && q._closed_with_other).length;
-
-    const filteredQuotations = quotations.filter((q) => {
+    const filteredQuotations = openQuotations.filter((q) => {
         const unifiedStatus = getUnifiedPedidoStatus(q);
         if (statusFilter === 'received') return unifiedStatus === 'received';
         if (statusFilter === 'responded') return unifiedStatus === 'responded';
-        if (statusFilter === 'won') return unifiedStatus === 'won';
         if (statusFilter === 'lost') return unifiedStatus === 'lost';
         return true;
     });
@@ -512,22 +378,21 @@ export function SupplierQuotationInboxSection() {
                 return (
                     <SupplierQuotationResponseSection
                         quotation={selectedQuotation}
-                        onBack={() => setSelectedQuotation({ ...selectedQuotation, _editProposal: false })}
+                        onBack={() => {
+                            setSelectedQuotation({ ...selectedQuotation, _editProposal: false });
+                            fetchQuotations();
+                        }}
                         mode="update"
                     />
                 );
             }
 
-            const wonWorkflow = mapOrderWorkflowStatus(selectedQuotation._pedido_status);
-            const wonAction = getOrderActionByStep(wonWorkflow);
-            const wonInvoice = selectedQuotation?._pedido_summary?.invoiceAttachment;
-
             return (
                 <div className="space-y-6">
                     <div className="flex items-center justify-between">
                         <div>
-                            <h3 className="text-lg font-medium text-gray-900">Detalhes do Pedido</h3>
-                            <p className="mt-1 text-sm text-gray-600">Acompanhe status e próximos passos</p>
+                            <h3 className="text-lg font-medium text-gray-900">Detalhes da Cotação</h3>
+                            <p className="mt-1 text-sm text-gray-600">Resumo da sua proposta</p>
                         </div>
                         <button
                             onClick={() => setSelectedQuotation(null)}
@@ -594,109 +459,28 @@ export function SupplierQuotationInboxSection() {
                                 <div className="text-gray-900 font-semibold">R$ {totalValue.toFixed(2)}</div>
                             </div>
                         </div>
-                        {canNegotiate(selectedQuotation) && (
+                        {(selectedUnifiedStatus === 'responded') && (
                             <div className="mt-4 flex flex-wrap items-center gap-2">
                                 <button
                                     onClick={() => openChat({
                                         recipientName: selectedQuotation.clientCode,
                                         recipientId: selectedQuotation.user_id,
-                                        roomId: fornecedorId ? `${selectedQuotation.id}::${fornecedorId}` : selectedQuotation.id
+                                        roomId: fornecedorId ? `${selectedQuotation.id}::${fornecedorId}` : selectedQuotation.id,
+                                        roomTitle: 'Cotação'
                                     })}
                                     className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
                                 >
                                     Negociar no chat
                                 </button>
-                                {selectedUnifiedStatus !== 'lost' && (
-                                    <button
-                                        onClick={() => setSelectedQuotation({ ...selectedQuotation, _editProposal: true })}
-                                        className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
-                                    >
-                                        Atualizar proposta
-                                    </button>
-                                )}
+                                <button
+                                    onClick={() => setSelectedQuotation({ ...selectedQuotation, _editProposal: true })}
+                                    className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
+                                >
+                                    Atualizar proposta
+                                </button>
                             </div>
                         )}
                     </div>
-
-                    {selectedUnifiedStatus === 'won' && (
-                        <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
-                            <div>
-                                <p className="text-sm font-semibold text-gray-900 mb-2">Fluxo do pedido</p>
-                                <div className="flex flex-wrap gap-2">
-                                    {(['aprovado', 'emissao_nota', 'em_separacao', 'a_caminho', 'entregue'] as const).map((step) => {
-                                        const isActive = step === wonWorkflow;
-                                        return (
-                                            <span
-                                                key={`selected-${step}`}
-                                                className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${isActive ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-gray-100 text-gray-600'}`}
-                                            >
-                                                {getOrderWorkflowLabel(step)}
-                                            </span>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
-                            {wonInvoice && (
-                                <div className="text-xs text-gray-600 bg-blue-50 border border-blue-100 rounded-md px-3 py-2">
-                                    Nota anexada: <span className="font-medium text-gray-800">{wonInvoice.fileName}</span>
-                                    {wonInvoice.publicUrl && (
-                                        <a
-                                            href={wonInvoice.publicUrl}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="ml-2 text-blue-600 hover:underline"
-                                        >
-                                            Abrir arquivo
-                                        </a>
-                                    )}
-                                </div>
-                            )}
-
-                            {wonAction && (
-                                <div className="flex flex-wrap items-center gap-3">
-                                    {wonWorkflow === 'emissao_nota' && (
-                                        <div className="flex flex-col gap-1">
-                                            <input
-                                                type="file"
-                                                accept="application/pdf,image/*"
-                                                onChange={(e) => {
-                                                    const selectedFile = e.target.files?.[0] || null;
-                                                    if (!selectedFile) {
-                                                        setInvoiceFiles(prev => ({ ...prev, [selectedQuotation.id]: null }));
-                                                        return;
-                                                    }
-
-                                                    if (!ALLOWED_INVOICE_TYPES.has(selectedFile.type)) {
-                                                        alert('Formato inválido. Envie PDF, JPG ou PNG.');
-                                                        e.currentTarget.value = '';
-                                                        return;
-                                                    }
-
-                                                    if (selectedFile.size > MAX_INVOICE_SIZE_BYTES) {
-                                                        alert('Arquivo excede o limite de 10MB.');
-                                                        e.currentTarget.value = '';
-                                                        return;
-                                                    }
-
-                                                    setInvoiceFiles(prev => ({ ...prev, [selectedQuotation.id]: selectedFile }));
-                                                }}
-                                                className="text-xs"
-                                            />
-                                            <span className="text-[11px] text-gray-500">Formatos: PDF/JPG/PNG • Máx 10MB</span>
-                                        </div>
-                                    )}
-                                    <button
-                                        onClick={() => handleAdvanceWonOrder(selectedQuotation)}
-                                        disabled={actionLoadingId === selectedQuotation.id}
-                                        className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-60"
-                                    >
-                                        {actionLoadingId === selectedQuotation.id ? 'Atualizando...' : wonAction.label}
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    )}
 
                     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                         <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
@@ -741,7 +525,10 @@ export function SupplierQuotationInboxSection() {
         return (
             <SupplierQuotationResponseSection
                 quotation={selectedQuotation}
-                onBack={() => setSelectedQuotation(null)}
+                onBack={() => {
+                    setSelectedQuotation(null);
+                    fetchQuotations();
+                }}
                 mode="create"
             />
         );
@@ -760,7 +547,7 @@ export function SupplierQuotationInboxSection() {
                         <span className="text-xs text-yellow-600">Você pode alterar isso na aba "Cadastro & Perfil".</span>
                     </div>
                 )}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     <div className="text-center">
                         <div className="text-2xl font-bold text-blue-600">{activeQuotationsCount}</div>
                         <div className="text-sm text-gray-500">Recebidos</div>
@@ -768,10 +555,6 @@ export function SupplierQuotationInboxSection() {
                     <div className="text-center">
                         <div className="text-2xl font-bold text-green-600">{respondedOpenCount}</div>
                         <div className="text-sm text-gray-500">Respondidos</div>
-                    </div>
-                    <div className="text-center">
-                        <div className="text-2xl font-bold text-yellow-600">{wonClosedCount}</div>
-                        <div className="text-sm text-gray-500">Ganhou</div>
                     </div>
                     <div className="text-center">
                         <div className="text-2xl font-bold text-red-600">{lostClosedCount}</div>
@@ -799,12 +582,6 @@ export function SupplierQuotationInboxSection() {
                         Respondido ({respondedOpenCount})
                     </button>
                     <button
-                        onClick={() => setStatusFilter('won')}
-                        className={`px-3 py-1 text-xs font-medium rounded-full ${statusFilter === 'won' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}
-                    >
-                        Ganhou ({wonClosedCount})
-                    </button>
-                    <button
                         onClick={() => setStatusFilter('lost')}
                         className={`px-3 py-1 text-xs font-medium rounded-full ${statusFilter === 'lost' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'}`}
                     >
@@ -825,6 +602,9 @@ export function SupplierQuotationInboxSection() {
                             <div className="flex items-start justify-between">
                                 <div className="flex-1">
                                     <div className="flex items-center space-x-3 mb-2">
+                                        {quotation.numero && (
+                                            <span className="text-sm font-bold text-blue-600">#{quotation.numero}</span>
+                                        )}
                                         <h4 className="text-base font-medium text-gray-900">{quotation.clientCode}</h4>
                                         {(() => {
                                             const unifiedStatus = getUnifiedPedidoStatus(quotation);
@@ -845,102 +625,6 @@ export function SupplierQuotationInboxSection() {
                                             {quotation.urgency}
                                         </span>
                                     </div>
-                                    {quotation.status === 'fechada' && quotation._closed_with_me && (
-                                        <div className="mb-3">
-                                            <p className="text-xs font-semibold text-gray-700 mb-2">Status do pedido</p>
-                                            {(() => {
-                                                const workflowStatus = mapOrderWorkflowStatus(quotation._pedido_status);
-                                                const workflow = ['aprovado', 'emissao_nota', 'em_separacao', 'a_caminho', 'entregue'] as const;
-                                                return (
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {workflow.map((step) => {
-                                                            const isActive = step === workflowStatus;
-                                                            return (
-                                                                <span
-                                                                    key={`${quotation.id}-${step}`}
-                                                                    className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${isActive ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-gray-100 text-gray-600'}`}
-                                                                >
-                                                                    {getOrderWorkflowLabel(step)}
-                                                                </span>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                );
-                                            })()}
-                                        </div>
-                                    )}
-                                    {quotation.status === 'fechada' && quotation._closed_with_me && (() => {
-                                        const workflowStatus = mapOrderWorkflowStatus(quotation._pedido_status);
-                                        const action = getOrderActionByStep(workflowStatus);
-                                        const isLoading = actionLoadingId === quotation.id;
-                                        const selectedFile = invoiceFiles[quotation.id];
-                                        const invoiceAttached = quotation?._pedido_summary?.invoiceAttachment;
-
-                                        return (
-                                            <div className="mb-3 flex flex-wrap items-center gap-2">
-                                                {workflowStatus === 'emissao_nota' && (
-                                                    <>
-                                                        <div className="flex flex-col gap-1">
-                                                            <input
-                                                                type="file"
-                                                                accept="application/pdf,image/*"
-                                                                onChange={(e) => {
-                                                                    const file = e.target.files?.[0] || null;
-                                                                    if (!file) {
-                                                                        setInvoiceFiles(prev => ({ ...prev, [quotation.id]: null }));
-                                                                        return;
-                                                                    }
-
-                                                                    if (!ALLOWED_INVOICE_TYPES.has(file.type)) {
-                                                                        alert('Formato inválido. Envie PDF, JPG ou PNG.');
-                                                                        e.currentTarget.value = '';
-                                                                        return;
-                                                                    }
-
-                                                                    if (file.size > MAX_INVOICE_SIZE_BYTES) {
-                                                                        alert('Arquivo excede o limite de 10MB.');
-                                                                        e.currentTarget.value = '';
-                                                                        return;
-                                                                    }
-
-                                                                    setInvoiceFiles(prev => ({ ...prev, [quotation.id]: file }));
-                                                                }}
-                                                                className="text-xs"
-                                                            />
-                                                            <span className="text-[11px] text-gray-500">Formatos: PDF/JPG/PNG • Máx 10MB</span>
-                                                        </div>
-                                                        {invoiceAttached && (
-                                                            <span className="text-xs text-gray-500">
-                                                                Nota anexada: {invoiceAttached.fileName}
-                                                                {invoiceAttached.publicUrl && (
-                                                                    <a
-                                                                        href={invoiceAttached.publicUrl}
-                                                                        target="_blank"
-                                                                        rel="noreferrer"
-                                                                        className="ml-1 text-blue-600 hover:underline"
-                                                                    >
-                                                                        Ver
-                                                                    </a>
-                                                                )}
-                                                            </span>
-                                                        )}
-                                                        {selectedFile && (
-                                                            <span className="text-xs text-green-700">Arquivo selecionado: {selectedFile.name}</span>
-                                                        )}
-                                                    </>
-                                                )}
-                                                {action && (
-                                                    <button
-                                                        onClick={() => handleAdvanceWonOrder(quotation)}
-                                                        disabled={isLoading}
-                                                        className="px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-60"
-                                                    >
-                                                        {isLoading ? 'Atualizando...' : action.label}
-                                                    </button>
-                                                )}
-                                            </div>
-                                        );
-                                    })()}
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
                                         <div>
                                             <span className="font-medium">Localização:</span>
@@ -965,12 +649,13 @@ export function SupplierQuotationInboxSection() {
                                     </div>
                                 </div>
                                 <div className="flex space-x-2 ml-4">
-                                    {canNegotiate(quotation) && (
+                                    {(getUnifiedPedidoStatus(quotation) === 'received' || getUnifiedPedidoStatus(quotation) === 'responded') && (
                                         <button
                                             onClick={() => openChat({
                                                 recipientName: quotation.clientCode,
                                                 recipientId: quotation.user_id,
-                                                roomId: fornecedorId ? `${quotation.id}::${fornecedorId}` : quotation.id
+                                                roomId: fornecedorId ? `${quotation.id}::${fornecedorId}` : quotation.id,
+                                                roomTitle: 'Cotação'
                                             })}
                                             className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100"
                                         >
@@ -1000,13 +685,13 @@ export function SupplierQuotationInboxSection() {
 
             {openChats.map((chat, index) => (
                 <ChatInterface
-                    key={chat.roomId}
+                    key={chat.recipientId}
                     isOpen={true}
-                    onClose={() => closeChat(chat.roomId)}
+                    onClose={() => closeChat(chat.recipientId)}
                     recipientName={chat.recipientName}
                     recipientId={chat.recipientId}
-                    orderId={chat.roomId}
-                    orderTitle="Negociação de Pedido"
+                    initialRoomId={chat.initialRoomId}
+                    initialRoomTitle={chat.initialRoomTitle}
                     offsetIndex={index}
                 />
             ))}

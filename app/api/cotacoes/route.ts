@@ -246,10 +246,14 @@ export async function GET(req: NextRequest) {
         }
 
         // Also check which cotações this fornecedor already responded to
-        const { data: propostas } = await supabaseAdmin
+        const { data: propostas, error: propostasError } = await supabaseAdmin
             .from('propostas')
-            .select('cotacao_id, status, numero, valor_total, valor_frete, prazo_entrega, condicoes_pagamento, observacoes, proposta_itens(cotacao_item_id, preco_unitario, subtotal, quantidade)')
+            .select('cotacao_id, status, valor_total, valor_frete, prazo_entrega, condicoes_pagamento, observacoes, proposta_itens(cotacao_item_id, preco_unitario, subtotal, quantidade)')
             .eq('fornecedor_id', fornecedorId);
+
+        if (propostasError) {
+            console.error('[COTACOES API] Erro ao buscar propostas:', propostasError.message);
+        }
 
         const propostaMap = new Map((propostas || []).map((p: any) => [p.cotacao_id, p.status]));
         const propostaResumoMap = new Map((propostas || []).map((p: any) => {
@@ -265,7 +269,7 @@ export async function GET(req: NextRequest) {
             return [
                 p.cotacao_id,
                 {
-                    numero: p.numero || null,
+                    numero: p.numero ?? null,
                     totalValue: parseFloat(p.valor_total) || 0,
                     freightValue: parseFloat(p.valor_frete) || 0,
                     taxValue: extractTaxesFromObservacoes(p.observacoes),

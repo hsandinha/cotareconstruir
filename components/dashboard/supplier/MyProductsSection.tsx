@@ -9,16 +9,10 @@ import {
 } from "@heroicons/react/24/outline";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
+import { getAuthHeaders } from "@/lib/authHeaders";
 
 // Helper para obter headers com token de autenticação
-async function getAuthHeaders(): Promise<Record<string, string>> {
-    const { data: { session } } = await supabase.auth.getSession();
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (session?.access_token) {
-        headers["Authorization"] = `Bearer ${session.access_token}`;
-    }
-    return headers;
-}
+
 
 interface ProdutoConfigurado {
     fornecedorMaterialId: string; // fornecedor_materiais.id
@@ -38,7 +32,7 @@ interface ProdutoConfigurado {
 }
 
 export function SupplierMyProductsSection() {
-    const { user, initialized } = useAuth();
+    const { user, session, initialized } = useAuth();
     const [searchTerm, setSearchTerm] = useState("");
     const [loading, setLoading] = useState(true);
     const [fornecedorId, setFornecedorId] = useState<string | null>(null);
@@ -88,7 +82,7 @@ export function SupplierMyProductsSection() {
         const loadData = async () => {
             setLoading(true);
             try {
-                const headers = await getAuthHeaders();
+                const headers = await getAuthHeaders(session?.access_token);
 
                 // 1. Buscar fornecedor_materiais via API (bypass RLS)
                 const fmRes = await fetch(
@@ -511,8 +505,8 @@ export function SupplierMyProductsSection() {
                                                 {isEditing ? (
                                                     <span
                                                         className={`text-sm font-semibold ${editPrecoPreview && editPrecoPreview < produto.preco
-                                                                ? "text-green-600"
-                                                                : "text-gray-900"
+                                                            ? "text-green-600"
+                                                            : "text-gray-900"
                                                             }`}
                                                     >
                                                         R$ {(editPrecoPreview ?? produto.preco).toFixed(2)}
@@ -520,8 +514,8 @@ export function SupplierMyProductsSection() {
                                                 ) : (
                                                     <span
                                                         className={`text-sm font-semibold ${produto.valorOferta && produto.valorOferta > 0
-                                                                ? "text-green-600"
-                                                                : "text-gray-900"
+                                                            ? "text-green-600"
+                                                            : "text-gray-900"
                                                             }`}
                                                     >
                                                         R$ {precoFinal.toFixed(2)}
@@ -568,8 +562,8 @@ export function SupplierMyProductsSection() {
                                                     <button
                                                         onClick={() => startEditing(produto)}
                                                         className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${produto.ofertaId
-                                                                ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                                                                : "bg-blue-600 text-white hover:bg-blue-700"
+                                                            ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                                            : "bg-blue-600 text-white hover:bg-blue-700"
                                                             }`}
                                                     >
                                                         {produto.ofertaId ? "Editar Oferta" : "Configurar Oferta"}

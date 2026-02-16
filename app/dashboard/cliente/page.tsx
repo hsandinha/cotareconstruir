@@ -12,6 +12,7 @@ import PendingProfileModal from "../../../components/PendingProfileModal";
 import { useAuth } from "@/lib/useAuth";
 import { supabase } from "@/lib/supabaseAuth";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ChatNotificationListener } from "@/components/ChatNotificationListener";
 
 export type TabId =
     | "perfil"
@@ -277,6 +278,8 @@ function ClienteDashboardContent() {
                     }, 1000);
                 }}
             />
+
+            <ChatNotificationListener />
         </div>
     );
 }

@@ -44,7 +44,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
     const [selectedSuppliers, setSelectedSuppliers] = useState<{ [itemId: string]: string }>({}); // itemId -> supplierId
     const [rejectedSuppliers, setRejectedSuppliers] = useState<string[]>([]);
     const [view, setView] = useState<"map" | "oc">("map");
-    const [chatContext, setChatContext] = useState<{ recipientName: string; recipientId?: string; roomId: string } | null>(null);
+    const [chatContext, setChatContext] = useState<{ recipientName: string; recipientId?: string; initialRoomId: string; initialRoomTitle?: string } | null>(null);
     const [negotiationModal, setNegotiationModal] = useState<{
         isOpen: boolean;
         supplier: any;
@@ -1153,8 +1153,10 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                                 setChatContext({
                                                     recipientName: proposal.supplierName,
                                                     recipientId: proposal.supplierUserId,
-                                                    roomId: `${orderId}::${proposal.supplierId}`,
+                                                    initialRoomId: `${orderId}::${proposal.supplierId}`,
+                                                    initialRoomTitle: 'Cotação',
                                                 });
+                                                window.dispatchEvent(new CustomEvent('chat-room-opened', { detail: { recipientId: proposal.supplierUserId } }));
                                             }}
                                             className="text-xs font-normal text-blue-600 hover:text-blue-800 flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-full"
                                         >
@@ -1329,11 +1331,16 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
             {chatContext && (
                 <ChatInterface
                     recipientName={chatContext.recipientName}
-                    recipientId={chatContext.recipientId}
-                    orderId={chatContext.roomId}
-                    orderTitle="Negociação da Cotação"
+                    recipientId={chatContext.recipientId || ''}
+                    initialRoomId={chatContext.initialRoomId}
+                    initialRoomTitle={chatContext.initialRoomTitle}
                     isOpen={!!chatContext}
-                    onClose={() => setChatContext(null)}
+                    onClose={() => {
+                        if (chatContext?.recipientId) {
+                            window.dispatchEvent(new CustomEvent('chat-room-closed', { detail: { recipientId: chatContext.recipientId } }));
+                        }
+                        setChatContext(null);
+                    }}
                 />
             )}
 

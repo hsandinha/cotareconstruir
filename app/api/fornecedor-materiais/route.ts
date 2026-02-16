@@ -3,10 +3,35 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
-    const token = authHeader?.replace('Bearer ', '')
-        || req.cookies.get('authToken')?.value
-        || req.cookies.get('token')?.value
-        || req.cookies.get('sb-access-token')?.value;
+
+    // Tentar múltiplas fontes de token
+    let token = authHeader?.replace('Bearer ', '');
+
+    if (!token) {
+        // Tentar cookies do Supabase (formato: sb-<ref>-auth-token)
+        const supabaseAuthCookie = req.cookies
+            .getAll()
+            .find((cookie) => cookie.name.endsWith('-auth-token'))?.value;
+
+        if (supabaseAuthCookie) {
+            try {
+                const parsed = JSON.parse(supabaseAuthCookie);
+                if (Array.isArray(parsed) && typeof parsed[0] === 'string') {
+                    token = parsed[0];
+                }
+            } catch {
+                // Ignorar erro de parse
+            }
+        }
+    }
+
+    if (!token) {
+        // Fallback para outros cookies
+        token = req.cookies.get('authToken')?.value
+            || req.cookies.get('token')?.value
+            || req.cookies.get('sb-access-token')?.value;
+    }
+
     if (!token || !supabaseAdmin) return null;
     const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !user) return null;

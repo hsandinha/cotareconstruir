@@ -10,6 +10,40 @@ async function getAuthUser(req: NextRequest) {
     return user;
 }
 
+// Helper function to get next pedido numero
+async function getNextPedidoNumero(): Promise<string> {
+    if (!supabaseAdmin) return String(Date.now());
+
+    try {
+        // Try to use the sequence first
+        const { data: seqData, error: seqError } = await supabaseAdmin
+            .rpc('nextval', { sequence_name: 'pedido_numero_seq' });
+
+        if (!seqError && seqData) {
+            return String(seqData);
+        }
+    } catch (e) {
+        console.warn('Sequence not available, using fallback');
+    }
+
+    // Fallback: Find max numero and increment
+    const { data } = await supabaseAdmin
+        .from('pedidos')
+        .select('numero')
+        .order('numero', { ascending: false })
+        .limit(1);
+
+    if (data && data.length > 0 && data[0].numero) {
+        const maxNum = parseInt(data[0].numero, 10);
+        if (!isNaN(maxNum)) {
+            return String(maxNum + 1);
+        }
+    }
+
+    // Ultimate fallback
+    return '10001';
+}
+
 // GET: Load cotação detail with itens, propostas, pedidos (for client - bypasses RLS)
 export async function GET(req: NextRequest) {
     try {
@@ -237,7 +271,16 @@ export async function POST(req: NextRequest) {
             const selectedProposalIds = new Set<string>();
             const processedSupplierKeys = new Set<string>();
 
+            // Buscar numero da cotação para usar no pedido (mesma rastreabilidade)
+            const { data: cotacaoData } = await supabaseAdmin
+                .from('cotacoes')
+                .select('numero')
+                .eq('id', cotacaoId)
+                .single();
+            const cotacaoNumero = cotacaoData?.numero || null;
+
             // Create orders for each supplier
+            let supplierIndex = 0;
             for (const supplierGroup of itemsBySupplier) {
                 const { supplierId, proposalId, supplierUserId, supplierName, supplierDetails, items, freightPrice, deliveryDays, paymentMethod } = supplierGroup;
 
@@ -265,10 +308,22 @@ export async function POST(req: NextRequest) {
                     : null;
                 const supplierTotal = supplierSubtotal + freightValue;
 
+                // Usar o mesmo numero da cotação para rastreabilidade
+                // Se houver mais de um fornecedor, adiciona sufixo (.1, .2, etc.)
+                const totalSuppliers = itemsBySupplier.filter((g: any) => !existingOrderKeys.has(String(g.supplierId)) && !processedSupplierKeys.has(String(g.supplierId))).length;
+                let pedidoNumero: string;
+                if (cotacaoNumero) {
+                    pedidoNumero = totalSuppliers > 1 ? `${cotacaoNumero}.${supplierIndex + 1}` : cotacaoNumero;
+                } else {
+                    pedidoNumero = await getNextPedidoNumero();
+                }
+                supplierIndex++;
+
                 // Create pedido
                 const { data: orderData, error: orderError } = await supabaseAdmin
                     .from('pedidos')
                     .insert({
+                        numero: pedidoNumero,
                         cotacao_id: cotacaoId,
                         proposta_id: proposalId,
                         user_id: user.id,

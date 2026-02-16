@@ -71,10 +71,35 @@ function getClientStatusNotification(status: string, pedidoNumero: string) {
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
-    const token = authHeader?.replace('Bearer ', '')
-        || req.cookies.get('authToken')?.value
-        || req.cookies.get('token')?.value
-        || req.cookies.get('sb-access-token')?.value;
+
+    // Tentar múltiplas fontes de token
+    let token = authHeader?.replace('Bearer ', '');
+
+    if (!token) {
+        // Tentar cookies do Supabase (formato: sb-<ref>-auth-token)
+        const supabaseAuthCookie = req.cookies
+            .getAll()
+            .find((cookie) => cookie.name.endsWith('-auth-token'))?.value;
+
+        if (supabaseAuthCookie) {
+            try {
+                const parsed = JSON.parse(supabaseAuthCookie);
+                if (Array.isArray(parsed) && typeof parsed[0] === 'string') {
+                    token = parsed[0];
+                }
+            } catch {
+                // Ignorar erro de parse
+            }
+        }
+    }
+
+    if (!token) {
+        // Fallback para outros cookies
+        token = req.cookies.get('authToken')?.value
+            || req.cookies.get('token')?.value
+            || req.cookies.get('sb-access-token')?.value;
+    }
+
     if (!token || !supabaseAdmin) return null;
     const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !user) return null;
@@ -101,6 +126,92 @@ async function getFornecedorId(userId: string): Promise<string | null> {
         .single();
 
     return userData?.fornecedor_id || null;
+}
+
+// Helper function to get next pedido numero
+async function getNextPedidoNumero(): Promise<string> {
+    if (!supabaseAdmin) return String(Date.now());
+
+    try {
+        // Try to use the sequence first
+        const { data: seqData, error: seqError } = await supabaseAdmin
+            .rpc('nextval', { sequence_name: 'pedido_numero_seq' });
+
+        if (!seqError && seqData) {
+            return String(seqData);
+        }
+    } catch (e) {
+        console.warn('Sequence not available, using fallback');
+    }
+
+    // Fallback: Find max numero and increment
+    const { data } = await supabaseAdmin
+        .from('pedidos')
+        .select('numero')
+        .order('numero', { ascending: false })
+        .limit(1);
+
+    if (data && data.length > 0 && data[0].numero) {
+        const maxNum = parseInt(data[0].numero, 10);
+        if (!isNaN(maxNum)) {
+            return String(maxNum + 1);
+        }
+    }
+
+    // Ultimate fallback
+    return '10001';
+}
+
+// Helper to fix pedidos without numero (uses cotação numero for rastreabilidade)
+async function fixPedidosSemNumero(pedidos: any[]) {
+    if (!supabaseAdmin) return;
+
+    const pedidosSemNumero = pedidos.filter(p => !p.numero);
+
+    if (pedidosSemNumero.length === 0) return;
+
+    console.log(`Corrigindo ${pedidosSemNumero.length} pedidos sem número...`);
+
+    for (const pedido of pedidosSemNumero) {
+        try {
+            let novoNumero: string | null = null;
+
+            // Tentar buscar o numero da cotação vinculada
+            if (pedido.cotacao_id) {
+                const { data: cotacao } = await supabaseAdmin
+                    .from('cotacoes')
+                    .select('numero')
+                    .eq('id', pedido.cotacao_id)
+                    .single();
+                if (cotacao?.numero) {
+                    // Verificar se já existe outro pedido com esse numero
+                    const { data: existingPedido } = await supabaseAdmin
+                        .from('pedidos')
+                        .select('id')
+                        .eq('numero', cotacao.numero)
+                        .neq('id', pedido.id)
+                        .limit(1);
+                    if (!existingPedido || existingPedido.length === 0) {
+                        novoNumero = cotacao.numero;
+                    }
+                }
+            }
+
+            if (!novoNumero) {
+                novoNumero = await getNextPedidoNumero();
+            }
+
+            await supabaseAdmin
+                .from('pedidos')
+                .update({ numero: novoNumero })
+                .eq('id', pedido.id);
+
+            pedido.numero = novoNumero;
+            console.log(`✅ Pedido ${pedido.id.slice(0, 8)} agora é #${novoNumero}`);
+        } catch (error) {
+            console.error(`Erro ao corrigir pedido ${pedido.id}:`, error);
+        }
+    }
 }
 
 // GET: Load pedidos for the authenticated fornecedor (bypasses RLS)
@@ -135,6 +246,9 @@ export async function GET(req: NextRequest) {
         // Enrich with obra and cotação data
         const pedidos = data || [];
 
+        // Fix pedidos without numero
+        await fixPedidosSemNumero(pedidos);
+
         if (pedidos.length > 0) {
             // Get unique obra_ids and cotacao_ids
             const obraIds = [...new Set(pedidos.map(p => p.obra_id).filter(Boolean))];
@@ -143,7 +257,7 @@ export async function GET(req: NextRequest) {
 
             const [obrasRes, cotacoesRes, usersRes] = await Promise.all([
                 obraIds.length > 0
-                    ? supabaseAdmin.from('obras').select('id, nome, bairro, cidade, estado, endereco').in('id', obraIds)
+                    ? supabaseAdmin.from('obras').select('id, nome, bairro, cidade, estado, logradouro, numero, complemento, cep, horario_entrega').in('id', obraIds)
                     : Promise.resolve({ data: [] }),
                 cotacaoIds.length > 0
                     ? supabaseAdmin.from('cotacoes').select('id, status, data_validade').in('id', cotacaoIds)
@@ -190,7 +304,7 @@ export async function POST(req: NextRequest) {
         }
 
         const body = await req.json();
-        const { action, pedido_id, status, summary_update, invoice_file } = body;
+        const { action, pedido_id, status, summary_update, invoice_file, delivery_proof_file } = body;
 
         if (action === 'update_status') {
             if (!pedido_id || !status) {
@@ -269,6 +383,69 @@ export async function POST(req: NextRequest) {
                 computedSummaryUpdate = {
                     ...computedSummaryUpdate,
                     invoiceAttachment: {
+                        fileName,
+                        fileType,
+                        fileSize: fileSize || fileBuffer.length,
+                        storageBucket: bucketName,
+                        storagePath,
+                        publicUrl: publicUrlData?.data?.publicUrl || null,
+                        uploadedAt: new Date().toISOString(),
+                    }
+                };
+            }
+
+            // Handle delivery proof file (canhoto assinado)
+            if (delivery_proof_file && typeof delivery_proof_file === 'object') {
+                const fileName = String(delivery_proof_file.fileName || '').trim();
+                const fileType = String(delivery_proof_file.fileType || 'application/octet-stream').trim();
+                const fileBase64 = String(delivery_proof_file.fileBase64 || '').trim();
+                const fileSize = Number(delivery_proof_file.fileSize) || 0;
+
+                if (!fileName || !fileBase64) {
+                    return NextResponse.json({ error: 'Arquivo do canhoto inválido' }, { status: 400 });
+                }
+
+                if (!fileType.startsWith('image/')) {
+                    return NextResponse.json({
+                        error: 'Envie apenas imagens (JPG, PNG) para o canhoto.'
+                    }, { status: 400 });
+                }
+
+                if (fileSize <= 0 || fileSize > MAX_INVOICE_SIZE_BYTES) {
+                    return NextResponse.json({
+                        error: 'Arquivo excede o limite de 10MB.'
+                    }, { status: 400 });
+                }
+
+                const bucketName = process.env.SUPABASE_INVOICES_BUCKET || 'invoices';
+                const safeName = sanitizeFileName(fileName);
+                const storagePath = `fornecedor-${fornecedorId}/pedido-${pedido_id}/canhoto-${Date.now()}-${safeName}`;
+
+                const { data: buckets } = await supabaseAdmin.storage.listBuckets();
+                const bucketExists = (buckets || []).some((bucket: any) => bucket.name === bucketName);
+                if (!bucketExists) {
+                    await supabaseAdmin.storage.createBucket(bucketName, { public: false });
+                }
+
+                const fileBuffer = Buffer.from(fileBase64, 'base64');
+                const uploadResult = await supabaseAdmin
+                    .storage
+                    .from(bucketName)
+                    .upload(storagePath, fileBuffer, {
+                        contentType: fileType,
+                        upsert: true,
+                    });
+
+                if (uploadResult.error) {
+                    console.error('Erro ao subir canhoto:', uploadResult.error);
+                    return NextResponse.json({ error: 'Falha ao fazer upload do canhoto' }, { status: 500 });
+                }
+
+                const publicUrlData = supabaseAdmin.storage.from(bucketName).getPublicUrl(storagePath);
+
+                computedSummaryUpdate = {
+                    ...computedSummaryUpdate,
+                    deliveryProofAttachment: {
                         fileName,
                         fileType,
                         fileSize: fileSize || fileBuffer.length,

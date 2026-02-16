@@ -33,7 +33,7 @@ export default function LoginPage() {
         return "Ocorreu um erro ao fazer login. Tente novamente.";
     };
 
-    async function handleUserAuth(user: any) {
+    async function handleUserAuth(user: any, directSession?: any) {
         // Buscar perfil do usuário
         const { data: profile } = await supabase
             .from('users')
@@ -72,9 +72,12 @@ export default function LoginPage() {
             primaryRole = "cliente";
         }
 
-        // Get session token
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token || "";
+        // Get session token - prefer the session from signIn response
+        let token = directSession?.access_token || "";
+        if (!token) {
+            const { data: { session } } = await supabase.auth.getSession();
+            token = session?.access_token || "";
+        }
 
         // Save to localStorage for persistence
         localStorage.setItem("token", token);
@@ -133,7 +136,9 @@ export default function LoginPage() {
 
             if (error) throw error;
 
-            if (data.user) {
+            if (data.user && data.session) {
+                await handleUserAuth(data.user, data.session);
+            } else if (data.user) {
                 await handleUserAuth(data.user);
             }
         } catch (err: any) {
