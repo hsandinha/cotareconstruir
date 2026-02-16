@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { SupplierQuotationResponseSection } from "./QuotationResponseSection";
 import { ChatInterface } from "@/components/ChatInterface";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 const MAX_INVOICE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 const ALLOWED_INVOICE_TYPES = new Set([
@@ -25,6 +26,9 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 
 export function SupplierQuotationInboxSection() {
     const { user, profile, initialized } = useAuth();
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
     const [quotations, setQuotations] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isInactive, setIsInactive] = useState(false);
@@ -38,6 +42,7 @@ export function SupplierQuotationInboxSection() {
         categories: [] as string[]
     });
     const [statusFilter, setStatusFilter] = useState<"all" | "received" | "responded" | "won" | "lost">("all");
+    const deepLinkHandledRef = useRef<string | null>(null);
 
     const openChat = (context: { recipientName: string; recipientId: string; roomId: string }) => {
         setOpenChats((prev) => {
@@ -177,6 +182,60 @@ export function SupplierQuotationInboxSection() {
             supabase.removeChannel(channel);
         };
     }, [user, initialized, fetchQuotations]);
+
+    useEffect(() => {
+        if (!initialized || !user || quotations.length === 0) return;
+
+        const cotacaoId = String(searchParams.get('cotacaoId') || '').trim();
+        const pedidoId = String(searchParams.get('pedidoId') || '').trim();
+        const chatRoom = String(searchParams.get('chatRoom') || '').trim();
+
+        if (!cotacaoId && !pedidoId && !chatRoom) return;
+
+        const deepLinkKey = `${cotacaoId}|${pedidoId}|${chatRoom}`;
+        if (deepLinkHandledRef.current === deepLinkKey) return;
+
+        let targetQuotation: any | null = null;
+
+        if (cotacaoId) {
+            targetQuotation = quotations.find((quotation) => String(quotation.id) === cotacaoId) || null;
+        }
+
+        if (!targetQuotation && pedidoId) {
+            targetQuotation = quotations.find((quotation) => String(quotation._pedido_id || quotation._pedido?.id || '') === pedidoId) || null;
+        }
+
+        if (!targetQuotation && chatRoom) {
+            if (chatRoom.includes('::')) {
+                const [chatCotacaoId] = chatRoom.split('::');
+                targetQuotation = quotations.find((quotation) => String(quotation.id) === String(chatCotacaoId || '').trim()) || null;
+            } else {
+                targetQuotation = quotations.find((quotation) => String(quotation._pedido_id || quotation._pedido?.id || '') === chatRoom) || null;
+            }
+        }
+
+        if (!targetQuotation) return;
+
+        setStatusFilter('all');
+        setSelectedQuotation(targetQuotation);
+
+        if (chatRoom && targetQuotation.user_id) {
+            openChat({
+                recipientName: targetQuotation.clientCode,
+                recipientId: targetQuotation.user_id,
+                roomId: chatRoom,
+            });
+        }
+
+        deepLinkHandledRef.current = deepLinkKey;
+
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete('cotacaoId');
+        params.delete('pedidoId');
+        params.delete('chatRoom');
+        const nextQuery = params.toString();
+        router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+    }, [initialized, user, quotations, searchParams]);
 
     const getUrgencyColor = (urgency: string) => {
         switch (urgency) {

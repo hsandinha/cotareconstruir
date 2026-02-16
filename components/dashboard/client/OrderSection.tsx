@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ArrowRightIcon, CalendarIcon, MapPinIcon, DocumentTextIcon } from "@heroicons/react/24/outline";
 import { ClientComparativeSection } from "./ComparativeSection";
 import { getQuotationStatusBadge } from "./quotationStatus";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 // Helper para obter headers com token de autenticação
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -17,10 +18,14 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 
 export function ClientOrderSection() {
     const { user, initialized } = useAuth();
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
     const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
     const [orders, setOrders] = useState<any[]>([]);
     const [worksMap, setWorksMap] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
+    const deepLinkHandledRef = useRef<string | null>(null);
 
     useEffect(() => {
         if (!initialized) return;
@@ -124,6 +129,29 @@ export function ClientOrderSection() {
             supabase.removeChannel(quotationsChannel);
         };
     }, [user, initialized]);
+
+    useEffect(() => {
+        if (orders.length === 0) return;
+
+        const cotacaoId = String(searchParams.get('cotacaoId') || '').trim();
+        if (!cotacaoId) return;
+
+        const deepLinkKey = `cotacao:${cotacaoId}`;
+        if (deepLinkHandledRef.current === deepLinkKey) return;
+
+        const targetOrder = orders.find((order) => String(order.id) === cotacaoId);
+        if (!targetOrder) return;
+
+        setSelectedOrder(targetOrder.id);
+        deepLinkHandledRef.current = deepLinkKey;
+
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete('cotacaoId');
+        params.delete('pedidoId');
+        params.delete('chatRoom');
+        const nextQuery = params.toString();
+        router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+    }, [orders, searchParams]);
 
     if (selectedOrder) {
         const order = orders.find(o => o.id === selectedOrder);

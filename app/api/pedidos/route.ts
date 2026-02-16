@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
             // Verify ownership
             const { data: pedido } = await supabaseAdmin
                 .from('pedidos')
-                .select('id, fornecedor_id, user_id, numero, status, created_at, data_previsao_entrega, endereco_entrega')
+                .select('id, fornecedor_id, user_id, cotacao_id, numero, status, created_at, data_previsao_entrega, endereco_entrega')
                 .eq('id', pedido_id)
                 .eq('fornecedor_id', fornecedorId)
                 .single();
@@ -315,9 +315,10 @@ export async function POST(req: NextRequest) {
 
             const pedidoNumero = String((pedido as any)?.numero || (pedido_id || '').slice(0, 8));
             const statusNotification = getClientStatusNotification(status, pedidoNumero);
+            const cotacaoId = String((pedido as any)?.cotacao_id || '');
 
             if (statusNotification) {
-                const pedidoLink = `/dashboard/cliente?tab=pedidos&pedidoId=${encodeURIComponent(pedido_id)}`;
+                const pedidoLink = `/dashboard/cliente?tab=pedidos&pedidoId=${encodeURIComponent(pedido_id)}${cotacaoId ? `&cotacaoId=${encodeURIComponent(cotacaoId)}` : ''}`;
                 await supabaseAdmin
                     .from('notificacoes')
                     .insert({
@@ -349,7 +350,7 @@ export async function POST(req: NextRequest) {
                         mensagem: atrasoMsg,
                         tipo: 'warning',
                         lida: false,
-                        link: `/dashboard/cliente?tab=pedidos&pedidoId=${encodeURIComponent(pedido_id)}`
+                        link: `/dashboard/cliente?tab=pedidos&pedidoId=${encodeURIComponent(pedido_id)}${cotacaoId ? `&cotacaoId=${encodeURIComponent(cotacaoId)}` : ''}`
                     });
             }
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { sendEmail } from "../../../app/actions/email";
@@ -103,6 +104,8 @@ export function ClientSolicitationSection() {
     const [successMeta, setSuccessMeta] = useState<{ cotacoes: number; grupos: number } | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
     const [showAddForm, setShowAddForm] = useState(false);
+    const [isSearchFocused, setIsSearchFocused] = useState(false);
+    const [searchDropdownRect, setSearchDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
 
     // Formulário de item manual
     const [form, setForm] = useState({
@@ -115,8 +118,17 @@ export function ClientSolicitationSection() {
     });
 
     const unidades = ["unid", "kg", "m", "m²", "m³", "L", "pç", "sc", "cx", "tn"];
+    const searchInputWrapperRef = useRef<HTMLDivElement | null>(null);
+    const searchDropdownRef = useRef<HTMLDivElement | null>(null);
 
     const normalizeGroupName = (value: string | null | undefined) =>
+        String(value || "")
+            .trim()
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
+
+    const normalizeText = (value: string | null | undefined) =>
         String(value || "")
             .trim()
             .toLowerCase()
@@ -190,7 +202,7 @@ export function ClientSolicitationSection() {
             const [fasesRes, servicosRes, materiaisRes, servicoFaseRes, servicoGrupoRes, materialGrupoRes] = await Promise.all([
                 supabase.from("fases").select("*").order("cronologia", { ascending: true }),
                 supabase.from("servicos").select("*").order("ordem", { ascending: true }),
-                supabase.from("materiais").select("*"),
+                supabase.from("materiais").select("*").range(0, 4999),
                 supabase.from("servico_fase").select("*"),
                 supabase.from("servico_grupo").select("*"),
                 supabase.from("material_grupo").select("*")
@@ -260,9 +272,26 @@ export function ClientSolicitationSection() {
 
             console.log(`Etapa: ${etapa.nome}, Prevista: ${dataPrevista.toLocaleDateString()}, Início Cotação: ${dataInicioCotacao.toLocaleDateString()}, Hoje: ${hoje.toLocaleDateString()}, Válida: ${hoje >= dataInicioCotacao}`);
 
-            return hoje >= dataInicioCotacao;
+            return hoje >= dataInicioCotacao && !etapa.is_completed;
         });
     }, [obraEtapas]);
+
+    const groupIdsByEtapa = useMemo(() => {
+        const map = new Map<string, Set<string>>();
+
+        for (const etapa of validEtapasForQuotation) {
+            const gruposDaEtapa = new Set<string>();
+            const servicosDaEtapa = servicos.filter(servico => servico.faseIds?.includes(etapa.fase_id));
+
+            for (const servico of servicosDaEtapa) {
+                (servico.gruposInsumoIds || []).forEach(grupoId => gruposDaEtapa.add(grupoId));
+            }
+
+            map.set(etapa.id, gruposDaEtapa);
+        }
+
+        return map;
+    }, [validEtapasForQuotation, servicos]);
 
     // Itens agrupados por categoria
     const groupedItems = useMemo(() => {
@@ -279,18 +308,69 @@ export function ClientSolicitationSection() {
     // Filtrar materiais na busca
     const filteredMaterials = useMemo(() => {
         if (!searchTerm || materiais.length === 0) return [];
-        return materiais.filter(m =>
-            m.nome.toLowerCase().includes(searchTerm.toLowerCase())
-        ).slice(0, 10);
+        const normalizedTerm = normalizeText(searchTerm);
+        return materiais
+            .filter(m => normalizeText(m.nome).includes(normalizedTerm))
+            .sort((a, b) => {
+                const aStarts = normalizeText(a.nome).startsWith(normalizedTerm) ? 1 : 0;
+                const bStarts = normalizeText(b.nome).startsWith(normalizedTerm) ? 1 : 0;
+                if (aStarts !== bStarts) return bStarts - aStarts;
+                return a.nome.localeCompare(b.nome, 'pt-BR');
+            })
+            .slice(0, 50);
     }, [searchTerm, materiais]);
 
     // Filtrar categorias
     const filteredGroups = useMemo(() => {
         if (!searchTerm) return availableGroups;
         return availableGroups.filter(g =>
-            g.toLowerCase().includes(searchTerm.toLowerCase())
+            normalizeText(g).includes(normalizeText(searchTerm))
         );
     }, [availableGroups, searchTerm]);
+
+    const showExternalSearchDropdown =
+        step === 2 &&
+        quotationMode === "search" &&
+        isSearchFocused &&
+        searchTerm.trim().length > 0 &&
+        filteredMaterials.length > 0;
+
+    useEffect(() => {
+        if (!showExternalSearchDropdown) {
+            setSearchDropdownRect(null);
+            return;
+        }
+
+        const updateRect = () => {
+            const wrapper = searchInputWrapperRef.current;
+            if (!wrapper) return;
+
+            const rect = wrapper.getBoundingClientRect();
+            setSearchDropdownRect({
+                top: rect.bottom + 6,
+                left: rect.left,
+                width: rect.width,
+            });
+        };
+
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as Node;
+            if (searchInputWrapperRef.current?.contains(target)) return;
+            if (searchDropdownRef.current?.contains(target)) return;
+            setIsSearchFocused(false);
+        };
+
+        updateRect();
+        window.addEventListener('resize', updateRect);
+        window.addEventListener('scroll', updateRect, true);
+        document.addEventListener('mousedown', handleClickOutside);
+
+        return () => {
+            window.removeEventListener('resize', updateRect);
+            window.removeEventListener('scroll', updateRect, true);
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showExternalSearchDropdown]);
 
     // Toggle expandir fase
     const toggleFase = (faseId: string) => {
@@ -494,16 +574,16 @@ export function ClientSolicitationSection() {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-7">
             {/* Header com Steps */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-7">
                     <div>
-                        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                        <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-2">
                             <Sparkles className="w-6 h-6 text-blue-600" />
-                            Nova Cotação Inteligente
+                            Nova Cotação
                         </h1>
-                        <p className="text-slate-500 mt-1">Solicite materiais baseado nas fases da sua obra</p>
+                        <p className="text-slate-500 mt-2">Monte sua solicitação por etapas ou busca rápida, com revisão antes do envio.</p>
                     </div>
                     {items.length > 0 && (
                         <div className="flex items-center gap-2 rounded-full bg-blue-100 px-4 py-2">
@@ -514,7 +594,7 @@ export function ClientSolicitationSection() {
                 </div>
 
                 {/* Progress Steps */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
                     {[
                         { num: 1, label: "Selecionar Obra", icon: Building2 },
                         { num: 2, label: "Adicionar Itens", icon: Package },
@@ -531,7 +611,7 @@ export function ClientSolicitationSection() {
                                     (s.num === 2 && !selectedObraId) ||
                                     (s.num === 3 && items.length === 0)
                                 }
-                                className={`flex items-center gap-2 flex-1 rounded-xl px-4 py-3 transition-all ${step === s.num
+                                className={`flex items-center gap-2 flex-1 min-w-[220px] rounded-xl px-4 py-3 transition-all ${step === s.num
                                     ? 'bg-blue-600 text-white shadow-lg'
                                     : step > s.num
                                         ? 'bg-emerald-100 text-emerald-700'
@@ -628,9 +708,9 @@ export function ClientSolicitationSection() {
 
             {/* Step 2: Adicionar Itens */}
             {step === 2 && (
-                <div className="space-y-4">
+                <div className="space-y-5">
                     {/* Obra selecionada */}
-                    <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 flex items-center justify-between">
+                    <div className="rounded-2xl bg-white border border-slate-200 p-4 flex items-center justify-between shadow-sm transition-all duration-200 hover:shadow-md">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
                                 <Building2 className="w-5 h-5" />
@@ -649,10 +729,10 @@ export function ClientSolicitationSection() {
                     </div>
 
                     {/* Toggle de modo */}
-                    <div className="rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-4">
+                    <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 transition-all duration-200">
                         <div className="flex flex-wrap items-center gap-4">
                             <span className="text-sm font-semibold text-slate-700">Modo de Cotação:</span>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 flex-wrap">
                                 <button
                                     onClick={() => setQuotationMode("phases")}
                                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${quotationMode === "phases"
@@ -692,21 +772,27 @@ export function ClientSolicitationSection() {
                                 )}
                             </div>
                         )}
+
+                        {items.length > 0 && (
+                            <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                                {items.length} item(ns) no carrinho. Continue adicionando ou clique em <span className="font-semibold">Analisar Lista</span>.
+                            </div>
+                        )}
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 xl:grid-cols-12 gap-7">
                         {/* Área principal */}
-                        <div className="lg:col-span-2">
+                        <div className="xl:col-span-8">
                             {/* MODO NAVEGAÇÃO POR FASES */}
                             {quotationMode === "phases" && (
-                                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                                    <div className="p-5 border-b border-slate-100">
+                                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
+                                    <div className="p-6 border-b border-slate-100">
                                         <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                                             <Layers className="w-5 h-5 text-blue-600" />
-                                            Navegação por Etapas da Obra
+                                            Materiais por Etapas da Obra
                                         </h2>
                                         <p className="text-sm text-slate-500 mt-1">
-                                            Selecione materiais das etapas que estão dentro do período de cotação
+                                            Expanda a etapa, abra o grupo e adicione os materiais necessários.
                                         </p>
                                     </div>
 
@@ -724,18 +810,20 @@ export function ClientSolicitationSection() {
                                             </p>
                                         </div>
                                     ) : (
-                                        <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
+                                        <div className="divide-y divide-slate-100 max-h-[560px] overflow-y-auto">
                                             {validEtapasForQuotation.map(etapa => {
                                                 const dataPrevista = new Date(etapa.data_prevista);
                                                 const dataInicioCotacao = new Date(dataPrevista);
                                                 dataInicioCotacao.setDate(dataInicioCotacao.getDate() - etapa.dias_antecedencia_cotacao);
+                                                const grupoIdsPermitidos = groupIdsByEtapa.get(etapa.id) || new Set<string>();
+                                                const gruposDaEtapa = grupos.filter(grupo => grupoIdsPermitidos.has(grupo.id));
 
                                                 return (
                                                     <div key={etapa.id} className="bg-white">
                                                         {/* Etapa Header */}
                                                         <button
                                                             onClick={() => toggleFase(etapa.id)}
-                                                            className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
+                                                            className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors duration-200"
                                                         >
                                                             <div className="flex items-center gap-3">
                                                                 <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
@@ -759,22 +847,22 @@ export function ClientSolicitationSection() {
                                                         {/* Grupos de Materiais da Etapa */}
                                                         {expandedFases.has(etapa.id) && (
                                                             <div className="pl-4 border-l-2 border-emerald-100 ml-7 mb-4">
-                                                                {grupos.length === 0 ? (
+                                                                {gruposDaEtapa.length === 0 ? (
                                                                     <p className="text-sm text-slate-400 py-2 px-4">
-                                                                        Nenhum grupo de materiais cadastrado
+                                                                        Nenhum grupo de insumo vinculado aos serviços desta etapa.
                                                                     </p>
                                                                 ) : (
-                                                                    grupos.map(grupo => {
+                                                                    gruposDaEtapa.map(grupo => {
                                                                         const materiaisDoGrupo = materiais.filter(m =>
                                                                             m.gruposInsumoIds.includes(grupo.id)
                                                                         );
                                                                         if (materiaisDoGrupo.length === 0) return null;
 
                                                                         return (
-                                                                            <div key={grupo.id} className="mb-2">
+                                                                            <div key={grupo.id} className="mb-2 transition-all duration-200">
                                                                                 <button
                                                                                     onClick={() => toggleGrupo(`${etapa.id}-${grupo.id}`)}
-                                                                                    className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-slate-50"
+                                                                                    className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-slate-50 transition-colors duration-200"
                                                                                 >
                                                                                     <span className="text-sm font-medium text-slate-700 flex items-center gap-2">
                                                                                         <Boxes className="w-4 h-4 text-slate-400" />
@@ -832,14 +920,14 @@ export function ClientSolicitationSection() {
 
                             {/* MODO BUSCA RÁPIDA */}
                             {quotationMode === "search" && (
-                                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                                    <div className="p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
+                                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
+                                    <div className="p-6 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
                                         <div>
                                             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                                                 <Search className="w-5 h-5 text-blue-600" />
                                                 Busca Rápida
                                             </h2>
-                                            <p className="text-sm text-slate-500">Busque materiais ou adicione manualmente</p>
+                                            <p className="text-sm text-slate-500">Busque materiais e monte o carrinho por grupo.</p>
                                         </div>
                                         <button
                                             onClick={() => setShowAddForm(true)}
@@ -852,44 +940,28 @@ export function ClientSolicitationSection() {
 
                                     {/* Campo de busca */}
                                     <div className="p-4 border-b border-slate-100 relative">
-                                        <div className="relative">
+                                        <div className="relative" ref={(el) => { searchInputWrapperRef.current = el; }}>
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                                             <input
                                                 value={searchTerm}
                                                 onChange={e => setSearchTerm(e.target.value)}
+                                                onFocus={() => setIsSearchFocused(true)}
                                                 className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                                                 placeholder="Digite o nome do material (ex: Cimento, Areia)..."
                                             />
                                         </div>
 
-                                        {/* Sugestões */}
-                                        {filteredMaterials.length > 0 && (
-                                            <div className="absolute left-4 right-4 top-full mt-1 z-10 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-                                                {filteredMaterials.map(material => {
-                                                    const isAdded = items.some(i => i.materialId === material.id);
-                                                    return (
-                                                        <button
-                                                            key={material.id}
-                                                            onClick={() => !isAdded && addMaterialFromSearch(material)}
-                                                            disabled={isAdded}
-                                                            className={`w-full text-left px-4 py-3 flex justify-between items-center border-b border-slate-50 last:border-0 ${isAdded ? 'bg-emerald-50' : 'hover:bg-slate-50'
-                                                                }`}
-                                                        >
-                                                            <span className="font-medium text-slate-700">{material.nome}</span>
-                                                            {isAdded ? (
-                                                                <span className="text-xs text-emerald-600 font-medium">✓ Adicionado</span>
-                                                            ) : (
-                                                                <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">{material.unidade}</span>
-                                                            )}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
+                                        {searchTerm.trim().length > 0 && filteredMaterials.length === 0 && (
+                                            <p className="mt-2 text-xs text-slate-500">Nenhum material encontrado para "{searchTerm}". Tente termo parcial (ex.: "arei").</p>
+                                        )}
+
+                                        {searchTerm.trim().length === 0 && items.length === 0 && (
+                                            <p className="mt-2 text-xs text-slate-500">Dica: digite parte do nome do material para ver sugestões rápidas.</p>
                                         )}
                                     </div>
 
                                     {/* Lista de categorias */}
-                                    <div className="divide-y divide-slate-100 max-h-[350px] overflow-y-auto">
+                                    <div className="divide-y divide-slate-100 max-h-[430px] overflow-y-auto">
                                         {filteredGroups.map(categoria => {
                                             const categoryItems = groupedItems[categoria] || [];
                                             const hasItems = categoryItems.length > 0;
@@ -961,36 +1033,39 @@ export function ClientSolicitationSection() {
                         </div>
 
                         {/* Sidebar - Resumo da Cotação */}
-                        <div className="space-y-4">
-                            <div className="rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 p-5 text-white shadow-lg sticky top-4">
-                                <h3 className="font-bold text-lg mb-4">Resumo da Cotação</h3>
-                                <div className="space-y-3">
-                                    <div className="flex justify-between">
-                                        <span className="text-blue-100">Itens totais</span>
-                                        <span className="font-semibold">{items.length}</span>
+                        <div className="xl:col-span-4 space-y-4">
+                            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sticky top-6 transition-all duration-200 hover:shadow-md">
+                                <h3 className="font-bold text-lg text-slate-900 mb-4">Resumo da Cotação</h3>
+                                <div className="grid grid-cols-3 gap-2 mb-4">
+                                    <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-center">
+                                        <p className="text-xs text-slate-500">Itens</p>
+                                        <p className="text-lg font-semibold text-slate-900">{items.length}</p>
                                     </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-blue-100">Grupos</span>
-                                        <span className="font-semibold">{Object.keys(groupedItems).length}</span>
+                                    <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-center">
+                                        <p className="text-xs text-slate-500">Grupos</p>
+                                        <p className="text-lg font-semibold text-slate-900">{Object.keys(groupedItems).length}</p>
                                     </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-blue-100">Obra</span>
-                                        <span className="font-semibold truncate max-w-[120px]">{selectedObra?.nome}</span>
+                                    <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-center">
+                                        <p className="text-xs text-slate-500">Obra</p>
+                                        <p className="text-sm font-semibold text-slate-900 truncate">{selectedObra?.nome || '-'}</p>
                                     </div>
                                 </div>
 
                                 <button
                                     onClick={() => items.length > 0 && setStep(3)}
                                     disabled={items.length === 0}
-                                    className="w-full mt-5 py-3 rounded-xl bg-white text-blue-600 font-semibold hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    className="w-full py-3 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                 >
                                     Analisar Lista
                                     <ArrowRight className="w-4 h-4" />
                                 </button>
+                                {items.length === 0 && (
+                                    <p className="mt-2 text-[11px] text-slate-500 text-center">Adicione pelo menos 1 item para avançar.</p>
+                                )}
                             </div>
 
                             {/* Itens no Carrinho */}
-                            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:shadow-md">
                                 <h3 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
                                     <ShoppingCart className="w-4 h-4 text-blue-600" />
                                     Itens no Carrinho ({items.length})
@@ -1000,12 +1075,12 @@ export function ClientSolicitationSection() {
                                     <div className="text-center py-6">
                                         <ShoppingCart className="w-10 h-10 mx-auto text-slate-200 mb-2" />
                                         <p className="text-sm text-slate-400">Seu carrinho está vazio.</p>
-                                        <p className="text-xs text-slate-400">Comece buscando materiais acima.</p>
+                                        <p className="text-xs text-slate-400">Adicione materiais na área principal.</p>
                                     </div>
                                 ) : (
-                                    <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                                    <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
                                         {items.map(item => (
-                                            <div key={item.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
+                                            <div key={item.id} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
                                                 <div className="flex-1 min-w-0">
                                                     <p className="text-sm font-medium text-slate-700 truncate">{item.descricao}</p>
                                                     <p className="text-xs text-slate-400">{item.categoria}</p>
@@ -1033,7 +1108,7 @@ export function ClientSolicitationSection() {
                             </div>
 
                             {/* Dica do Especialista */}
-                            <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
+                            <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 transition-all duration-200 hover:border-amber-300">
                                 <h4 className="font-semibold text-amber-800 text-sm flex items-center gap-2">
                                     <Zap className="w-4 h-4" />
                                     Dica do Especialista
@@ -1045,19 +1120,43 @@ export function ClientSolicitationSection() {
                         </div>
                     </div>
 
-                    {/* Botão avançar */}
-                    {items.length > 0 && (
-                        <div className="flex justify-end">
-                            <button
-                                onClick={() => setStep(3)}
-                                className="flex items-center gap-2 rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white shadow-lg hover:bg-slate-800"
-                            >
-                                Revisar Cotação
-                                <ArrowRight className="w-4 h-4" />
-                            </button>
-                        </div>
-                    )}
                 </div>
+            )}
+
+            {showExternalSearchDropdown && searchDropdownRect && createPortal(
+                <div
+                    ref={(el) => { searchDropdownRef.current = el; }}
+                    className="fixed z-[80] bg-white border border-slate-200 rounded-xl shadow-2xl max-h-80 overflow-y-auto"
+                    style={{
+                        top: `${searchDropdownRect.top}px`,
+                        left: `${searchDropdownRect.left}px`,
+                        width: `${searchDropdownRect.width}px`,
+                    }}
+                >
+                    {filteredMaterials.map(material => {
+                        const isAdded = items.some(i => i.materialId === material.id);
+                        return (
+                            <button
+                                key={material.id}
+                                onClick={() => {
+                                    if (isAdded) return;
+                                    addMaterialFromSearch(material);
+                                    setIsSearchFocused(false);
+                                }}
+                                disabled={isAdded}
+                                className={`w-full text-left px-4 py-3 flex justify-between items-center border-b border-slate-50 last:border-0 ${isAdded ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}
+                            >
+                                <span className="font-medium text-slate-700 pr-3">{material.nome}</span>
+                                {isAdded ? (
+                                    <span className="text-xs text-emerald-600 font-medium whitespace-nowrap">✓ Adicionado</span>
+                                ) : (
+                                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full whitespace-nowrap">{material.unidade}</span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>,
+                document.body
             )}
 
             {/* Step 3: Revisar e Enviar */}
