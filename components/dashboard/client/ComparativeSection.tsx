@@ -107,6 +107,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     const merchandiseTotal = valorTotal - frete;
                     return {
                         id: p.id,
+                        numero: p.numero || null,
                         supplierId: p.fornecedor_id,
                         supplierUserId: p.fornecedor?.user_id,
                         supplierName: p.fornecedor?.nome_fantasia || p.fornecedor?.razao_social || 'Fornecedor',
@@ -1141,6 +1142,11 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                 <th key={proposal.id} className="border-b border-slate-100 px-4 py-3 text-black text-center">
                                     <div className="flex flex-col items-center gap-1">
                                         <span>{getAnonymousName(proposal.supplierId)}</span>
+                                        {proposal.numero && (
+                                            <span className="text-xs text-gray-600 font-normal">
+                                                Proposta #{proposal.numero}
+                                            </span>
+                                        )}
                                         <button
                                             onClick={() => {
                                                 if (!orderId) return;

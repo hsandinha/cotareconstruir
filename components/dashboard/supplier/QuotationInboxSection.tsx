@@ -555,6 +555,12 @@ export function SupplierQuotationInboxSection() {
                                 <span className="font-medium text-gray-700">Total de Itens:</span>
                                 <div className="text-gray-900">{selectedQuotation.itemsCount} materiais</div>
                             </div>
+                            {selectedPropostaResumo?.numero && (
+                                <div>
+                                    <span className="font-medium text-gray-700">Número da Proposta:</span>
+                                    <div className="text-gray-900 font-semibold">#{selectedPropostaResumo.numero}</div>
+                                </div>
+                            )}
                         </div>
                         <div className="mt-4 grid grid-cols-2 md:grid-cols-6 gap-4 text-sm">
                             <div>

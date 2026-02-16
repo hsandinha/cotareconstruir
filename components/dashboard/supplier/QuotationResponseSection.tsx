@@ -184,7 +184,14 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h3 className="text-lg font-medium text-gray-900">Resposta à Cotação</h3>
+                    <h3 className="text-lg font-medium text-gray-900">
+                        Resposta à Cotação
+                        {mode === 'update' && resumo?.numero && (
+                            <span className="ml-2 text-sm font-semibold text-blue-600">
+                                (Proposta #{resumo.numero})
+                            </span>
+                        )}
+                    </h3>
                     <p className="mt-1 text-sm text-gray-600">
                         {mode === 'update'
                             ? 'Atualize sua proposta comercial conforme negociação'

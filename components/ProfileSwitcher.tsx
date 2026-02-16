@@ -41,19 +41,40 @@ export function ProfileSwitcher({ currentRole, availableRoles, userName, userIni
         document.cookie = `role=${role}; path=/; max-age=86400; SameSite=Strict`;
 
         // Redirect
-        if (role === "admin") router.push("/dashboard/admin");
-        else if (role === "fornecedor") router.push("/dashboard/fornecedor");
-        else router.push("/dashboard/cliente");
+        if (role === "admin") {
+            router.push("/dashboard/admin");
+        } else if (role === "fornecedor") {
+            router.push("/dashboard/fornecedor");
+        } else {
+            router.push("/dashboard/cliente");
+        }
+
+        // Force refresh to ensure state updates
+        router.refresh();
 
         setIsOpen(false);
     };
 
     const handleLogout = async () => {
         try {
+            // Sign out from Supabase
             await supabase.auth.signOut();
-            router.push("/login");
+
+            // Clear local storage
+            localStorage.removeItem('token');
+            localStorage.removeItem('role');
+            localStorage.removeItem('uid');
+
+            // Clear cookies
+            document.cookie = 'token=; path=/; max-age=0';
+            document.cookie = 'role=; path=/; max-age=0';
+
+            // Force a hard redirect to login
+            window.location.href = '/login';
         } catch (error) {
             console.error("Error signing out:", error);
+            // Even if there's an error, redirect to login
+            window.location.href = '/login';
         }
     };
 

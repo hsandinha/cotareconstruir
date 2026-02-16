@@ -142,6 +142,9 @@ export function useAuth() {
                 router.push('/dashboard/cliente');
             }
 
+            // Force refresh to ensure state updates
+            router.refresh();
+
             return true;
 
         } catch (err: any) {
@@ -171,12 +174,19 @@ export function useAuth() {
             localStorage.removeItem('role');
             localStorage.removeItem('uid');
 
-            router.push('/login');
+            // Limpar cookies
+            document.cookie = 'token=; path=/; max-age=0';
+            document.cookie = 'role=; path=/; max-age=0';
+
+            // Force hard redirect to ensure clean state
+            window.location.href = '/login';
             return true;
 
         } catch (err: any) {
             setError(err.message || 'Erro ao fazer logout');
             console.error('Logout error:', err);
+            // Even on error, redirect to login
+            window.location.href = '/login';
             return false;
 
         } finally {

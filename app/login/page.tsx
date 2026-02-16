@@ -89,9 +89,16 @@ export default function LoginPage() {
         document.cookie = `role=${primaryRole}; path=/; max-age=86400; SameSite=Strict${secureFlag}`;
 
         // Redirect based on priority role
-        if (primaryRole === "admin") router.push("/dashboard/admin");
-        else if (primaryRole === "fornecedor") router.push("/dashboard/fornecedor");
-        else router.push("/dashboard/cliente");
+        if (primaryRole === "admin") {
+            router.push("/dashboard/admin");
+        } else if (primaryRole === "fornecedor") {
+            router.push("/dashboard/fornecedor");
+        } else {
+            router.push("/dashboard/cliente");
+        }
+
+        // Force a hard refresh to ensure state updates
+        router.refresh();
     }
 
     async function handleGoogleLogin() {
