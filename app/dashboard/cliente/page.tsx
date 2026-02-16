@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ClientProfileSection } from "../../../components/dashboard/client/ProfileSection";
 import { ClientWorksSection } from "../../../components/dashboard/client/WorksSection";
 import { ClientOrderSection } from "../../../components/dashboard/client/OrderSection";
@@ -28,7 +28,7 @@ const tabs: { id: TabId; label: string }[] = [
     { id: "oportunidades", label: "Oportunidades" },
 ];
 
-export default function ClienteDashboard() {
+function ClienteDashboardContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [tab, setTab] = useState<TabId>("perfil");
@@ -276,5 +276,13 @@ export default function ClienteDashboard() {
                 }}
             />
         </div>
+    );
+}
+
+export default function ClienteDashboard() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+            <ClienteDashboardContent />
+        </Suspense>
     );
 }

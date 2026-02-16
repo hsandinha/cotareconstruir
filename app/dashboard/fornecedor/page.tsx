@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { SupplierProfileSection } from "../../../components/dashboard/supplier/ProfileSection";
 import { SupplierMaterialsSection } from "../../../components/dashboard/supplier/MaterialsSection";
 import { SupplierMyProductsSection } from "../../../components/dashboard/supplier/MyProductsSection";
@@ -26,7 +26,7 @@ const tabs: { id: SupplierTabId; label: string }[] = [
 ];
 
 
-export default function FornecedorDashboard() {
+function FornecedorDashboardContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [tab, setTab] = useState<SupplierTabId>("perfil");
@@ -288,5 +288,13 @@ export default function FornecedorDashboard() {
                 }}
             />
         </div>
+    );
+}
+
+export default function FornecedorDashboard() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+            <FornecedorDashboardContent />
+        </Suspense>
     );
 }
