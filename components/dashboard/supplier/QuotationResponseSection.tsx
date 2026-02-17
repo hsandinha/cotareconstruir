@@ -157,12 +157,8 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
 
             alert(mode === 'update' ? "Proposta atualizada com sucesso!" : "Proposta enviada com sucesso!");
             
-            // Se for update, recarregar página para limpar cache/cookies
-            if (mode === 'update') {
-                window.location.reload();
-            } else {
-                onBack();
-            }
+            // Volta para tela anterior e recarrega dados atualizados
+            onBack();
         } catch (error) {
             console.error("Erro ao enviar proposta:", error);
             alert("Erro ao enviar proposta. Tente novamente.");
