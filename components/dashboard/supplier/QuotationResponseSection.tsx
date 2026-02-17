@@ -156,7 +156,13 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
             }
 
             alert(mode === 'update' ? "Proposta atualizada com sucesso!" : "Proposta enviada com sucesso!");
-            onBack();
+            
+            // Se for update, recarregar página para limpar cache/cookies
+            if (mode === 'update') {
+                window.location.reload();
+            } else {
+                onBack();
+            }
         } catch (error) {
             console.error("Erro ao enviar proposta:", error);
             alert("Erro ao enviar proposta. Tente novamente.");
@@ -309,6 +315,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                                                 className="w-24 px-2 py-1.5 text-sm text-center text-gray-900 placeholder:text-gray-400 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                                 value={response.preco}
                                                 onChange={(e) => handleResponseChange(item.id, 'preco', e.target.value)}
+                                                onFocus={(e) => e.target.select()}
                                             />
                                         </td>
                                         <td className="px-3 py-3 whitespace-nowrap text-center">
@@ -356,6 +363,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                             placeholder="0,00"
                             value={freightValue}
                             onChange={(e) => setFreightValue(e.target.value)}
+                            onFocus={(e) => e.target.select()}
                             className="w-full px-3 py-2 text-gray-900 placeholder:text-gray-400 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                         <p className="mt-1 text-xs text-gray-400">Informe 0 para frete grátis (CIF)</p>
@@ -430,6 +438,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                             step="1"
                             value={deliveryDays}
                             onChange={(e) => setDeliveryDays(e.target.value)}
+                            onFocus={(e) => e.target.select()}
                             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                             placeholder="Ex: 7"
                         />
@@ -442,6 +451,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                             step="0.01"
                             value={taxValue}
                             onChange={(e) => setTaxValue(e.target.value)}
+                            onFocus={(e) => e.target.select()}
                             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                             placeholder="Ex: 15,00"
                         />
