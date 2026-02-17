@@ -35,10 +35,18 @@ function extractChatInfoFromLink(link: string): { roomId: string; senderId: stri
  * Groups chats by recipientId (one popup per user, not per room).
  */
 export function ChatNotificationListener() {
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
     const [openChats, setOpenChats] = useState<IncomingChat[]>([]);
     const resolvedRecipients = useRef<Set<string>>(new Set());
     const suppressedRecipients = useRef<Set<string>>(new Set());
+
+    // Anonymous label: supplier sees "Cliente", client sees "Fornecedor"
+    const getAnonymousLabel = useCallback(() => {
+        const roles = profile?.roles || [];
+        const primaryRole = profile?.role;
+        if (roles.includes('fornecedor') || primaryRole === 'fornecedor') return 'Cliente';
+        return 'Fornecedor';
+    }, [profile]);
 
     const closeChat = useCallback((recipientId: string) => {
         setOpenChats(prev => prev.filter(c => c.recipientId !== recipientId));
@@ -71,24 +79,8 @@ export function ChatNotificationListener() {
     }, []);
 
     /**
-     * Helper: resolve sender name from API if not available in notification
-     */
-    const resolveSenderName = useCallback(async (senderId: string): Promise<string> => {
-        if (!senderId) return 'Usuário';
-        try {
-            const { data } = await supabase
-                .from('users')
-                .select('nome, email')
-                .eq('id', senderId)
-                .single();
-            return data?.nome || data?.email || 'Usuário';
-        } catch {
-            return 'Usuário';
-        }
-    }, []);
-
-    /**
      * Process a notification and potentially open a chat popup.
+     * Uses anonymous labels (Cliente/Fornecedor) instead of real names.
      */
     const processNotification = useCallback(async (notif: { link?: string | null }) => {
         if (!notif.link) return;
@@ -97,20 +89,32 @@ export function ChatNotificationListener() {
 
         // Try to get senderId from the link
         let senderId = info.senderId;
-        let senderName = info.senderName ? decodeURIComponent(info.senderName) : '';
 
-        // If senderId not in link (old notifications), try to resolve from the API
-        if (!senderId) return; // Skip old notifications without sender info
+        // If senderId not in link (old notifications), resolve from mensagens table
+        if (!senderId) {
+            try {
+                const { data: lastMsg } = await supabase
+                    .from('mensagens')
+                    .select('sender_id')
+                    .eq('chat_id', info.roomId)
+                    .neq('sender_id', user?.id || '')
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+                if (lastMsg?.sender_id) {
+                    senderId = lastMsg.sender_id;
+                }
+            } catch { /* ignore */ }
+        }
+
+        if (!senderId) return;
 
         // Skip if already suppressed or resolved
         if (suppressedRecipients.current.has(senderId)) return;
         if (resolvedRecipients.current.has(senderId)) return;
 
-        // Resolve sender name if not in the link
-        if (!senderName) {
-            senderName = await resolveSenderName(senderId);
-        }
-
+        // Use anonymous label instead of real name
+        const anonymousName = getAnonymousLabel();
         const roomTitle = info.roomId.includes('::') ? 'Cotação' : 'Pedido';
 
         resolvedRecipients.current.add(senderId);
@@ -118,12 +122,12 @@ export function ChatNotificationListener() {
             if (prev.some(c => c.recipientId === senderId)) return prev;
             return [...prev, {
                 recipientId: senderId,
-                recipientName: senderName || 'Usuário',
+                recipientName: anonymousName,
                 initialRoomId: info.roomId,
                 initialRoomTitle: roomTitle,
             }];
         });
-    }, [resolveSenderName]);
+    }, [user?.id, getAnonymousLabel]);
 
     // On mount: check for unread chat notifications and auto-open those chats
     const checkedUnread = useRef(false);
@@ -153,10 +157,12 @@ export function ChatNotificationListener() {
         })();
     }, [user, processNotification]);
 
-    // Realtime: subscribe to notificacoes INSERT (has proper RLS, unlike mensagens)
+    // Realtime: subscribe to notificacoes INSERT + polling fallback
+    const lastNotifCheckRef = useRef<string | null>(null);
     useEffect(() => {
         if (!user) return;
 
+        // Realtime subscription
         const channel = supabase
             .channel('global-chat-notifications')
             .on('postgres_changes', {
@@ -171,8 +177,36 @@ export function ChatNotificationListener() {
             })
             .subscribe();
 
+        // Polling fallback every 5s in case realtime doesn't fire
+        const poller = setInterval(async () => {
+            if (document.visibilityState !== 'visible') return;
+            try {
+                let q = supabase
+                    .from('notificacoes')
+                    .select('id, link, created_at')
+                    .eq('user_id', user.id)
+                    .eq('lida', false)
+                    .eq('titulo', 'Nova mensagem no chat')
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+
+                if (lastNotifCheckRef.current) {
+                    q = q.gt('created_at', lastNotifCheckRef.current);
+                }
+
+                const { data: newNotifs } = await q;
+                if (newNotifs && newNotifs.length > 0) {
+                    lastNotifCheckRef.current = newNotifs[0].created_at;
+                    for (const notif of newNotifs) {
+                        await processNotification(notif);
+                    }
+                }
+            } catch { /* ignore polling errors */ }
+        }, 5000);
+
         return () => {
             channel.unsubscribe();
+            clearInterval(poller);
         };
     }, [user, processNotification]);
 

@@ -161,12 +161,13 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
         }
     };
 
-    // ─── Subscribe to messages for selected room ──────────────────────
+    // ─── Poll messages + realtime for selected room ─────────────────
     useEffect(() => {
         if (!isOpen || !selectedRoomId) return;
 
         fetchMessages(selectedRoomId);
 
+        // Realtime subscription (works after RLS policies are added to mensagens)
         const channel = supabase
             .channel(`chat-${selectedRoomId}`)
             .on('postgres_changes', {
@@ -176,6 +177,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
                 filter: `chat_id=eq.${selectedRoomId}`
             }, (payload) => {
                 const newMsg = payload.new as any;
+                if (!newMsg) return;
                 const msg: Message = {
                     id: newMsg.id,
                     senderId: newMsg.sender_id,
@@ -198,10 +200,11 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
         document.addEventListener('visibilitychange', handleWakeUpRefresh);
         window.addEventListener('focus', handleWakeUpRefresh);
 
+        // Polling fallback every 3s via API (uses supabaseAdmin, always works)
         const poller = setInterval(() => {
             if (!canPollNow() || !selectedRoomId) return;
             fetchMessages(selectedRoomId);
-        }, 5000);
+        }, 3000);
 
         return () => {
             document.removeEventListener('visibilitychange', handleWakeUpRefresh);

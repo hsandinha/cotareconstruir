@@ -4,10 +4,27 @@ import { analyzeChatMessage } from '@/lib/chatModeration';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
-    const token = authHeader?.replace('Bearer ', '')
-        || req.cookies.get('authToken')?.value
-        || req.cookies.get('token')?.value
-        || req.cookies.get('sb-access-token')?.value;
+    let token = authHeader?.replace('Bearer ', '');
+
+    if (!token) {
+        const supabaseAuthCookie = req.cookies
+            .getAll()
+            .find((cookie) => cookie.name.endsWith('-auth-token'))?.value;
+        if (supabaseAuthCookie) {
+            try {
+                const parsed = JSON.parse(supabaseAuthCookie);
+                if (Array.isArray(parsed) && typeof parsed[0] === 'string') {
+                    token = parsed[0];
+                }
+            } catch { }
+        }
+    }
+
+    if (!token) {
+        token = req.cookies.get('authToken')?.value
+            || req.cookies.get('token')?.value
+            || req.cookies.get('sb-access-token')?.value;
+    }
 
     if (!token || !supabaseAdmin) return null;
 

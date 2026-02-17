@@ -1151,7 +1151,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                             onClick={() => {
                                                 if (!orderId) return;
                                                 setChatContext({
-                                                    recipientName: proposal.supplierName,
+                                                    recipientName: 'Fornecedor',
                                                     recipientId: proposal.supplierUserId,
                                                     initialRoomId: `${orderId}::${proposal.supplierId}`,
                                                     initialRoomTitle: 'Cotação',

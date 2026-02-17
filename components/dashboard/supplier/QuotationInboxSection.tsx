@@ -222,7 +222,7 @@ export function SupplierQuotationInboxSection() {
 
         if (chatRoom && targetQuotation.user_id) {
             openChat({
-                recipientName: targetQuotation.clientCode,
+                recipientName: 'Cliente',
                 recipientId: targetQuotation.user_id,
                 roomId: chatRoom,
                 roomTitle: chatRoom.includes('::') ? 'Cotação' : 'Pedido',
@@ -463,7 +463,7 @@ export function SupplierQuotationInboxSection() {
                             <div className="mt-4 flex flex-wrap items-center gap-2">
                                 <button
                                     onClick={() => openChat({
-                                        recipientName: selectedQuotation.clientCode,
+                                        recipientName: 'Cliente',
                                         recipientId: selectedQuotation.user_id,
                                         roomId: fornecedorId ? `${selectedQuotation.id}::${fornecedorId}` : selectedQuotation.id,
                                         roomTitle: 'Cotação'
@@ -652,7 +652,7 @@ export function SupplierQuotationInboxSection() {
                                     {(getUnifiedPedidoStatus(quotation) === 'received' || getUnifiedPedidoStatus(quotation) === 'responded') && (
                                         <button
                                             onClick={() => openChat({
-                                                recipientName: quotation.clientCode,
+                                                recipientName: 'Cliente',
                                                 recipientId: quotation.user_id,
                                                 roomId: fornecedorId ? `${quotation.id}::${fornecedorId}` : quotation.id,
                                                 roomTitle: 'Cotação'

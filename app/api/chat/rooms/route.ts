@@ -1,16 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseAdmin = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
-    ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
-    : null;
+import { supabaseAdmin } from '@/lib/supabase';
 
 async function getAuthUser(req: NextRequest) {
     if (!supabaseAdmin) return null;
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) return null;
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+
+    const authHeader = req.headers.get('authorization');
+    let token = authHeader?.replace('Bearer ', '');
+
+    if (!token) {
+        const supabaseAuthCookie = req.cookies
+            .getAll()
+            .find((cookie) => cookie.name.endsWith('-auth-token'))?.value;
+        if (supabaseAuthCookie) {
+            try {
+                const parsed = JSON.parse(supabaseAuthCookie);
+                if (Array.isArray(parsed) && typeof parsed[0] === 'string') {
+                    token = parsed[0];
+                }
+            } catch { }
+        }
+    }
+
+    if (!token) {
+        token = req.cookies.get('authToken')?.value
+            || req.cookies.get('token')?.value
+            || req.cookies.get('sb-access-token')?.value;
+    }
+
+    if (!token) return null;
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) return null;
     return user;
 }
 

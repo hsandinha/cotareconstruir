@@ -457,7 +457,7 @@ export function SupplierSalesSection() {
 
     const openChatForOrder = (order: SaleOrder) => {
         const recipientId = order.clientId;
-        const recipientName = order.clientName || order.clientCode;
+        const recipientName = 'Cliente';
 
         setOpenChats((prev) => {
             // If chat for this recipient is already open, update its initial room
