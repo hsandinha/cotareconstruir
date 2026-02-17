@@ -148,9 +148,11 @@ export function SupplierQuotationInboxSection() {
             }
 
             setQuotations(items);
+            return items; // Retorna os items processados
         } catch (err) {
             console.error('Erro ao carregar cotações:', err);
             setQuotations([]);
+            return []; // Retorna array vazio em caso de erro
         } finally {
             setLoading(false);
         }
@@ -391,8 +393,17 @@ export function SupplierQuotationInboxSection() {
                     <SupplierQuotationResponseSection
                         quotation={selectedQuotation}
                         onBack={() => {
-                            setSelectedQuotation({ ...selectedQuotation, _editProposal: false });
-                            fetchQuotations();
+                            setSelectedQuotation(null);
+                        }}
+                        onUpdate={async () => {
+                            // Busca dados atualizados e aguarda o retorno
+                            const updatedQuotations = await fetchQuotations();
+                            // Encontra a cotação atualizada na lista processada
+                            const updatedQuotation = updatedQuotations.find((q: any) => q.id === selectedQuotation.id);
+                            if (updatedQuotation) {
+                                // Atualiza o selectedQuotation com dados frescos
+                                setSelectedQuotation(updatedQuotation);
+                            }
                         }}
                         mode="update"
                     />

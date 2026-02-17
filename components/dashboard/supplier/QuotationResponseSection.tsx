@@ -12,9 +12,10 @@ interface SupplierQuotationResponseSectionProps {
     quotation: any;
     onBack: () => void;
     mode?: 'create' | 'update';
+    onUpdate?: () => Promise<void>;
 }
 
-export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'create' }: SupplierQuotationResponseSectionProps) {
+export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'create', onUpdate }: SupplierQuotationResponseSectionProps) {
     const { user, profile, session } = useAuth();
     const [responses, setResponses] = useState<{ [key: string]: { preco: string, disponibilidade: string } }>({});
     const [paymentMethod, setPaymentMethod] = useState("");
@@ -156,8 +157,13 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
             }
 
             alert(mode === 'update' ? "Proposta atualizada com sucesso!" : "Proposta enviada com sucesso!");
-            
-            // Volta para tela anterior e recarrega dados atualizados
+
+            // Se for update e houver callback de atualização, chamar primeiro
+            if (mode === 'update' && onUpdate) {
+                await onUpdate();
+            }
+
+            // Volta para tela anterior
             onBack();
         } catch (error) {
             console.error("Erro ao enviar proposta:", error);
