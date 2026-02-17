@@ -45,6 +45,18 @@ export function SupplierQuotationInboxSection() {
         window.dispatchEvent(new CustomEvent('chat-room-closed', { detail: { recipientId } }));
     };
 
+    const openChatsRef = useRef(openChats);
+    openChatsRef.current = openChats;
+
+    // On unmount: dispatch chat-room-closed for all open chats so ChatNotificationListener unsuppresses them
+    useEffect(() => {
+        return () => {
+            openChatsRef.current.forEach(chat => {
+                window.dispatchEvent(new CustomEvent('chat-room-closed', { detail: { recipientId: chat.recipientId } }));
+            });
+        };
+    }, []);
+
     // Fetch cotações via API route (bypasses RLS)
     const fetchQuotations = useCallback(async () => {
         try {

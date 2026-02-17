@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ArrowDownOnSquareIcon, ChatBubbleLeftRightIcon, StarIcon } from "@heroicons/react/24/outline";
 import { ChatInterface } from "../../ChatInterface";
 import { ReviewModal } from "../../ReviewModal";
@@ -28,6 +28,18 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
     const [rejectedSuppliers, setRejectedSuppliers] = useState<string[]>([]);
     const [view, setView] = useState<"map" | "oc">("map");
     const [chatContext, setChatContext] = useState<{ recipientName: string; recipientId?: string; initialRoomId: string; initialRoomTitle?: string } | null>(null);
+    const chatContextRef = useRef(chatContext);
+    chatContextRef.current = chatContext;
+
+    // On unmount: dispatch chat-room-closed so ChatNotificationListener unsuppresses
+    useEffect(() => {
+        return () => {
+            if (chatContextRef.current?.recipientId) {
+                window.dispatchEvent(new CustomEvent('chat-room-closed', { detail: { recipientId: chatContextRef.current.recipientId } }));
+            }
+        };
+    }, []);
+
     const [negotiationModal, setNegotiationModal] = useState<{
         isOpen: boolean;
         supplier: any;

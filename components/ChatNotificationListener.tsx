@@ -162,24 +162,8 @@ export function ChatNotificationListener() {
     useEffect(() => {
         if (!user) return;
 
-        // Realtime subscription
-        const channel = supabase
-            .channel('global-chat-notifications')
-            .on('postgres_changes', {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'notificacoes',
-                filter: `user_id=eq.${user.id}`
-            }, async (payload) => {
-                const notif = payload.new as any;
-                if (!notif || notif.titulo !== 'Nova mensagem no chat') return;
-                await processNotification(notif);
-            })
-            .subscribe();
-
-        // Polling fallback every 5s in case realtime doesn't fire
-        const poller = setInterval(async () => {
-            if (document.visibilityState !== 'visible') return;
+        // Helper to poll for new notifications
+        const pollNotifications = async () => {
             try {
                 let q = supabase
                     .from('notificacoes')
@@ -202,11 +186,41 @@ export function ChatNotificationListener() {
                     }
                 }
             } catch { /* ignore polling errors */ }
+        };
+
+        // Realtime subscription
+        const channel = supabase
+            .channel('global-chat-notifications')
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'notificacoes',
+                filter: `user_id=eq.${user.id}`
+            }, async (payload) => {
+                const notif = payload.new as any;
+                if (!notif || notif.titulo !== 'Nova mensagem no chat') return;
+                await processNotification(notif);
+            })
+            .subscribe();
+
+        // Polling fallback every 5s
+        const poller = setInterval(async () => {
+            if (document.visibilityState !== 'visible') return;
+            await pollNotifications();
         }, 5000);
+
+        // When tab becomes visible, poll immediately (catches notifications received while in background)
+        const handleVisibility = () => {
+            if (document.visibilityState === 'visible') {
+                pollNotifications();
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
 
         return () => {
             channel.unsubscribe();
             clearInterval(poller);
+            document.removeEventListener('visibilitychange', handleVisibility);
         };
     }, [user, processNotification]);
 

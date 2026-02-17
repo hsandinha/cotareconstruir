@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { ChatInterface } from "../../ChatInterface";
 import {
     MagnifyingGlassIcon,
@@ -479,6 +479,18 @@ export function SupplierSalesSection() {
         setOpenChats((prev) => prev.filter((chat) => chat.recipientId !== recipientId));
         window.dispatchEvent(new CustomEvent('chat-room-closed', { detail: { recipientId } }));
     };
+
+    const openChatsRef = useRef(openChats);
+    openChatsRef.current = openChats;
+
+    // On unmount: dispatch chat-room-closed for all open chats so ChatNotificationListener unsuppresses them
+    useEffect(() => {
+        return () => {
+            openChatsRef.current.forEach(chat => {
+                window.dispatchEvent(new CustomEvent('chat-room-closed', { detail: { recipientId: chat.recipientId } }));
+            });
+        };
+    }, []);
 
     if (loading) {
         return <div className="p-8 text-center text-gray-500">Carregando pedidos...</div>;
