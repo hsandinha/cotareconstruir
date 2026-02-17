@@ -156,7 +156,7 @@ export function NotificationBell({ initialNotifications }: NotificationBellProps
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 mt-2 w-80 md:w-96 bg-white rounded-xl shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-50 overflow-hidden">
+                <div className="absolute right-0 mt-2 w-80 md:w-96 bg-white rounded-xl shadow-2xl border border-gray-200 focus:outline-none z-50 overflow-hidden">
                     <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                         <h3 className="text-sm font-semibold text-gray-900">Notificações</h3>
                         {unreadCount > 0 && (
@@ -178,7 +178,7 @@ export function NotificationBell({ initialNotifications }: NotificationBellProps
                                 {notifications.map((notification) => (
                                     <div
                                         key={notification.id}
-                                        className={`p-4 hover:bg-gray-50 transition-colors cursor-pointer ${!notification.read ? 'bg-blue-50/50' : ''}`}
+                                        className={`p-4 hover:bg-gray-50 transition-colors cursor-pointer ${!notification.read ? 'bg-blue-50' : 'bg-white'}`}
                                         onClick={() => handleNotificationClick(notification)}
                                     >
                                         <div className="flex justify-between items-start">
