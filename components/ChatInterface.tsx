@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabaseAuth";
 import { useAuth } from "../lib/useAuth";
 import { createReport } from "../lib/services";
 import { analyzeChatMessage } from "../lib/chatModeration";
+import { authFetch } from "../lib/authHeaders";
 
 interface Message {
     id: string;
@@ -66,15 +67,6 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
         }
     }, [isOpen]);
 
-    const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-            headers.Authorization = `Bearer ${session.access_token}`;
-        }
-        return headers;
-    }, []);
-
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
@@ -84,8 +76,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
         if (!recipientId) return;
         setLoadingRooms(true);
         try {
-            const headers = await getAuthHeaders();
-            const res = await fetch(`/api/chat/rooms?recipientId=${encodeURIComponent(recipientId)}`, { headers });
+            const res = await authFetch(`/api/chat/rooms?recipientId=${encodeURIComponent(recipientId)}`);
             if (!res.ok) throw new Error('Erro ao carregar salas');
             const json = await res.json();
             const fetched: ChatRoom[] = json.rooms || [];
@@ -116,7 +107,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
         } finally {
             setLoadingRooms(false);
         }
-    }, [recipientId, initialRoomId, initialRoomTitle, getAuthHeaders]);
+    }, [recipientId, initialRoomId, initialRoomTitle]);
 
     useEffect(() => {
         if (isOpen && recipientId) {
@@ -127,8 +118,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
     // ─── Fetch messages for selected room ─────────────────────────────
     const fetchMessages = useCallback(async (roomId: string) => {
         try {
-            const headers = await getAuthHeaders();
-            const res = await fetch(`/api/chat/messages?roomId=${encodeURIComponent(roomId)}`, { headers });
+            const res = await authFetch(`/api/chat/messages?roomId=${encodeURIComponent(roomId)}`);
             if (!res.ok) {
                 const err = await res.json();
                 throw new Error(err.error || 'Erro ao carregar mensagens');
@@ -146,7 +136,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
         } catch (error) {
             console.error('Erro ao carregar mensagens:', error);
         }
-    }, [getAuthHeaders]);
+    }, []);
 
     const handleReport = async () => {
         if (!currentUser || !recipientId) return;
@@ -233,10 +223,8 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
         setSending(true);
 
         try {
-            const headers = await getAuthHeaders();
-            const res = await fetch('/api/chat/messages', {
+            const res = await authFetch('/api/chat/messages', {
                 method: 'POST',
-                headers,
                 body: JSON.stringify({
                     roomId: selectedRoomId,
                     text: newMessage,

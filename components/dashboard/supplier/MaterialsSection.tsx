@@ -211,7 +211,7 @@ export function SupplierMaterialsSection() {
         const loadFornecedorMateriais = async () => {
             try {
                 const headers = await getAuthHeaders(session?.access_token);
-                const res = await fetch(`/api/fornecedor-materiais?fornecedor_id=${fornecedorId}`, { headers });
+                const res = await fetch(`/api/fornecedor-materiais?fornecedor_id=${fornecedorId}`, { headers, credentials: 'include' });
                 const json = await res.json();
 
                 if (!res.ok) {
@@ -360,6 +360,7 @@ export function SupplierMaterialsSection() {
             const res = await fetch('/api/fornecedor-materiais', {
                 method: 'POST',
                 headers,
+                credentials: 'include',
                 body: JSON.stringify({
                     action: 'upsert',
                     fornecedor_id: fornecedorId,
@@ -403,6 +404,7 @@ export function SupplierMaterialsSection() {
             const res = await fetch('/api/fornecedor-materiais', {
                 method: 'POST',
                 headers,
+                credentials: 'include',
                 body: JSON.stringify({
                     action: 'toggle_ativo',
                     fornecedor_id: fornecedorId,
@@ -448,6 +450,7 @@ export function SupplierMaterialsSection() {
             const res = await fetch('/api/fornecedor-materiais', {
                 method: 'POST',
                 headers,
+                credentials: 'include',
                 body: JSON.stringify({
                     action: 'request_material',
                     fornecedor_id: fornecedorId,

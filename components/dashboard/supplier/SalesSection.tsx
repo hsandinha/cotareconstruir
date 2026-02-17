@@ -120,7 +120,7 @@ export function SupplierSalesSection() {
         setLoading(true);
         try {
             const headers = await getAuthHeaders(session?.access_token);
-            const res = await fetch('/api/pedidos', { headers });
+            const res = await fetch('/api/pedidos', { headers, credentials: 'include' });
 
             if (!res.ok) {
                 console.error('Erro ao carregar vendas:', res.status);
@@ -356,6 +356,7 @@ export function SupplierSalesSection() {
             const res = await fetch('/api/pedidos', {
                 method: 'POST',
                 headers,
+                credentials: 'include',
                 body: JSON.stringify({
                     action: 'update_status',
                     pedido_id: order.id,
@@ -435,6 +436,7 @@ export function SupplierSalesSection() {
             const res = await fetch('/api/pedidos', {
                 method: 'POST',
                 headers,
+                credentials: 'include',
                 body: JSON.stringify({
                     action: 'update_status',
                     pedido_id: orderId,

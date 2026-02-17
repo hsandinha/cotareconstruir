@@ -6,24 +6,7 @@ import { ChatInterface } from "../../ChatInterface";
 import { ReviewModal } from "../../ReviewModal";
 import { getQuotationStatusBadge } from "./quotationStatus";
 import { supabase } from "@/lib/supabaseAuth";
-
-// Helper para obter headers com token de autenticação (espera sessão ficar pronta)
-async function getAuthHeaders(): Promise<Record<string, string>> {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-
-    // Tenta obter sessão, com retry se ainda não estiver pronta
-    for (let i = 0; i < 5; i++) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-            headers['Authorization'] = `Bearer ${session.access_token}`;
-            return headers;
-        }
-        // Espera 500ms e tenta novamente
-        await new Promise(resolve => setTimeout(resolve, 500));
-    }
-
-    return headers;
-}
+import { authFetch } from "@/lib/authHeaders";
 
 interface ClientComparativeSectionProps {
     orderId?: string;
@@ -65,8 +48,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         // Fetch all data via API route (bypasses RLS)
         const fetchData = async () => {
             try {
-                const headers = await getAuthHeaders();
-                const res = await fetch(`/api/cotacoes/detail?id=${orderId}`, { headers });
+                const res = await authFetch(`/api/cotacoes/detail?id=${orderId}`);
 
                 if (!res.ok) {
                     console.error('Erro ao carregar cotação:', res.status);
@@ -228,8 +210,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         if (quotation?.status === 'fechada' && orderId && orders.length === 0) {
             const fetchOrders = async () => {
                 try {
-                    const headers = await getAuthHeaders();
-                    const res = await fetch(`/api/cotacoes/detail?id=${orderId}`, { headers });
+                    const res = await authFetch(`/api/cotacoes/detail?id=${orderId}`);
                     if (!res.ok) return;
                     const json = await res.json();
                     const pedidosData = json.pedidos || [];
@@ -813,10 +794,9 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 });
             }
 
-            const headers = await getAuthHeaders();
-            const res = await fetch('/api/cotacoes/detail', {
+            const res = await authFetch('/api/cotacoes/detail', {
                 method: 'POST',
-                headers: { ...headers, 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'finalize-order',
                     cotacaoId: orderId,

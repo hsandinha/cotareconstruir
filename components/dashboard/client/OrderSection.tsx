@@ -7,14 +7,7 @@ import { getQuotationStatusBadge } from "./quotationStatus";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-
-// Helper para obter headers com token de autenticação
-async function getAuthHeaders(): Promise<Record<string, string>> {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token
-        ? { 'Authorization': `Bearer ${session.access_token}` }
-        : {};
-}
+import { authFetch } from "@/lib/authHeaders";
 
 export function ClientOrderSection() {
     const { user, initialized } = useAuth();
@@ -39,8 +32,7 @@ export function ClientOrderSection() {
         // Buscar obras para mapear IDs para nomes
         const fetchWorks = async () => {
             try {
-                const headers = await getAuthHeaders();
-                const res = await fetch('/api/cotacoes/detail?action=list-obras', { headers });
+                const res = await authFetch('/api/cotacoes/detail?action=list-obras');
                 if (!res.ok) return;
                 const json = await res.json();
                 const map: Record<string, string> = {};
@@ -56,8 +48,7 @@ export function ClientOrderSection() {
         // Buscar cotações (Orders)
         const fetchQuotations = async () => {
             try {
-                const headers = await getAuthHeaders();
-                const res = await fetch('/api/cotacoes/detail?action=list', { headers });
+                const res = await authFetch('/api/cotacoes/detail?action=list');
                 if (!res.ok) {
                     console.error("Erro ao carregar pedidos:", res.status);
                     setOrders([]);

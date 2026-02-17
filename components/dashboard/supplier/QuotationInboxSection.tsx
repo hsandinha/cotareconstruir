@@ -49,7 +49,7 @@ export function SupplierQuotationInboxSection() {
     const fetchQuotations = useCallback(async () => {
         try {
             const headers = await getAuthHeaders(session?.access_token);
-            const res = await fetch('/api/cotacoes', { headers });
+            const res = await fetch('/api/cotacoes', { headers, credentials: 'include' });
 
             if (!res.ok) {
                 console.error('Erro ao carregar cotações:', res.status);

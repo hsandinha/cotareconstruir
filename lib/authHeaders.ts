@@ -60,13 +60,14 @@ export async function getAuthHeaders(accessToken?: string): Promise<Record<strin
 
 /**
  * Wrapper para fetch com autenticação.
- * Tenta a requisição; se retornar 401, renova o token e retenta uma vez.
+ * - Sempre envia cookies (credentials: 'include')
+ * - Tenta a requisição; se retornar 401, renova o token e retenta uma vez.
  */
 export async function authFetch(url: string, options?: RequestInit): Promise<Response> {
     const headers = await getAuthHeaders();
     const mergedHeaders = { ...headers, ...(options?.headers || {}) };
 
-    const res = await fetch(url, { ...options, headers: mergedHeaders });
+    const res = await fetch(url, { ...options, headers: mergedHeaders, credentials: 'include' });
 
     // Se 401, tentar renovar token e reenviar
     if (res.status === 401) {
@@ -82,7 +83,7 @@ export async function authFetch(url: string, options?: RequestInit): Promise<Res
                     ...mergedHeaders,
                     'Authorization': `Bearer ${session.access_token}`,
                 };
-                return fetch(url, { ...options, headers: retryHeaders });
+                return fetch(url, { ...options, headers: retryHeaders, credentials: 'include' });
             }
         } catch (e) {
             // Refresh falhou, retornar resposta 401 original
