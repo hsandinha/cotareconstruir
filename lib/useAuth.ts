@@ -45,9 +45,7 @@ export function useAuth() {
         // Buscar sessão inicial
         const initAuth = async () => {
             try {
-                console.log('🔄 [useAuth] Iniciando...');
                 const { data: { session }, error } = await supabase.auth.getSession();
-                console.log('🔄 [useAuth] Sessão:', { hasSession: !!session, hasUser: !!session?.user, error });
 
                 // Se o refresh token expirou/é inválido, limpar sessão
                 if (error) {
@@ -61,9 +59,7 @@ export function useAuth() {
                 }
 
                 if (session?.user) {
-                    console.log('✅ [useAuth] Usuário encontrado, buscando perfil...');
                     const profile = await getUserProfile(session.user.id);
-                    console.log('✅ [useAuth] Perfil obtido:', profile?.role);
                     setState({
                         user: session.user,
                         profile,
@@ -72,7 +68,6 @@ export function useAuth() {
                         initialized: true,
                     });
                 } else {
-                    console.log('⚠️ [useAuth] Nenhuma sessão ativa');
                     setState(prev => ({ ...prev, initialized: true }));
                 }
             } catch (err) {

@@ -13,21 +13,13 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         const checkAdminStatus = async () => {
-            console.log('🔍 [AdminLayout] checkAdminStatus - initialized:', initialized, 'authLoading:', authLoading, 'hasUser:', !!user);
-            
             // Esperar inicialização completa
-            if (!initialized || authLoading) {
-                console.log('⏳ [AdminLayout] Aguardando inicialização...');
-                return;
-            }
+            if (!initialized || authLoading) return;
 
             if (!user) {
-                console.log('❌ [AdminLayout] Sem user, redirecionando para login');
                 router.push("/login");
                 return;
             }
-
-            console.log('✅ [AdminLayout] User encontrado:', user.id);
 
             try {
                 const { data: userData, error } = await supabase
@@ -35,8 +27,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                     .select("role, roles")
                     .eq("id", user.id)
                     .single();
-
-                console.log('📊 [AdminLayout] userData:', userData, 'error:', error);
 
                 let isAdmin = false;
 
@@ -47,13 +37,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                     if (userData.roles && Array.isArray(userData.roles) && userData.roles.includes("admin")) isAdmin = true;
                 }
 
-                console.log('🔐 [AdminLayout] isAdmin:', isAdmin);
-
                 if (!isAdmin) {
-                    console.log('⛔ [AdminLayout] Não é admin, redirecionando para cliente');
                     router.push("/dashboard/cliente"); // Redirect non-admins
                 } else {
-                    console.log('✅ [AdminLayout] É admin! Autorizando acesso');
                     setAuthorized(true);
                 }
             } catch (error) {

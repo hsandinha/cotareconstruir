@@ -130,34 +130,20 @@ export function ChatNotificationListener() {
     }, [user?.id, getAnonymousLabel]);
 
     // On mount: check for unread chat notifications and auto-open those chats
+    // 🚫 DESABILITADO: Não abre mais automaticamente ao fazer login
+    // Agora funciona como WhatsApp/Slack - apenas mostra badge, usuário abre manualmente
     const checkedUnread = useRef(false);
     useEffect(() => {
         if (!user || checkedUnread.current) return;
         checkedUnread.current = true;
-
-        (async () => {
-            try {
-                const { data: unreadNotifs } = await supabase
-                    .from('notificacoes')
-                    .select('id, link, created_at')
-                    .eq('user_id', user.id)
-                    .eq('lida', false)
-                    .eq('titulo', 'Nova mensagem no chat')
-                    .order('created_at', { ascending: false })
-                    .limit(10);
-
-                if (!unreadNotifs || unreadNotifs.length === 0) return;
-
-                for (const notif of unreadNotifs) {
-                    await processNotification(notif);
-                }
-            } catch (err) {
-                console.error('Erro ao verificar notificações de chat não lidas:', err);
-            }
-        })();
+        // Auto-open foi removido para melhorar UX
+        // Mensagens não lidas agora são mostradas apenas no NotificationBell
     }, [user, processNotification]);
 
     // Realtime: subscribe to notificacoes INSERT + polling fallback
+    // 🚫 MODIFICADO: Não abre popup automaticamente, apenas atualiza badge
+    // Realtime: subscribe to notificacoes INSERT + polling fallback
+    // 🚫 MODIFICADO: Não abre popup automaticamente, apenas atualiza badge
     const lastNotifCheckRef = useRef<string | null>(null);
     useEffect(() => {
         if (!user) return;
@@ -181,9 +167,11 @@ export function ChatNotificationListener() {
                 const { data: newNotifs } = await q;
                 if (newNotifs && newNotifs.length > 0) {
                     lastNotifCheckRef.current = newNotifs[0].created_at;
-                    for (const notif of newNotifs) {
-                        await processNotification(notif);
-                    }
+                    // 🚫 DESABILITADO: Não abre mais automaticamente
+                    // Usuário deve clicar no sino de notificações para ver
+                    // for (const notif of newNotifs) {
+                    //     await processNotification(notif);
+                    // }
                 }
             } catch { /* ignore polling errors */ }
         };
@@ -199,7 +187,8 @@ export function ChatNotificationListener() {
             }, async (payload) => {
                 const notif = payload.new as any;
                 if (!notif || notif.titulo !== 'Nova mensagem no chat') return;
-                await processNotification(notif);
+                // 🚫 DESABILITADO: Não abre mais automaticamente
+                // await processNotification(notif);
             })
             .subscribe();
 
