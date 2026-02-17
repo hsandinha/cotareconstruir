@@ -34,7 +34,7 @@ async function getAuthUser(req: NextRequest) {
 }
 
 async function resolveChatAccess(roomId: string, userId: string) {
-    if (!supabaseAdmin) return { allowed: false, recipientId: null as string | null };
+    if (!supabaseAdmin) return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
 
     if (roomId.includes('::')) {
         const [cotacaoIdRaw, fornecedorIdRaw] = roomId.split('::');
@@ -42,7 +42,7 @@ async function resolveChatAccess(roomId: string, userId: string) {
         const fornecedorId = String(fornecedorIdRaw || '').trim();
 
         if (!cotacaoId || !fornecedorId) {
-            return { allowed: false, recipientId: null as string | null };
+            return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
         }
 
         const { data: cotacao } = await supabaseAdmin
@@ -52,7 +52,7 @@ async function resolveChatAccess(roomId: string, userId: string) {
             .single();
 
         if (!cotacao) {
-            return { allowed: false, recipientId: null as string | null };
+            return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
         }
 
         const { data: fornecedor } = await supabaseAdmin
@@ -62,7 +62,7 @@ async function resolveChatAccess(roomId: string, userId: string) {
             .single();
 
         if (!fornecedor?.user_id) {
-            return { allowed: false, recipientId: null as string | null };
+            return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
         }
 
         const { data: proposta } = await supabaseAdmin
@@ -74,25 +74,29 @@ async function resolveChatAccess(roomId: string, userId: string) {
             .maybeSingle();
 
         if (!proposta) {
-            return { allowed: false, recipientId: null as string | null };
+            return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
         }
 
         const isClient = userId === cotacao.user_id;
         const isSupplier = userId === fornecedor.user_id;
 
         if (!isClient && !isSupplier) {
-            return { allowed: false, recipientId: null as string | null };
+            return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
         }
 
         return {
             allowed: true,
             recipientId: isClient ? fornecedor.user_id : cotacao.user_id,
+            clienteId: cotacao.user_id,
+            fornecedorId: fornecedor.id,
+            cotacaoId: cotacao.id,
+            pedidoId: null as string | null,
         };
     }
 
     const { data: pedido } = await supabaseAdmin
         .from('pedidos')
-        .select('id, user_id, fornecedor_id')
+        .select('id, user_id, fornecedor_id, cotacao_id')
         .eq('id', roomId)
         .single();
 
@@ -113,10 +117,14 @@ async function resolveChatAccess(roomId: string, userId: string) {
             return {
                 allowed: true,
                 recipientId: isClient ? supplierUserId : clientId,
+                clienteId: clientId,
+                fornecedorId: fornecedor?.id || null,
+                cotacaoId: pedido.cotacao_id || null,
+                pedidoId: pedido.id,
             };
         }
 
-        return { allowed: false, recipientId: null as string | null };
+        return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
     }
 
     const { data: cotacao } = await supabaseAdmin
@@ -126,7 +134,7 @@ async function resolveChatAccess(roomId: string, userId: string) {
         .single();
 
     if (!cotacao) {
-        return { allowed: false, recipientId: null as string | null };
+        return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
     }
 
     const isClient = cotacao.user_id === userId;
@@ -153,7 +161,7 @@ async function resolveChatAccess(roomId: string, userId: string) {
     }
 
     if (!isClient && !isSupplierInQuotation) {
-        return { allowed: false, recipientId: null as string | null };
+        return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
     }
 
     if (isClient) {
@@ -167,17 +175,17 @@ async function resolveChatAccess(roomId: string, userId: string) {
         if (supplierProposal?.fornecedor_id) {
             const { data: supplier } = await supabaseAdmin
                 .from('fornecedores')
-                .select('user_id')
+                .select('id, user_id')
                 .eq('id', supplierProposal.fornecedor_id)
                 .single();
 
-            return { allowed: true, recipientId: supplier?.user_id || null };
+            return { allowed: true, recipientId: supplier?.user_id || null, clienteId: cotacao.user_id, fornecedorId: supplier?.id || null, cotacaoId: cotacao.id, pedidoId: null as string | null };
         }
 
-        return { allowed: true, recipientId: null as string | null };
+        return { allowed: true, recipientId: null as string | null, clienteId: cotacao.user_id, fornecedorId: null as string | null, cotacaoId: cotacao.id, pedidoId: null as string | null };
     }
 
-    return { allowed: true, recipientId: cotacao.user_id };
+    return { allowed: true, recipientId: cotacao.user_id, clienteId: cotacao.user_id, fornecedorId: fornecedorByUser?.id || null, cotacaoId: cotacao.id, pedidoId: null as string | null };
 }
 
 async function buildChatNotificationLink(recipientId: string, roomId: string, senderId?: string, senderName?: string) {
@@ -324,6 +332,10 @@ export async function POST(req: NextRequest) {
                 sender_id: user.id,
                 conteudo: text,
                 tipo: 'texto',
+                cliente_id: access.clienteId,
+                fornecedor_id: access.fornecedorId,
+                cotacao_id: access.cotacaoId,
+                pedido_id: access.pedidoId,
             })
             .select('id, sender_id, conteudo, created_at')
             .single();

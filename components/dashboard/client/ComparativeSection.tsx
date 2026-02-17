@@ -93,6 +93,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 const mappedProposals = (propostasData || []).map((p: any) => {
                     const frete = parseFloat(p.valor_frete) || 0;
                     const valorTotal = parseFloat(p.valor_total) || 0;
+                    const impostos = parseFloat(p.impostos) || 0;
                     const prazoEntregaParsed = Number.parseInt(String(p.prazo_entrega ?? ''), 10);
                     const prazoEntrega = Number.isFinite(prazoEntregaParsed) && prazoEntregaParsed >= 0
                         ? prazoEntregaParsed
@@ -114,13 +115,15 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         },
                         totalValue: merchandiseTotal,
                         freightPrice: frete,
+                        impostos: impostos,
                         deliveryDays: prazoEntrega,
                         validity: p.data_validade ? new Date(p.data_validade).toLocaleDateString('pt-BR') : null,
                         paymentMethod: p.condicoes_pagamento,
                         items: p.proposta_itens?.map((item: any) => ({
                             itemId: item.cotacao_item_id,
                             price: item.preco_unitario,
-                            quantity: item.quantidade
+                            quantity: item.quantidade,
+                            disponibilidade: item.disponibilidade || 'disponivel'
                         })) || []
                     };
                 });
@@ -608,6 +611,24 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         return item ? parseFloat(item.price) * item.quantity : 0;
     };
 
+    const getItemAvailability = (proposal: any, itemId: string | number): string => {
+        const item = proposal.items.find((i: any) => i.itemId === itemId);
+        return item?.disponibilidade || 'disponivel';
+    };
+
+    const getAvailabilityLabel = (disponibilidade: string): { label: string; color: string } => {
+        switch (disponibilidade) {
+            case 'disponivel':
+                return { label: 'Imediata', color: 'text-green-600' };
+            case 'sob_consulta':
+                return { label: 'Consulta', color: 'text-yellow-600' };
+            case 'indisponivel':
+                return { label: 'Indisponível', color: 'text-red-600' };
+            default:
+                return { label: 'Imediata', color: 'text-green-600' };
+        }
+    };
+
     function bestSupplier(itemId: string | number): string | null {
         let bestId: string | null = null;
         let bestPrice: number | null = null;
@@ -800,6 +821,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         address: ''
                     },
                     freightPrice: proposal?.freightPrice || 0,
+                    impostos: proposal?.impostos || 0,
                     deliveryDays: proposal?.deliveryDays ?? null,
                     paymentMethod: proposal?.paymentMethod || null,
                     items
@@ -1136,7 +1158,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                         <span>{getAnonymousName(proposal.supplierId)}</span>
                                         {proposal.numero && (
                                             <span className="text-xs text-gray-600 font-normal">
-                                                Proposta #{proposal.numero}
+                                                {proposal.numero}
                                             </span>
                                         )}
                                         <button
@@ -1226,6 +1248,15 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                                         <div className="text-xs text-slate-500">
                                                             Total R$ {total.toFixed(2)}
                                                         </div>
+                                                        {(() => {
+                                                            const availability = getItemAvailability(proposal, item.id);
+                                                            const availabilityInfo = getAvailabilityLabel(availability);
+                                                            return (
+                                                                <div className={`text-[10px] font-medium mt-0.5 ${availabilityInfo.color}`}>
+                                                                    {availabilityInfo.label}
+                                                                </div>
+                                                            );
+                                                        })()}
                                                         {isSelected && (
                                                             <div className="mt-1 text-[10px] font-bold text-blue-600 uppercase">
                                                                 Selecionado
@@ -1255,6 +1286,19 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             ))}
                         </tr>
                         <tr className="bg-white text-sm">
+                            <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Impostos</td>
+                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                            {proposals.map((proposal) => (
+                                <td
+                                    key={`impostos-${proposal.id}`}
+                                    className="border-t border-slate-100 px-4 py-3 text-center text-slate-700 font-medium"
+                                >
+                                    {proposal.impostos > 0 ? `R$ ${proposal.impostos.toFixed(2)}` : '-'}
+                                </td>
+                            ))}
+                        </tr>
+                        <tr className="bg-slate-50 text-sm">
                             <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Validade</td>
                             <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
                             <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
@@ -1267,7 +1311,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                 </td>
                             ))}
                         </tr>
-                        <tr className="bg-slate-50 text-sm">
+                        <tr className="bg-white text-sm">
                             <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Condições de Pagamento</td>
                             <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
                             <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
@@ -1280,7 +1324,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                 </td>
                             ))}
                         </tr>
-                        <tr className="bg-white text-sm">
+                        <tr className="bg-slate-50 text-sm">
                             <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Prazo de Entrega</td>
                             <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
                             <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>

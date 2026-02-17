@@ -45,9 +45,9 @@ async function runMigration() {
         for (let i = 0; i < statements.length; i++) {
             const statement = statements[i];
             console.log(`\n📝 Executando statement ${i + 1}/${statements.length}...`);
-            
+
             const { error } = await supabase.rpc('exec_sql', { sql_query: statement });
-            
+
             // Se não houver função exec_sql, tentar via SQL direto
             if (error && error.message.includes('function')) {
                 console.log('⚠️  Função exec_sql não disponível, usando query direto...');
@@ -71,7 +71,7 @@ async function runMigration() {
                 console.error(`❌ Erro no statement ${i + 1}:`, error.message);
                 continue;
             }
-            
+
             console.log(`✅ Statement ${i + 1} executado com sucesso`);
         }
 

@@ -435,7 +435,7 @@ export function SupplierQuotationInboxSection() {
                             {selectedPropostaResumo?.numero && (
                                 <div>
                                     <span className="font-medium text-gray-700">Número da Proposta:</span>
-                                    <div className="text-gray-900 font-semibold">#{selectedPropostaResumo.numero}</div>
+                                    <div className="text-gray-900 font-semibold">{selectedPropostaResumo.numero}</div>
                                 </div>
                             )}
                         </div>

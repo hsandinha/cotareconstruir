@@ -1,14 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
-function buildObservacoesWithTaxes(observacoes: string | null | undefined, taxesValue: number) {
-    const base = String(observacoes || '').replace(/\s*\[IMPOSTOS=[^\]]*\]\s*/g, '').trim();
-    if (taxesValue > 0) {
-        return `${base}${base ? '\n' : ''}[IMPOSTOS=${taxesValue.toFixed(2)}]`;
-    }
-    return base || null;
-}
-
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
     let token = authHeader?.replace('Bearer ', '');
@@ -150,9 +142,10 @@ export async function POST(req: NextRequest) {
                 status: 'enviada',
                 valor_total: valor_total || 0,
                 valor_frete: valor_frete || 0,
+                impostos: impostosValue,
                 prazo_entrega: prazoEntregaValue,
                 condicoes_pagamento: condicoes_pagamento || null,
-                observacoes: buildObservacoesWithTaxes(observacoes, impostosValue),
+                observacoes: observacoes || null,
                 data_envio: new Date().toISOString(),
                 data_validade: data_validade || null
             };
@@ -286,6 +279,7 @@ export async function POST(req: NextRequest) {
                     .from('pedidos')
                     .update({
                         valor_total: totalPedido,
+                        impostos: taxes,
                         condicoes_pagamento: condicoes_pagamento || null,
                         endereco_entrega: {
                             ...enderecoAtual,

@@ -307,7 +307,7 @@ export async function POST(req: NextRequest) {
             // Create orders for each supplier
             let supplierIndex = 0;
             for (const supplierGroup of itemsBySupplier) {
-                const { supplierId, proposalId, supplierUserId, supplierName, supplierDetails, items, freightPrice, deliveryDays, paymentMethod } = supplierGroup;
+                const { supplierId, proposalId, supplierUserId, supplierName, supplierDetails, items, freightPrice, impostos, deliveryDays, paymentMethod } = supplierGroup;
 
                 const supplierKey = String(supplierId);
                 if (processedSupplierKeys.has(supplierKey)) {
@@ -325,13 +325,14 @@ export async function POST(req: NextRequest) {
 
                 const supplierSubtotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
                 const freightValue = parseFloat(freightPrice) || 0;
+                const impostosValue = parseFloat(impostos) || 0;
                 const deliveryDaysValue = Number.isInteger(deliveryDays) && deliveryDays >= 0
                     ? deliveryDays
                     : null;
                 const paymentMethodValue = typeof paymentMethod === 'string' && paymentMethod.trim().length > 0
                     ? paymentMethod.trim()
                     : null;
-                const supplierTotal = supplierSubtotal + freightValue;
+                const supplierTotal = supplierSubtotal + freightValue + impostosValue;
 
                 // Usar o mesmo numero da cotação para rastreabilidade
                 // Se houver mais de um fornecedor, adiciona sufixo (.1, .2, etc.)
@@ -355,6 +356,7 @@ export async function POST(req: NextRequest) {
                         fornecedor_id: supplierId,
                         obra_id: obraId,
                         valor_total: supplierTotal,
+                        impostos: impostosValue,
                         status: 'pendente',
                         endereco_entrega: {
                             clientDetails,
@@ -363,6 +365,7 @@ export async function POST(req: NextRequest) {
                             summary: {
                                 subtotal: supplierSubtotal,
                                 freight: freightValue,
+                                taxes: impostosValue,
                                 deliveryDays: deliveryDaysValue,
                                 paymentMethod: paymentMethodValue
                             }

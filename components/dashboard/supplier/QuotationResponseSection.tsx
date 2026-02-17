@@ -183,7 +183,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                         Resposta à Cotação
                         {mode === 'update' && resumo?.numero && (
                             <span className="ml-2 text-sm font-semibold text-blue-600">
-                                (Proposta #{resumo.numero})
+                                ({resumo.numero})
                             </span>
                         )}
                     </h3>

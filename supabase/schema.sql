@@ -322,6 +322,7 @@ CREATE TABLE public.propostas (
     
     valor_total DECIMAL(12,2),
     valor_frete DECIMAL(12,2) DEFAULT 0,
+    impostos DECIMAL(12,2) DEFAULT 0,
     prazo_entrega INTEGER, -- dias
     condicoes_pagamento TEXT,
     observacoes TEXT,
@@ -364,6 +365,7 @@ CREATE TABLE public.pedidos (
     status TEXT DEFAULT 'pendente' CHECK (status IN ('pendente', 'confirmado', 'em_preparacao', 'enviado', 'entregue', 'cancelado')),
     
     valor_total DECIMAL(12,2) NOT NULL,
+    impostos DECIMAL(12,2) DEFAULT 0,
     forma_pagamento TEXT,
     condicoes_pagamento TEXT,
     
@@ -420,12 +422,23 @@ CREATE TABLE public.mensagens (
     chat_id TEXT NOT NULL,
     sender_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     
+    -- Context columns: always know who is involved
+    cliente_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    fornecedor_id UUID REFERENCES public.fornecedores(id) ON DELETE SET NULL,
+    cotacao_id UUID REFERENCES public.cotacoes(id) ON DELETE SET NULL,
+    pedido_id UUID REFERENCES public.pedidos(id) ON DELETE SET NULL,
+    
     conteudo TEXT NOT NULL,
     tipo TEXT DEFAULT 'texto' CHECK (tipo IN ('texto', 'imagem', 'arquivo')),
     arquivo_url TEXT,
     
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX idx_mensagens_cliente ON public.mensagens(cliente_id);
+CREATE INDEX idx_mensagens_fornecedor ON public.mensagens(fornecedor_id);
+CREATE INDEX idx_mensagens_cotacao ON public.mensagens(cotacao_id);
+CREATE INDEX idx_mensagens_pedido ON public.mensagens(pedido_id);
 
 -- AVALIAÇÕES
 CREATE TABLE public.avaliacoes (
@@ -734,24 +747,13 @@ CREATE POLICY notificacoes_update ON public.notificacoes FOR UPDATE USING (user_
 -- MENSAGENS: usuários podem ler e enviar mensagens em salas que participam
 CREATE POLICY mensagens_select_sender ON public.mensagens
     FOR SELECT USING (sender_id = auth.uid());
-CREATE POLICY mensagens_select_participant ON public.mensagens
+CREATE POLICY mensagens_select_client ON public.mensagens
+    FOR SELECT USING (cliente_id = auth.uid());
+CREATE POLICY mensagens_select_supplier ON public.mensagens
     FOR SELECT USING (
         EXISTS (
-            SELECT 1 FROM public.pedidos p
-            LEFT JOIN public.fornecedores f ON f.id = p.fornecedor_id
-            WHERE p.id::text = mensagens.chat_id
-            AND (p.user_id = auth.uid() OR f.user_id = auth.uid())
-        )
-        OR
-        EXISTS (
-            SELECT 1 FROM public.cotacoes c
-            WHERE c.id::text = split_part(mensagens.chat_id, '::', 1)
-            AND c.user_id = auth.uid()
-        )
-        OR
-        EXISTS (
             SELECT 1 FROM public.fornecedores f
-            WHERE f.id::text = split_part(mensagens.chat_id, '::', 2)
+            WHERE f.id = mensagens.fornecedor_id
             AND f.user_id = auth.uid()
         )
     );
