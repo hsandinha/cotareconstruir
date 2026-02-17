@@ -13,15 +13,31 @@ interface IncomingChat {
 }
 
 /**
+ * Helper to extract chat info from a notification link URL.
+ */
+function extractChatInfoFromLink(link: string): { roomId: string; senderId: string; senderName: string } | null {
+    try {
+        const url = new URL(link, 'https://placeholder.com');
+        const roomId = url.searchParams.get('chatRoom');
+        const senderId = url.searchParams.get('senderId');
+        const senderName = url.searchParams.get('senderName');
+        if (!roomId) return null;
+        return { roomId, senderId: senderId || '', senderName: senderName || '' };
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Global listener that auto-opens a ChatInterface popup
- * whenever a new message arrives for the current user.
+ * whenever a new chat notification arrives for the current user.
+ * Subscribes to `notificacoes` (has proper RLS) instead of `mensagens` (blocked by RLS).
  * Groups chats by recipientId (one popup per user, not per room).
  */
 export function ChatNotificationListener() {
     const { user } = useAuth();
     const [openChats, setOpenChats] = useState<IncomingChat[]>([]);
     const resolvedRecipients = useRef<Set<string>>(new Set());
-    // Track recipients that are already open in specific sections (to avoid duplicates)
     const suppressedRecipients = useRef<Set<string>>(new Set());
 
     const closeChat = useCallback((recipientId: string) => {
@@ -31,7 +47,7 @@ export function ChatNotificationListener() {
 
     // Allow child components to suppress recipients they already handle
     useEffect(() => {
-        const handleOpened = (e: CustomEvent<{ recipientId?: string; roomId?: string }>) => {
+        const handleOpened = (e: CustomEvent<{ recipientId?: string }>) => {
             const recipientId = e.detail.recipientId;
             if (recipientId) {
                 suppressedRecipients.current.add(recipientId);
@@ -40,7 +56,7 @@ export function ChatNotificationListener() {
         };
         window.addEventListener('chat-room-opened' as any, handleOpened);
 
-        const handleClosed = (e: CustomEvent<{ recipientId?: string; roomId?: string }>) => {
+        const handleClosed = (e: CustomEvent<{ recipientId?: string }>) => {
             const recipientId = e.detail.recipientId;
             if (recipientId) {
                 suppressedRecipients.current.delete(recipientId);
@@ -53,6 +69,61 @@ export function ChatNotificationListener() {
             window.removeEventListener('chat-room-closed' as any, handleClosed);
         };
     }, []);
+
+    /**
+     * Helper: resolve sender name from API if not available in notification
+     */
+    const resolveSenderName = useCallback(async (senderId: string): Promise<string> => {
+        if (!senderId) return 'Usuário';
+        try {
+            const { data } = await supabase
+                .from('users')
+                .select('nome, email')
+                .eq('id', senderId)
+                .single();
+            return data?.nome || data?.email || 'Usuário';
+        } catch {
+            return 'Usuário';
+        }
+    }, []);
+
+    /**
+     * Process a notification and potentially open a chat popup.
+     */
+    const processNotification = useCallback(async (notif: { link?: string | null }) => {
+        if (!notif.link) return;
+        const info = extractChatInfoFromLink(notif.link);
+        if (!info || !info.roomId) return;
+
+        // Try to get senderId from the link
+        let senderId = info.senderId;
+        let senderName = info.senderName ? decodeURIComponent(info.senderName) : '';
+
+        // If senderId not in link (old notifications), try to resolve from the API
+        if (!senderId) return; // Skip old notifications without sender info
+
+        // Skip if already suppressed or resolved
+        if (suppressedRecipients.current.has(senderId)) return;
+        if (resolvedRecipients.current.has(senderId)) return;
+
+        // Resolve sender name if not in the link
+        if (!senderName) {
+            senderName = await resolveSenderName(senderId);
+        }
+
+        const roomTitle = info.roomId.includes('::') ? 'Cotação' : 'Pedido';
+
+        resolvedRecipients.current.add(senderId);
+        setOpenChats(prev => {
+            if (prev.some(c => c.recipientId === senderId)) return prev;
+            return [...prev, {
+                recipientId: senderId,
+                recipientName: senderName || 'Usuário',
+                initialRoomId: info.roomId,
+                initialRoomTitle: roomTitle,
+            }];
+        });
+    }, [resolveSenderName]);
 
     // On mount: check for unread chat notifications and auto-open those chats
     const checkedUnread = useRef(false);
@@ -73,58 +144,16 @@ export function ChatNotificationListener() {
 
                 if (!unreadNotifs || unreadNotifs.length === 0) return;
 
-                // Group by sender (recipientId) — one popup per user
-                const recipientsSeen = new Set<string>();
                 for (const notif of unreadNotifs) {
-                    if (!notif.link) continue;
-                    try {
-                        const url = new URL(notif.link, 'https://placeholder.com');
-                        const roomId = url.searchParams.get('chatRoom');
-                        if (!roomId) continue;
-
-                        // Find the latest message sender in this room
-                        const { data: lastMsg } = await supabase
-                            .from('mensagens')
-                            .select('sender_id')
-                            .eq('chat_id', roomId)
-                            .neq('sender_id', user.id)
-                            .order('created_at', { ascending: false })
-                            .limit(1)
-                            .single();
-
-                        if (!lastMsg?.sender_id) continue;
-                        const senderId = lastMsg.sender_id;
-
-                        // Skip if already seen or suppressed
-                        if (recipientsSeen.has(senderId)) continue;
-                        if (suppressedRecipients.current.has(senderId)) continue;
-                        recipientsSeen.add(senderId);
-
-                        let senderName = 'Usuário';
-                        const { data: senderData } = await supabase
-                            .from('users')
-                            .select('nome, email')
-                            .eq('id', senderId)
-                            .single();
-                        if (senderData) {
-                            senderName = senderData.nome || senderData.email || 'Usuário';
-                        }
-
-                        const roomTitle = roomId.includes('::') ? 'Cotação' : 'Pedido';
-
-                        setOpenChats(prev => {
-                            if (prev.some(c => c.recipientId === senderId)) return prev;
-                            return [...prev, { recipientId: senderId, recipientName: senderName, initialRoomId: roomId, initialRoomTitle: roomTitle }];
-                        });
-                        resolvedRecipients.current.add(senderId);
-                    } catch { /* skip malformed */ }
+                    await processNotification(notif);
                 }
             } catch (err) {
                 console.error('Erro ao verificar notificações de chat não lidas:', err);
             }
         })();
-    }, [user]);
+    }, [user, processNotification]);
 
+    // Realtime: subscribe to notificacoes INSERT (has proper RLS, unlike mensagens)
     useEffect(() => {
         if (!user) return;
 
@@ -133,52 +162,19 @@ export function ChatNotificationListener() {
             .on('postgres_changes', {
                 event: 'INSERT',
                 schema: 'public',
-                table: 'mensagens',
+                table: 'notificacoes',
+                filter: `user_id=eq.${user.id}`
             }, async (payload) => {
-                const msg = payload.new as any;
-                if (!msg || msg.sender_id === user.id) return;
-
-                const roomId = msg.chat_id;
-                const senderId = msg.sender_id;
-                if (!roomId || !senderId) return;
-
-                // Don't open if recipient is already handled by a section or already open globally
-                if (suppressedRecipients.current.has(senderId)) return;
-                if (resolvedRecipients.current.has(senderId)) return;
-
-                resolvedRecipients.current.add(senderId);
-
-                // Resolve sender name
-                let senderName = 'Usuário';
-                try {
-                    const { data: senderData } = await supabase
-                        .from('users')
-                        .select('nome, email')
-                        .eq('id', senderId)
-                        .single();
-                    if (senderData) {
-                        senderName = senderData.nome || senderData.email || 'Usuário';
-                    }
-                } catch { /* ignore */ }
-
-                const roomTitle = roomId.includes('::') ? 'Cotação' : 'Pedido';
-
-                setOpenChats(prev => {
-                    if (prev.some(c => c.recipientId === senderId)) return prev;
-                    return [...prev, {
-                        recipientId: senderId,
-                        recipientName: senderName,
-                        initialRoomId: roomId,
-                        initialRoomTitle: roomTitle,
-                    }];
-                });
+                const notif = payload.new as any;
+                if (!notif || notif.titulo !== 'Nova mensagem no chat') return;
+                await processNotification(notif);
             })
             .subscribe();
 
         return () => {
             channel.unsubscribe();
         };
-    }, [user]);
+    }, [user, processNotification]);
 
     // Clean up resolved recipients when chats are closed
     useEffect(() => {

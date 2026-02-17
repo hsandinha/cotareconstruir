@@ -163,7 +163,7 @@ async function resolveChatAccess(roomId: string, userId: string) {
     return { allowed: true, recipientId: cotacao.user_id };
 }
 
-async function buildChatNotificationLink(recipientId: string, roomId: string) {
+async function buildChatNotificationLink(recipientId: string, roomId: string, senderId?: string, senderName?: string) {
     if (!supabaseAdmin) return '/dashboard';
 
     const { data: recipientUser } = await supabaseAdmin
@@ -179,6 +179,8 @@ async function buildChatNotificationLink(recipientId: string, roomId: string) {
 
     const params = new URLSearchParams();
     params.set('chatRoom', roomId);
+    if (senderId) params.set('senderId', senderId);
+    if (senderName) params.set('senderName', senderName);
 
     if (roomId.includes('::')) {
         const [cotacaoId] = roomId.split('::');
@@ -314,13 +316,22 @@ export async function POST(req: NextRequest) {
         }
 
         if (access.recipientId) {
-            const link = await buildChatNotificationLink(access.recipientId, roomId);
+            // Resolve sender name for notification
+            let senderName = '';
+            const { data: senderData } = await supabaseAdmin
+                .from('users')
+                .select('nome, email')
+                .eq('id', user.id)
+                .single();
+            senderName = senderData?.nome || senderData?.email || '';
+
+            const link = await buildChatNotificationLink(access.recipientId, roomId, user.id, senderName);
             await supabaseAdmin
                 .from('notificacoes')
                 .insert({
                     user_id: access.recipientId,
                     titulo: 'Nova mensagem no chat',
-                    mensagem: 'Você recebeu uma nova mensagem em uma negociação.',
+                    mensagem: `Nova mensagem de ${senderName || 'um usuário'} em uma negociação.`,
                     tipo: 'info',
                     lida: false,
                     link
