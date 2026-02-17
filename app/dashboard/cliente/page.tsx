@@ -150,7 +150,7 @@ function ClienteDashboardContent() {
     return (
         <div className="min-h-screen bg-slate-50 text-slate-900">
             {/* Main Header */}
-            <div className="bg-white/90 backdrop-blur border-b border-slate-200/80 shadow-sm">
+            <div className="relative z-[60] bg-white/90 backdrop-blur border-b border-slate-200/80 shadow-sm">
                 <div className="section-shell">
                     <div className="flex items-center justify-between h-16">
                         <div className="flex items-center">
