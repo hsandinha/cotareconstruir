@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, ReactNode } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { supabase, supabaseAdmin, createUserAdmin, updateUserPasswordAdmin, updateUserRoles } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
@@ -171,7 +172,7 @@ export default function AdminDashboard() {
     // Create User Modal State
     const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
     const [newUserEmail, setNewUserEmail] = useState("");
-    const [newUserPassword, setNewUserPassword] = useState("");
+    const [newUserPassword, setNewUserPassword] = useState("123456");
     const [newUserName, setNewUserName] = useState("");
     const [newUserRole, setNewUserRole] = useState("cliente");
     const [isCreatingUser, setIsCreatingUser] = useState(false);
@@ -671,6 +672,9 @@ export default function AdminDashboard() {
                 <div className="section-shell">
                     <div className="flex h-16 items-center justify-between">
                         <div className="flex items-center">
+                            <div className="mr-2 flex h-9 w-9 items-center justify-center rounded-lg bg-white">
+                                <Image src="/logo.png" alt="Cotar & Construir" width={30} height={30} priority />
+                            </div>
                             <span className="text-lg font-semibold text-gray-900">Cotar</span>
                             <span className="ml-1 text-lg font-light text-gray-600">& Construir</span>
                         </div>
@@ -882,12 +886,30 @@ export default function AdminDashboard() {
                                                     <div className="text-sm font-semibold text-slate-900">{user.name || user.companyName || "Sem Nome"}</div>
                                                     <div className="text-[11px] text-slate-500">ID: {user.id.slice(0, 8)}...</div>
                                                 </td>
-                                                <td className="px-4 py-3 align-top text-sm text-slate-600">{user.email}</td>
+                                                <td className="px-4 py-3 align-top text-sm text-slate-600">
+                                                    <div>{user.email}</div>
+                                                    <div className="mt-1 text-[11px] text-slate-500">
+                                                        Último login: {(() => {
+                                                            const raw = user.last_login_at || user.lastLoginAt || user.last_login || null;
+                                                            if (!raw) return 'Nunca';
+                                                            const dt = typeof raw === 'string' ? new Date(raw) : raw?.toDate ? raw.toDate() : new Date(raw);
+                                                            if (Number.isNaN(dt.getTime())) return 'Nunca';
+                                                            return dt.toLocaleString('pt-BR');
+                                                        })()}
+                                                    </div>
+                                                </td>
                                                 <td className="px-4 py-3 align-top">
                                                     <RoleSelector
                                                         currentRoles={user.roles || (user.role ? [user.role] : ['cliente'])}
                                                         onUpdate={(newRoles) => handleUpdateRoles(user.id, newRoles)}
                                                     />
+                                                    {(user.must_change_password === true || user.mustChangePassword === true) && (
+                                                        <div className="mt-1">
+                                                            <span className="text-[10px] px-1.5 py-0.5 bg-rose-50 text-rose-700 rounded border border-rose-100">
+                                                                🔒 Senha Provisória
+                                                            </span>
+                                                        </div>
+                                                    )}
                                                     {/* Indicador de cadastro pendente */}
                                                     {(user.pendingClienteProfile || user.pendingFornecedorProfile) && (
                                                         <div className="mt-1 flex flex-wrap gap-1">
@@ -956,6 +978,15 @@ export default function AdminDashboard() {
                                             <div>
                                                 <div className="font-semibold text-slate-900">{user.name || user.companyName || "Sem Nome"}</div>
                                                 <div className="text-xs text-slate-500">{user.email}</div>
+                                                <div className="mt-1 text-[11px] text-slate-500">
+                                                    Último login: {(() => {
+                                                        const raw = user.last_login_at || user.lastLoginAt || user.last_login || null;
+                                                        if (!raw) return 'Nunca';
+                                                        const dt = typeof raw === 'string' ? new Date(raw) : raw?.toDate ? raw.toDate() : new Date(raw);
+                                                        if (Number.isNaN(dt.getTime())) return 'Nunca';
+                                                        return dt.toLocaleString('pt-BR');
+                                                    })()}
+                                                </div>
                                             </div>
                                             <button
                                                 onClick={() => handleToggleStatus(user.id, user.status || 'active')}
@@ -970,6 +1001,11 @@ export default function AdminDashboard() {
                                                 currentRoles={user.roles || (user.role ? [user.role] : ['cliente'])}
                                                 onUpdate={(newRoles) => handleUpdateRoles(user.id, newRoles)}
                                             />
+                                            {(user.must_change_password === true || user.mustChangePassword === true) && (
+                                                <span className="text-[10px] px-1.5 py-0.5 bg-rose-50 text-rose-700 rounded border border-rose-100">
+                                                    🔒 Senha Provisória
+                                                </span>
+                                            )}
                                             <span className="text-xs text-slate-400">•</span>
                                             <span className="text-xs text-slate-500">
                                                 {(() => {

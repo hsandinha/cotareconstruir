@@ -1,8 +1,6 @@
 'use server'
 
-import { Resend } from 'resend';
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { sendEmail as sendEmailViaSendGrid, getFornecedorRecadastroEmailTemplate } from '@/lib/emailService';
 
 interface EmailPayload {
     to: string;
@@ -11,22 +9,18 @@ interface EmailPayload {
 }
 
 export async function sendEmail({ to, subject, html }: EmailPayload) {
-    if (!process.env.RESEND_API_KEY) {
-        console.warn("RESEND_API_KEY is not set. Email not sent.");
-        return { success: false, error: "API Key missing" };
-    }
-
     try {
-        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Cota Reconstruir <onboarding@resend.dev>';
-        const data = await resend.emails.send({
-            from: fromEmail,
-            to: [to],
-            subject: subject,
-            html: html,
-        });
-        return { success: true, data };
+        const result = await sendEmailViaSendGrid({ to, subject, html });
+        return result.success
+            ? { success: true, messageId: result.messageId }
+            : { success: false, error: result.error };
     } catch (error) {
         console.error("Error sending email:", error);
         return { success: false, error };
     }
+}
+
+export async function sendFornecedorRecadastroEmail(to: string) {
+    const template = getFornecedorRecadastroEmailTemplate({ recipientEmail: to, temporaryPassword: '123456' });
+    return sendEmail({ to, subject: template.subject, html: template.html });
 }

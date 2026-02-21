@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faBars, faBuilding, faXmark } from "@fortawesome/free-solid-svg-icons";
+import { faBars, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { navLinks } from "../lib/content";
 
 export function Header() {
@@ -16,10 +17,10 @@ export function Header() {
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         <Link href="#hero" className="flex items-center space-x-3">
-          <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 shadow-glow">
-            <FontAwesomeIcon icon={faBuilding} className="text-lg text-white" />
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/95 shadow-glow">
+            <Image src="/logo.png" alt="Cotar & Construir" width={44} height={44} priority />
           </span>
-          <span className="text-2xl font-bold text-white">Cotar & Construir</span>
+          <span className="text-2xl font-bold text-white">Cotar &amp; Construir</span>
         </Link>
 
         <nav className="hidden items-center space-x-8 text-sm font-medium text-slate-200 md:flex">

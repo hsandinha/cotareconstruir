@@ -42,8 +42,11 @@ export function proxy(request: NextRequest) {
         }
 
         // Verificar se deve trocar senha (exceto na página de troca)
+        // Para fornecedores, mantemos no dashboard e exibimos um modal obrigatório.
         if (mustChangePassword === 'true' && !pathname.startsWith('/dashboard/change-password')) {
-            return NextResponse.redirect(new URL('/dashboard/change-password', request.url))
+            if (!pathname.startsWith('/dashboard/fornecedor')) {
+                return NextResponse.redirect(new URL('/dashboard/change-password', request.url))
+            }
         }
 
         // Prevenir acesso à página de troca de senha se não for necessário

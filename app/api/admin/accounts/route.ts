@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { sendEmail, getFornecedorRecadastroEmailTemplate } from '@/lib/emailService';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -83,6 +84,9 @@ export async function POST(request: NextRequest) {
                 [entityType === 'cliente' ? 'cliente_id' : 'fornecedor_id']: entityId,
                 status: 'pending',
                 is_verified: false,
+                must_change_password: true,
+                password_changed_at: null,
+                last_login_at: null,
             });
 
         if (userError) throw userError;
@@ -98,6 +102,20 @@ export async function POST(request: NextRequest) {
 
         // 4. Log
         console.log(`✅ Conta criada: ${email} (${entityType}) -> userId: ${userId}`);
+
+        // 5. Enviar email de recadastramento + credenciais (somente fornecedor)
+        if (entityType === 'fornecedor') {
+            const template = getFornecedorRecadastroEmailTemplate({
+                recipientEmail: email,
+                temporaryPassword: defaultPassword,
+            });
+            await sendEmail({
+                to: email,
+                subject: template.subject,
+                html: template.html,
+                text: template.text,
+            });
+        }
 
         return NextResponse.json({ success: true, userId });
 
@@ -134,8 +152,32 @@ export async function PUT(request: NextRequest) {
         // 2. Marcar que deve trocar senha
         await supabase
             .from('users')
-            .update({ status: 'pending' })
+            .update({ status: 'pending', must_change_password: true, password_changed_at: null } as any)
             .eq('id', userId);
+
+        // 3. Enviar email de recadastramento + credenciais (best effort)
+        try {
+            const { data: userRow } = await supabase
+                .from('users')
+                .select('email, role')
+                .eq('id', userId)
+                .single();
+
+            if (userRow?.email && userRow?.role === 'fornecedor') {
+                const template = getFornecedorRecadastroEmailTemplate({
+                    recipientEmail: userRow.email,
+                    temporaryPassword: defaultPassword,
+                });
+                await sendEmail({
+                    to: userRow.email,
+                    subject: template.subject,
+                    html: template.html,
+                    text: template.text,
+                });
+            }
+        } catch {
+            // ignore
+        }
 
         console.log(`🔑 Senha resetada para userId: ${userId}`);
 

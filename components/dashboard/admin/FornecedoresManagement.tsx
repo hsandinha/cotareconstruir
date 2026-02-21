@@ -40,6 +40,8 @@ interface Fornecedor {
     id: string;
     userId?: string;
     hasUserAccount?: boolean;
+    mustChangePassword?: boolean;
+    lastLoginAt?: string | null;
     codigo: string;
     razaoSocial: string;
     codigoGrupo: string;
@@ -220,19 +222,25 @@ export default function FornecedoresManagement() {
                 nome: g.nome || ''
             }));
 
-            // Criar mapa de fornecedorId -> userId para verificar quem tem conta
-            const fornecedorUserMap = new Map<string, string>();
+            // Criar mapa de fornecedorId -> dados de acesso
+            const fornecedorUserMap = new Map<string, { userId: string; mustChangePassword: boolean; lastLoginAt: string | null }>();
             (usersRaw || []).forEach((user: any) => {
                 if (user.fornecedor_id) {
-                    fornecedorUserMap.set(user.fornecedor_id, user.id);
+                    fornecedorUserMap.set(user.fornecedor_id, {
+                        userId: user.id,
+                        mustChangePassword: Boolean(user.must_change_password),
+                        lastLoginAt: user.last_login_at || null,
+                    });
                 }
             });
 
-            // Adicionar flag hasUserAccount e userId
+            // Adicionar flag hasUserAccount, userId e metadados de acesso
             const fornecedoresComFlag = fornecedoresData.map(f => ({
                 ...f,
                 hasUserAccount: fornecedorUserMap.has(f.id),
-                userId: fornecedorUserMap.get(f.id)
+                userId: fornecedorUserMap.get(f.id)?.userId,
+                mustChangePassword: fornecedorUserMap.get(f.id)?.mustChangePassword,
+                lastLoginAt: fornecedorUserMap.get(f.id)?.lastLoginAt || null,
             }));
 
             setFornecedores(fornecedoresComFlag);
@@ -634,7 +642,8 @@ export default function FornecedoresManagement() {
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Grupo(s)</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Contato</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Cidade</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Acesso</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Conta</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Último login</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Cartão</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Status</th>
                                 <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Ações</th>
@@ -668,15 +677,17 @@ export default function FornecedoresManagement() {
                                     <td className="px-4 py-3 text-sm text-slate-600">{fornecedor.cidade} - {fornecedor.estado}</td>
                                     <td className="px-4 py-3">
                                         {fornecedor.hasUserAccount ? (
-                                            <div className="flex items-center gap-2">
-                                                <UserCheck className="w-4 h-4 text-green-600" />
-                                                <button
-                                                    onClick={() => handleResetPassword(fornecedor)}
-                                                    className="text-xs text-blue-600 hover:underline"
-                                                    title="Resetar senha"
-                                                >
-                                                    <RefreshCw className="w-3 h-3" />
-                                                </button>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <UserCheck className="w-4 h-4 text-green-600" />
+                                                    <button
+                                                        onClick={() => handleResetPassword(fornecedor)}
+                                                        className="text-xs text-blue-600 hover:underline"
+                                                        title="Resetar senha"
+                                                    >
+                                                        <RefreshCw className="w-3 h-3" />
+                                                    </button>
+                                                </div>
                                             </div>
                                         ) : (
                                             <button
@@ -686,6 +697,15 @@ export default function FornecedoresManagement() {
                                                 <UserPlus className="w-4 h-4" />
                                                 <span>Criar conta</span>
                                             </button>
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        {!fornecedor.hasUserAccount ? (
+                                            <span className="text-[11px] text-slate-400">—</span>
+                                        ) : (
+                                            <span className="text-[11px] text-slate-600">
+                                                {fornecedor.lastLoginAt ? formatDate(fornecedor.lastLoginAt) : 'Nunca'}
+                                            </span>
                                         )}
                                     </td>
                                     <td className="px-4 py-3">
@@ -1204,6 +1224,7 @@ export default function FornecedoresManagement() {
                                     <DetailField label="Última atualização" value={formatDate(selectedFornecedorDetail.updatedAt)} />
                                     <DetailField label="User ID" value={selectedFornecedorDetail.userId || '—'} mono />
                                     <DetailField label="Aceita Cartão" value={selectedFornecedorDetail.cartaoCredito ? 'Sim' : 'Não'} />
+                                    <DetailField label="Último login" value={selectedFornecedorDetail.lastLoginAt ? formatDate(selectedFornecedorDetail.lastLoginAt) : 'Nunca'} />
                                 </div>
                             </div>
                         </div>

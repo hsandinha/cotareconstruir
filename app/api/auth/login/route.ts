@@ -98,6 +98,16 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        // Best effort: registrar último login
+        try {
+            await supabase
+                .from('users')
+                .update({ last_login_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+                .eq('id', user.id);
+        } catch {
+            // ignore
+        }
+
         // Determinar role principal
         let primaryRole = 'cliente';
         const userRoles = userData?.roles || [userData?.role] || ['cliente'];
@@ -119,7 +129,7 @@ export async function POST(request: NextRequest) {
                 email: user.email,
                 role: primaryRole,
                 roles: userRoles,
-                mustChangePassword: false,
+                mustChangePassword: Boolean((userData as any)?.must_change_password),
             },
         });
 

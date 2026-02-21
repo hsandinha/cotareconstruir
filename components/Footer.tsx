@@ -1,6 +1,7 @@
 import Link from "next/link";
+import Image from "next/image";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faBuilding, faEnvelope, faPhone } from "@fortawesome/free-solid-svg-icons";
+import { faEnvelope, faPhone } from "@fortawesome/free-solid-svg-icons";
 import { faInstagram, faLinkedin } from "@fortawesome/free-brands-svg-icons";
 import { footerLinks } from "../lib/content";
 
@@ -11,8 +12,8 @@ export function Footer() {
         <div className="grid gap-10 md:grid-cols-4">
           <div className="space-y-4">
             <Link href="#hero" className="flex items-center space-x-2">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
-                <FontAwesomeIcon icon={faBuilding} className="text-sm text-white" />
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/95">
+                <Image src="/logo.png" alt="Cotar & Construir" width={28} height={28} />
               </span>
               <span className="text-xl font-bold">Cotar & Construir</span>
             </Link>

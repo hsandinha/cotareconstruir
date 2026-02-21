@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { formatErrorResponse, AuthenticationError, ValidationError } from '@/lib/errorHandler';
+import { sendEmail, getFornecedorRecadastroEmailTemplate } from '@/lib/emailService';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -50,6 +51,7 @@ export async function POST(request: NextRequest) {
 
         const body = await request.json();
         const { email, password, nome, role = 'cliente', telefone } = body;
+        const temporaryPassword = '123456';
 
         if (!email || !password) {
             throw new ValidationError('Email e senha são obrigatórios');
@@ -57,10 +59,12 @@ export async function POST(request: NextRequest) {
 
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+        const initialPassword = role === 'fornecedor' ? temporaryPassword : password;
+
         // Criar usuário no Auth
         const { data: authData, error: authError } = await supabase.auth.admin.createUser({
             email,
-            password,
+            password: initialPassword,
             email_confirm: true,
         });
 
@@ -80,12 +84,29 @@ export async function POST(request: NextRequest) {
                 telefone,
                 status: 'active',
                 is_verified: true,
+                must_change_password: true,
+                password_changed_at: null,
+                last_login_at: null,
             });
 
         if (profileError) {
             // Rollback: deletar usuário criado
             await supabase.auth.admin.deleteUser(authData.user.id);
             throw new Error(profileError.message);
+        }
+
+        // Enviar email de recadastramento + credenciais (somente fornecedor)
+        if (role === 'fornecedor') {
+            const template = getFornecedorRecadastroEmailTemplate({
+                recipientEmail: email,
+                temporaryPassword,
+            });
+            await sendEmail({
+                to: email,
+                subject: template.subject,
+                html: template.html,
+                text: template.text,
+            });
         }
 
         return NextResponse.json({
@@ -224,6 +245,10 @@ export async function PATCH(request: NextRequest) {
             }
 
             delete updates.password;
+
+            // Ao alterar senha via admin, obrigar troca no próximo login
+            updates.must_change_password = true;
+            updates.password_changed_at = null;
         }
 
         // Atualizar perfil se houver outros campos

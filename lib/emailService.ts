@@ -3,6 +3,10 @@
  * Gerencia envio de emails transacionais
  */
 
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { FornecedorRecadastroEmail, getFornecedorRecadastroEmailText } from '../components/emails/FornecedorRecadastroEmail';
+
 interface EmailOptions {
     to: string;
     subject: string;
@@ -47,14 +51,14 @@ export async function sendEmail(options: EmailOptions): Promise<SendEmailResult>
                     name: fromName,
                 },
                 content: [
-                    {
-                        type: 'text/html',
-                        value: options.html,
-                    },
                     ...(options.text ? [{
                         type: 'text/plain',
                         value: options.text,
                     }] : []),
+                    {
+                        type: 'text/html',
+                        value: options.html,
+                    },
                 ],
             }),
         });
@@ -79,6 +83,28 @@ export async function sendEmail(options: EmailOptions): Promise<SendEmailResult>
             error: error.message,
         };
     }
+}
+
+export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: string; temporaryPassword?: string }): { subject: string; html: string; text: string } {
+    const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://cotareconstruir.com.br').replace(/\/$/, '');
+    const logoUrl = `${baseUrl}/logo.png`;
+    const temporaryPassword = options.temporaryPassword || '123456';
+
+    const html = `<!DOCTYPE html>${renderToStaticMarkup(
+        React.createElement(FornecedorRecadastroEmail, {
+            logoUrl,
+            recipientEmail: options.recipientEmail,
+            temporaryPassword,
+        })
+    )}`;
+
+    return {
+        subject: 'Recadastramento de Fornecedores - Cotar & Construir',
+        html,
+        text: getFornecedorRecadastroEmailText()
+            .replace('{{email}}', options.recipientEmail)
+            .replace('{{senha}}', temporaryPassword),
+    };
 }
 
 /**

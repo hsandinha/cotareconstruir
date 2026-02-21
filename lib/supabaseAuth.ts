@@ -98,6 +98,16 @@ export async function signIn(credentials: LoginCredentials): Promise<AuthResult>
         // Buscar perfil do usuário
         const profile = await getUserProfile(data.user.id);
 
+        // Best effort: registrar último login
+        try {
+            await supabase
+                .from('users')
+                .update({ last_login_at: new Date().toISOString(), updated_at: new Date().toISOString() } as any)
+                .eq('id', data.user.id);
+        } catch {
+            // ignore
+        }
+
         return {
             success: true,
             user: data.user,
@@ -338,6 +348,9 @@ export async function createUserAdmin(data: SignUpData & { mustChangePassword?: 
                 telefone: data.telefone || null,
                 status: 'active',
                 is_verified: true,
+                must_change_password: data.mustChangePassword ?? true,
+                password_changed_at: null,
+                last_login_at: null,
             } as any);
 
         if (profileError) {
@@ -475,6 +488,12 @@ export async function updateUserPasswordAdmin(
         if (error) {
             return { success: false, error: error.message };
         }
+
+        // Ao alterar senha via admin, obrigar troca no próximo login
+        await supabaseAdmin
+            .from('users')
+            .update({ must_change_password: true, password_changed_at: null } as any)
+            .eq('id', userId);
 
         return { success: true };
     } catch (error: any) {

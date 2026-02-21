@@ -39,6 +39,16 @@ export async function POST(request: Request) {
         const userRole = userData.role || userData.roles?.[0] || "cliente";
         const mustChangePassword = userData.must_change_password || false;
 
+        // Best effort: registrar último login
+        try {
+            await supabase
+                .from('users')
+                .update({ last_login_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+                .eq('id', user.id);
+        } catch {
+            // ignore
+        }
+
         // Obter token de autenticação
         const token = session?.access_token || '';
 
@@ -49,7 +59,8 @@ export async function POST(request: Request) {
                 email,
                 role: userRole,
                 name: userData.name || userData.company_name,
-                uid: user.id
+                uid: user.id,
+                mustChangePassword,
             }
         });
 

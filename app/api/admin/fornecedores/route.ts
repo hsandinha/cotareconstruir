@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
         const [fornecedoresRes, gruposRes, usersRes, fornecedorGruposRes] = await Promise.all([
             supabase.from('fornecedores').select('*'),
             supabase.from('grupos_insumo').select('*'),
-            supabase.from('users').select('id, fornecedor_id'),
+            supabase.from('users').select('id, fornecedor_id, must_change_password, last_login_at'),
             supabase.from('fornecedor_grupo').select('fornecedor_id, grupo_id')
         ]);
 

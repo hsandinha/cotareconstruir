@@ -41,6 +41,16 @@ export default function LoginPage() {
             .eq('id', user.id)
             .single();
 
+        // Best effort: registrar último login
+        try {
+            await supabase
+                .from('users')
+                .update({ last_login_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+                .eq('id', user.id);
+        } catch {
+            // ignore
+        }
+
         let userRoles: string[] = ["cliente"];
         let primaryRole = "cliente";
 
@@ -90,6 +100,9 @@ export default function LoginPage() {
 
         document.cookie = `token=${token}; path=/; max-age=86400; SameSite=Strict${secureFlag}`;
         document.cookie = `role=${primaryRole}; path=/; max-age=86400; SameSite=Strict${secureFlag}`;
+
+        const mustChangePasswordFlag = Boolean((profile as any)?.must_change_password);
+        document.cookie = `mustChangePassword=${mustChangePasswordFlag ? 'true' : 'false'}; path=/; max-age=86400; SameSite=Strict${secureFlag}`;
 
         // Redirect based on priority role
         if (primaryRole === "admin") {

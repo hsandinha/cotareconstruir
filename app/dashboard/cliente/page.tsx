@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { ClientProfileSection } from "../../../components/dashboard/client/ProfileSection";
 import { ClientWorksSection } from "../../../components/dashboard/client/WorksSection";
 import { ClientOrderSection } from "../../../components/dashboard/client/OrderSection";
@@ -154,6 +155,9 @@ function ClienteDashboardContent() {
                 <div className="section-shell">
                     <div className="flex items-center justify-between h-16">
                         <div className="flex items-center">
+                            <div className="mr-2 flex h-9 w-9 items-center justify-center rounded-lg bg-white">
+                                <Image src="/logo.png" alt="Cotar & Construir" width={30} height={30} priority />
+                            </div>
                             <span className="text-lg font-semibold text-gray-900">Cotar</span>
                             <span className="text-lg font-light text-gray-600 ml-1">& Construir</span>
                         </div>
