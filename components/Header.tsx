@@ -15,12 +15,11 @@ export function Header() {
       id="header"
       className="fixed top-0 z-50 w-full border-b border-white/10 bg-slate-950/80 backdrop-blur-2xl"
     >
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-        <Link href="#hero" className="flex items-center space-x-3">
-          <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/95 shadow-glow">
-            <Image src="/logo.png" alt="Cotar & Construir" width={44} height={44} priority />
-          </span>
-          <span className="text-2xl font-bold text-white">Cotar &amp; Construir</span>
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-2 py-2">
+        <Link href="#hero" className="flex items-center">
+          <Image src="/logo.png" alt="Comprar & Construir" width={60} height={60} priority />
+
+          <span className="text-2xl font-bold text-white">Comprar &amp; Construir</span>
         </Link>
 
         <nav className="hidden items-center space-x-8 text-sm font-medium text-slate-200 md:flex">

@@ -1,5 +1,5 @@
 -- =====================================================
--- COTAR & CONSTRUIR - Schema Supabase (PostgreSQL)
+-- Comprar & CONSTRUIR - Schema Supabase (PostgreSQL)
 -- Migração de Firestore NoSQL para SQL Relacional
 -- =====================================================
 

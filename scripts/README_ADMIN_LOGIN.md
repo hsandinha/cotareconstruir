@@ -21,7 +21,7 @@ node scripts/debug-admin-login.mjs <email-do-admin>
 
 **Exemplo:**
 ```bash
-node scripts/debug-admin-login.mjs admin@cotareconstruir.com.br
+node scripts/debug-admin-login.mjs admin@Comprareconstruir.com.br
 ```
 
 ---
@@ -101,7 +101,7 @@ npm install @supabase/supabase-js
 
 ### Passo 1: Diagnosticar
 ```bash
-node scripts/debug-admin-login.mjs admin@cotareconstruir.com.br
+node scripts/debug-admin-login.mjs admin@Comprareconstruir.com.br
 ```
 
 ### Passo 2: Agir baseado no resultado
@@ -113,7 +113,7 @@ node scripts/create-admin-user.mjs
 
 **Se o usuário EXISTE mas não é admin:**
 ```bash
-node scripts/fix-admin-role.mjs admin@cotareconstruir.com.br
+node scripts/fix-admin-role.mjs admin@Comprareconstruir.com.br
 ```
 
 **Se o usuário EXISTE e É admin mas não consegue logar:**

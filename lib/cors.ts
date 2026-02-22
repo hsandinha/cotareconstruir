@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const allowedOrigins = [
     process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-    'https://cotareconstruir.vercel.app',
+    'https://Comprareconstruir.vercel.app',
 ];
 
 export function corsHeaders(origin: string | null) {

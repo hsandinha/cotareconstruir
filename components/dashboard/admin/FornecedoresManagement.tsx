@@ -31,6 +31,27 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     return headers;
 }
 
+function onlyDigits(value: string): string {
+    return value.replace(/\D/g, '');
+}
+
+function formatTelefoneFixo(value: string): string {
+    const digits = onlyDigits(value).slice(0, 10);
+    if (!digits) return '';
+    if (digits.length <= 2) return `(${digits}`;
+    if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+}
+
+function formatWhatsApp(value: string): string {
+    const digits = onlyDigits(value).slice(0, 11);
+    if (!digits) return '';
+    if (digits.length <= 2) return `(${digits}`;
+    if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
 interface GrupoInsumo {
     id: string;
     nome: string;
@@ -108,7 +129,7 @@ export default function FornecedoresManagement() {
                 cidade: data.municipio || '',
                 estado: data.uf || '',
                 cep: data.cep || '',
-                fone: data.ddd_telefone_1 ? `(${data.ddd_telefone_1.slice(0, 2)}) ${data.ddd_telefone_1.slice(2)}` : prev.fone,
+                fone: data.ddd_telefone_1 ? formatTelefoneFixo(data.ddd_telefone_1) : prev.fone,
                 email: data.email || prev.email
             }));
             showToast('success', 'Dados preenchidos pelo CNPJ');
@@ -812,20 +833,13 @@ export default function FornecedoresManagement() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Contato</label>
-                                    <input
-                                        type="text"
-                                        value={formData.contato || ''}
-                                        onChange={(e) => setFormData({ ...formData, contato: e.target.value })}
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Telefone</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Telefone Fixo</label>
                                     <input
                                         type="text"
                                         value={formData.fone || ''}
-                                        onChange={(e) => setFormData({ ...formData, fone: e.target.value })}
+                                        onChange={(e) => setFormData({ ...formData, fone: formatTelefoneFixo(e.target.value) })}
+                                        inputMode="numeric"
+                                        placeholder="(00) 0000-0000"
                                         className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                                     />
                                 </div>
@@ -834,7 +848,9 @@ export default function FornecedoresManagement() {
                                     <input
                                         type="text"
                                         value={formData.whatsapp || ''}
-                                        onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
+                                        onChange={(e) => setFormData({ ...formData, whatsapp: formatWhatsApp(e.target.value) })}
+                                        inputMode="numeric"
+                                        placeholder="(00) 00000-0000"
                                         className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                                     />
                                 </div>

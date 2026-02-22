@@ -46,7 +46,7 @@ function getEmailAssetsBaseUrl(): string {
 export async function sendEmail(options: EmailOptions): Promise<SendEmailResult> {
     try {
         const apiKey = process.env.SENDGRID_API_KEY;
-        const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@cotareconstruir.com.br';
+        const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@Comprareconstruir.com.br';
         const fromName = process.env.SENDGRID_FROM_NAME || 'Cota Reconstruir';
 
         if (!apiKey) {
@@ -133,13 +133,16 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
         <body style="margin:0;padding:0;background-color:#f3f4f6;">
             <div style="width:100%;padding:24px 12px;">
                 <div style="max-width:720px;margin:0 auto;background-color:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
-                    <div style="padding:28px;text-align:center;">
-                        <img src="${logoUrl}" alt="Cotar & Construir" style="height:52px;width:auto;display:inline-block;" />
+                    <div style="padding:36px 28px 24px 28px;text-align:center;background:linear-gradient(180deg,#fff7ed 0%,#ffffff 100%);border-bottom:1px solid #fed7aa;">
+                        <img src="${logoUrl}" alt="Comprar & Construir" style="height:110px;width:auto;max-width:100%;display:inline-block;" />
+                        <p style="margin:10px 0 0 0;font-size:13px;letter-spacing:.08em;font-weight:700;color:#9a3412;text-transform:uppercase;">
+                            Comprar e Construir
+                        </p>
                     </div>
                     <div style="padding:0 28px 28px 28px;color:#111827;font-family:Arial,sans-serif;">
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;"><strong>Prezados parceiros fornecedores,</strong></p>
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
-                            A Cotar e Construir resolveu transformar sua experiência de 34 anos de atendimento a milhares de clientes em uma Plataforma de compras de materiais para construção civil.
+                            A Comprar e Construir resolveu transformar sua experiência de 38 anos de atendimento a milhares de clientes em uma Plataforma de compras de materiais para construção civil.
                         </p>
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
                             O nosso objetivo é agilizar o processo de compras e estender a um número maior de empresas construtoras, engenheiros e arquitetos autônomos e consumidores finais que buscam empresas especializadas no fornecimento dos diversos materiais e equipamentos da construção civil.
@@ -155,10 +158,10 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
                         </p>
                         ${credentialsHtml}
                         <p style="margin:16px 0 14px 0;font-size:13px;line-height:20px;font-weight:700;text-transform:uppercase;">
-                            IMPORTANTE: NO CADASTRO DE MATERIAIS SERÁ NECESSÁRIO APENAS INSERIR A DESCRIÇÃO PRINCIPAL DE CADA GRUPO DE MATERIAIS, CONFORME EXEMPLO NO FORMULÁRIO.
+                            IMPORTANTE: NO PERFIL DO SEU CADASTRO SERÁ NECESSÁRIO APENAS CONFIRMAR CADA GRUPO DE MATERIAIS, CONFORME EXEMPLO TOUR.
                         </p>
                         <p style="margin:0 0 14px 0;font-size:13px;line-height:20px;font-weight:700;text-transform:uppercase;">
-                            ESTE CADASTRO DE MATERIAIS FICARÁ NO NOSSO BANCO DE DADOS PARA DIRECIONAR AS CONSULTAS DOS NOSSOS CLIENTES ATRAVÉS DE UM LINK QUE SERÁ ENVIADO PELO E-MAIL DA COTAR E CONSTRUIR PARA OS FORNECEDORES ESPECIALIZADOS QUE COMERCIALIZAM ESSES MATERIAIS. GERANDO ASSIM, MAIS OPORTUNIDADE DE VENDAS DE TODA A LINHA DE MATERIAIS.
+                            ESTE CADASTRO DE MATERIAIS FICARÁ NO NOSSO BANCO DE DADOS PARA DIRECIONAR AS CONSULTAS DOS NOSSOS CLIENTES ATRAVÉS DA PLATAFORMA COMPRAR E CONSTRUIR PARA OS FORNECEDORES ESPECIALIZADOS QUE COMERCIALIZAM ESSES MATERIAIS. GERANDO ASSIM, MAIS OPORTUNIDADE DE VENDAS DE TODA A LINHA DE MATERIAIS.
                         </p>
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
                             Caso haja alguma dúvida não hesite em nos contatar, estaremos à disposição para atendê-los.
@@ -183,12 +186,12 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
     `;
 
     return {
-        subject: 'Recadastramento de Fornecedores - Cotar & Construir',
+        subject: 'Recadastramento de Fornecedores - Comprar & Construir',
         html,
         text: [
             'Prezados parceiros fornecedores,',
             '',
-            'A Cotar e Construir resolveu transformar sua experiência de 34 anos de atendimento a',
+            'A Comprar e Construir resolveu transformar sua experiência de 34 anos de atendimento a',
             'milhares de clientes em uma Plataforma de compras de materiais para construção civil.',
             '',
             'O nosso objetivo é agilizar o processo de compras e estender a um número maior de empresas',
@@ -212,7 +215,7 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
             'PRINCIPAL DE CADA GRUPO DE MATERIAIS, CONFORME EXEMPLO NO FORMULÁRIO.',
             'ESTE CADASTRO DE MATERIAIS FICARÁ NO NOSSO BANCO DE DADOS PARA DIRECIONAR AS',
             'CONSULTAS DOS NOSSOS CLIENTES ATRAVÉS DE UM LINK QUE SERÁ ENVIADO PELO E-MAIL',
-            'DA COTAR E CONSTRUIR PARA OS FORNECEDORES ESPECIALIZADOS QUE COMERCIALIZAM',
+            'DA Comprar E CONSTRUIR PARA OS FORNECEDORES ESPECIALIZADOS QUE COMERCIALIZAM',
             'ESSES MATERIAIS. GERANDO ASSIM, MAIS OPORTUNIDADE DE VENDAS DE TODA A LINHA DE',
             'MATERIAIS.',
             '',
@@ -373,7 +376,7 @@ export function getPasswordChangedEmailTemplate(name: string): { subject: string
                         </div>
                         <p><strong>Data/Hora:</strong> ${new Date().toLocaleString('pt-BR')}</p>
                         <p>Se você não realizou esta alteração, entre em contato com nossa equipe imediatamente:</p>
-                        <p>📧 Email: suporte@cotareconstruir.com.br<br>
+                        <p>📧 Email: suporte@Comprareconstruir.com.br<br>
                         📱 WhatsApp: (11) 99999-9999</p>
                     </div>
                     <div class="footer">
@@ -383,6 +386,6 @@ export function getPasswordChangedEmailTemplate(name: string): { subject: string
             </body>
             </html>
         `,
-        text: `Olá ${name},\n\n✅ Sua senha foi alterada com sucesso.\n\nData/Hora: ${new Date().toLocaleString('pt-BR')}\n\nSe você não realizou esta alteração, entre em contato:\nsuporte@cotareconstruir.com.br\n\nEquipe Cota Reconstruir`,
+        text: `Olá ${name},\n\n✅ Sua senha foi alterada com sucesso.\n\nData/Hora: ${new Date().toLocaleString('pt-BR')}\n\nSe você não realizou esta alteração, entre em contato:\nsuporte@Comprareconstruir.com.br\n\nEquipe Cota Reconstruir`,
     };
 }

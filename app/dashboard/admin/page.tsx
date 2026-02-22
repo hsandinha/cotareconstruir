@@ -672,10 +672,10 @@ export default function AdminDashboard() {
                 <div className="section-shell">
                     <div className="flex h-16 items-center justify-between">
                         <div className="flex items-center">
-                            <div className="mr-2 flex h-9 w-9 items-center justify-center rounded-lg bg-white">
-                                <Image src="/logo.png" alt="Cotar & Construir" width={30} height={30} priority />
+                            <div className="mr-2 flex items-center justify-center rounded-lg bg-white">
+                                <Image src="/logo.png" alt="Comprar & Construir" width={60} height={60} priority />
                             </div>
-                            <span className="text-lg font-semibold text-gray-900">Cotar</span>
+                            <span className="text-lg font-semibold text-gray-900">Comprar</span>
                             <span className="ml-1 text-lg font-light text-gray-600">& Construir</span>
                         </div>
                         <div className="flex items-center gap-4">

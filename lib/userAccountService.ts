@@ -103,7 +103,7 @@ Sua conta foi criada no sistema Cota Reconstruir.
 
 ⚠️ Por segurança, você será solicitado a alterar sua senha no primeiro acesso.
 
-Acesse: https://cotareconstruir.com.br/login
+Acesse: https://Comprareconstruir.com.br/login
 
 Atenciosamente,
 Equipe Cota Reconstruir

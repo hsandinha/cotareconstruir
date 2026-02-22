@@ -31,12 +31,12 @@ export function FornecedorRecadastroEmail({ logoUrl, recipientEmail, temporaryPa
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img
                                     src={logoUrl}
-                                    alt="Cotar & Construir"
+                                    alt="Comprar & Construir"
                                     style={{ height: 52, width: "auto", display: "inline-block" }}
                                 />
                             ) : (
                                 <div style={{ fontSize: 18, fontWeight: 700, color: "#111827" }}>
-                                    COTAR&CONSTRUIR
+                                    Comprar&CONSTRUIR
                                 </div>
                             )}
                         </div>
@@ -47,7 +47,7 @@ export function FornecedorRecadastroEmail({ logoUrl, recipientEmail, temporaryPa
                             </p>
 
                             <p style={{ margin: "0 0 14px 0", fontSize: 14, lineHeight: "22px" }}>
-                                A Cotar e Construir resolveu transformar sua experiência de 34 anos de atendimento a milhares de
+                                A Comprar e Construir resolveu transformar sua experiência de 38 anos de atendimento a milhares de
                                 clientes em uma Plataforma de compras de materiais para construção civil.
                             </p>
 
@@ -128,7 +128,7 @@ export function FornecedorRecadastroEmail({ logoUrl, recipientEmail, temporaryPa
                                 }}
                             >
                                 ESTE CADASTRO DE MATERIAIS FICARÁ NO NOSSO BANCO DE DADOS PARA DIRECIONAR AS CONSULTAS DOS
-                                NOSSOS CLIENTES ATRAVÉS DE UM LINK QUE SERÁ ENVIADO PELO E-MAIL DA COTAR E CONSTRUIR PARA OS
+                                NOSSOS CLIENTES ATRAVÉS DE UM LINK QUE SERÁ ENVIADO PELO E-MAIL DA Comprar E CONSTRUIR PARA OS
                                 FORNECEDORES ESPECIALIZADOS QUE COMERCIALIZAM ESSES MATERIAIS. GERANDO ASSIM, MAIS OPORTUNIDADE
                                 DE VENDAS DE TODA A LINHA DE MATERIAIS.
                             </p>
@@ -163,7 +163,7 @@ export function getFornecedorRecadastroEmailText() {
     return [
         "Prezados parceiros fornecedores,",
         "",
-        "A Cotar e Construir resolveu transformar sua experiência de 34 anos de atendimento a",
+        "A Comprar e Construir resolveu transformar sua experiência de 34 anos de atendimento a",
         "milhares de clientes em uma Plataforma de compras de materiais para construção civil.",
         "",
         "O nosso objetivo é agilizar o processo de compras e estender a um número maior de empresas",
@@ -187,7 +187,7 @@ export function getFornecedorRecadastroEmailText() {
         "PRINCIPAL DE CADA GRUPO DE MATERIAIS, CONFORME EXEMPLO NO FORMULÁRIO.",
         "ESTE CADASTRO DE MATERIAIS FICARÁ NO NOSSO BANCO DE DADOS PARA DIRECIONAR AS",
         "CONSULTAS DOS NOSSOS CLIENTES ATRAVÉS DE UM LINK QUE SERÁ ENVIADO PELO E-MAIL",
-        "DA COTAR E CONSTRUIR PARA OS FORNECEDORES ESPECIALIZADOS QUE COMERCIALIZAM",
+        "DA Comprar E CONSTRUIR PARA OS FORNECEDORES ESPECIALIZADOS QUE COMERCIALIZAM",
         "ESSES MATERIAIS. GERANDO ASSIM, MAIS OPORTUNIDADE DE VENDAS DE TODA A LINHA DE",
         "MATERIAIS.",
         "",

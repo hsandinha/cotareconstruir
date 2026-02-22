@@ -238,7 +238,7 @@ export function parseWebhookStatuses(body: any): WhatsAppStatusUpdate[] {
 export async function notifySupplierNewQuotation(phone: string, cotacaoNumero: string, obraNome: string): Promise<WhatsAppSendResult> {
     return sendWhatsAppText({
         to: phone,
-        text: `🔔 *Nova Cotação Recebida!*\n\nCotação #${cotacaoNumero}\nObra: ${obraNome}\n\nAcesse a plataforma para enviar sua proposta:\nhttps://cotareconstruir.com.br/login`
+        text: `🔔 *Nova Cotação Recebida!*\n\nCotação #${cotacaoNumero}\nObra: ${obraNome}\n\nAcesse a plataforma para enviar sua proposta:\nhttps://Comprareconstruir.com.br/login`
     });
 }
 
@@ -248,7 +248,7 @@ export async function notifySupplierNewQuotation(phone: string, cotacaoNumero: s
 export async function notifyClientNewProposal(phone: string, cotacaoNumero: string, supplierName: string): Promise<WhatsAppSendResult> {
     return sendWhatsAppText({
         to: phone,
-        text: `📋 *Nova Proposta Recebida!*\n\nUm fornecedor enviou uma proposta para a Cotação #${cotacaoNumero}.\n\nAcesse o mapa comparativo na plataforma:\nhttps://cotareconstruir.com.br/login`
+        text: `📋 *Nova Proposta Recebida!*\n\nUm fornecedor enviou uma proposta para a Cotação #${cotacaoNumero}.\n\nAcesse o mapa comparativo na plataforma:\nhttps://Comprareconstruir.com.br/login`
     });
 }
 
@@ -258,7 +258,7 @@ export async function notifyClientNewProposal(phone: string, cotacaoNumero: stri
 export async function notifySupplierOrderApproved(phone: string, pedidoNumero: string, clientName: string): Promise<WhatsAppSendResult> {
     return sendWhatsAppText({
         to: phone,
-        text: `✅ *Pedido Aprovado!*\n\nPedido #${pedidoNumero}\nCliente: ${clientName}\n\nAcesse a plataforma para confirmar e preparar o envio:\nhttps://cotareconstruir.com.br/login`
+        text: `✅ *Pedido Aprovado!*\n\nPedido #${pedidoNumero}\nCliente: ${clientName}\n\nAcesse a plataforma para confirmar e preparar o envio:\nhttps://Comprareconstruir.com.br/login`
     });
 }
 
@@ -268,7 +268,7 @@ export async function notifySupplierOrderApproved(phone: string, pedidoNumero: s
 export async function sendSupplierCredentials(phone: string, email: string, password: string): Promise<WhatsAppSendResult> {
     return sendWhatsAppText({
         to: phone,
-        text: `🏗️ *Bem-vindo ao Cota Reconstruir!*\n\nSuas credenciais de acesso:\n📧 Email: ${email}\n🔑 Senha: ${password}\n\nAcesse: https://cotareconstruir.com.br/login`
+        text: `🏗️ *Bem-vindo ao Cota Reconstruir!*\n\nSuas credenciais de acesso:\n📧 Email: ${email}\n🔑 Senha: ${password}\n\nAcesse: https://Comprareconstruir.com.br/login`
     });
 }
 

@@ -31,7 +31,7 @@ async function main() {
     const type = (getArg('type') || 'recadastro') as EmailType;
     const dryRun = hasFlag('dry-run');
 
-    const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@cotareconstruir.com.br';
+    const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@Comprareconstruir.com.br';
     const fromName = process.env.SENDGRID_FROM_NAME || 'Cota Reconstruir';
 
     if (!process.env.SENDGRID_API_KEY && !dryRun) {

@@ -246,11 +246,11 @@ export function SupplierCommunicationSection() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                     <div>
                         <span className="font-medium text-gray-700">Suporte Técnico:</span>
-                        <div className="text-gray-900">suporte@cotareconstruir.com</div>
+                        <div className="text-gray-900">suporte@Comprareconstruir.com</div>
                     </div>
                     <div>
                         <span className="font-medium text-gray-700">Comercial:</span>
-                        <div className="text-gray-900">comercial@cotareconstruir.com</div>
+                        <div className="text-gray-900">comercial@Comprareconstruir.com</div>
                     </div>
                     <div>
                         <span className="font-medium text-gray-700">WhatsApp Suporte:</span>

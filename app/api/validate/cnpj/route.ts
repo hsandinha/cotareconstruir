@@ -43,7 +43,7 @@ async function handler(request: NextRequest) {
         // Consultar API da Receita Federal
         const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCNPJ}`, {
             headers: {
-                'User-Agent': 'CotaReconstruir/1.0',
+                'User-Agent': 'Comprareconstruir/1.0',
             },
         });
 

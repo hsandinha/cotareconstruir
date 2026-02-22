@@ -15,9 +15,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Cotar & Construir | Gestão Inteligente de Suprimentos",
+  title: "Comprar & Construir | Gestão Inteligente de Suprimentos",
   description:
-    "Transforme a cadeia de suprimentos da sua obra com a metodologia estratégica da Cotar & Construir.",
+    "Transforme a cadeia de suprimentos da sua obra com a metodologia estratégica da Comprar & Construir.",
 };
 
 export default function RootLayout({

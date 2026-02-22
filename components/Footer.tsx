@@ -12,10 +12,10 @@ export function Footer() {
         <div className="grid gap-10 md:grid-cols-4">
           <div className="space-y-4">
             <Link href="#hero" className="flex items-center space-x-2">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/95">
-                <Image src="/logo.png" alt="Cotar & Construir" width={28} height={28} />
+              <span className="inline-flex  items-center justify-center rounded-lg bg-white/95">
+                <Image src="/logo.png" alt="Comprar & Construir" width={60} height={60} />
               </span>
-              <span className="text-xl font-bold">Cotar & Construir</span>
+              <span className="text-xl font-bold">Comprar & Construir</span>
             </Link>
             <p className="text-sm text-slate-400">
               Transformando a maneira como você constrói. Conectamos obras a fornecedores com tecnologia e eficiência.
@@ -53,7 +53,7 @@ export function Footer() {
             <div className="space-y-3 text-sm text-slate-400">
               <div className="flex items-center space-x-3">
                 <FontAwesomeIcon icon={faEnvelope} className="text-blue-400" />
-                <span>contato@cotareconstruir.com</span>
+                <span>contato@Comprareconstruir.com</span>
               </div>
               <div className="flex items-center space-x-3">
                 <FontAwesomeIcon icon={faPhone} className="text-blue-400" />
@@ -72,7 +72,7 @@ export function Footer() {
         </div>
 
         <div className="mt-12 border-t border-white/5 pt-6 text-center text-xs text-slate-500">
-          © {new Date().getFullYear()} Cotar & Construir. Todos os direitos reservados.
+          © {new Date().getFullYear()} Comprar & Construir. Todos os direitos reservados.
         </div>
       </div>
     </footer>
