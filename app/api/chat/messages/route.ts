@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { analyzeChatMessage } from '@/lib/chatModeration';
+import { getSupplierAccessOwnerUserId, listUserSupplierAccess, userHasSupplierAccess } from '@/lib/supplierAccessServer';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
@@ -33,8 +34,25 @@ async function getAuthUser(req: NextRequest) {
     return user;
 }
 
-async function resolveChatAccess(roomId: string, userId: string) {
-    if (!supabaseAdmin) return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
+function deniedChatAccess() {
+    return {
+        allowed: false,
+        recipientId: null as string | null,
+        clienteId: null as string | null,
+        fornecedorId: null as string | null,
+        cotacaoId: null as string | null,
+        pedidoId: null as string | null,
+    };
+}
+
+function normalizeOptionalId(value: unknown): string | null {
+    const normalized = String(value || '').trim();
+    return normalized || null;
+}
+
+async function resolveChatAccess(roomId: string, userId: string, requestedFornecedorId?: string | null) {
+    if (!supabaseAdmin) return deniedChatAccess();
+    const requestedSupplierId = normalizeOptionalId(requestedFornecedorId);
 
     if (roomId.includes('::')) {
         const [cotacaoIdRaw, fornecedorIdRaw] = roomId.split('::');
@@ -42,7 +60,11 @@ async function resolveChatAccess(roomId: string, userId: string) {
         const fornecedorId = String(fornecedorIdRaw || '').trim();
 
         if (!cotacaoId || !fornecedorId) {
-            return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
+            return deniedChatAccess();
+        }
+
+        if (requestedSupplierId && requestedSupplierId !== fornecedorId) {
+            return deniedChatAccess();
         }
 
         const { data: cotacao } = await supabaseAdmin
@@ -52,17 +74,7 @@ async function resolveChatAccess(roomId: string, userId: string) {
             .single();
 
         if (!cotacao) {
-            return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
-        }
-
-        const { data: fornecedor } = await supabaseAdmin
-            .from('fornecedores')
-            .select('id, user_id')
-            .eq('id', fornecedorId)
-            .single();
-
-        if (!fornecedor?.user_id) {
-            return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
+            return deniedChatAccess();
         }
 
         const { data: proposta } = await supabaseAdmin
@@ -74,21 +86,26 @@ async function resolveChatAccess(roomId: string, userId: string) {
             .maybeSingle();
 
         if (!proposta) {
-            return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
+            return deniedChatAccess();
+        }
+
+        const supplierUserId = await getSupplierAccessOwnerUserId(supabaseAdmin, fornecedorId);
+        if (!supplierUserId) {
+            return deniedChatAccess();
         }
 
         const isClient = userId === cotacao.user_id;
-        const isSupplier = userId === fornecedor.user_id;
+        const isSupplier = userId === supplierUserId;
 
         if (!isClient && !isSupplier) {
-            return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
+            return deniedChatAccess();
         }
 
         return {
             allowed: true,
-            recipientId: isClient ? fornecedor.user_id : cotacao.user_id,
+            recipientId: isClient ? supplierUserId : cotacao.user_id,
             clienteId: cotacao.user_id,
-            fornecedorId: fornecedor.id,
+            fornecedorId,
             cotacaoId: cotacao.id,
             pedidoId: null as string | null,
         };
@@ -101,14 +118,14 @@ async function resolveChatAccess(roomId: string, userId: string) {
         .single();
 
     if (pedido) {
-        const { data: fornecedor } = await supabaseAdmin
-            .from('fornecedores')
-            .select('id, user_id')
-            .eq('id', pedido.fornecedor_id)
-            .single();
+        if (requestedSupplierId && requestedSupplierId !== pedido.fornecedor_id) {
+            return deniedChatAccess();
+        }
 
         const clientId = pedido.user_id;
-        const supplierUserId = fornecedor?.user_id || null;
+        const supplierUserId = pedido.fornecedor_id
+            ? await getSupplierAccessOwnerUserId(supabaseAdmin, pedido.fornecedor_id)
+            : null;
 
         const isClient = userId === clientId;
         const isSupplier = !!supplierUserId && userId === supplierUserId;
@@ -118,13 +135,13 @@ async function resolveChatAccess(roomId: string, userId: string) {
                 allowed: true,
                 recipientId: isClient ? supplierUserId : clientId,
                 clienteId: clientId,
-                fornecedorId: fornecedor?.id || null,
+                fornecedorId: pedido.fornecedor_id || null,
                 cotacaoId: pedido.cotacao_id || null,
                 pedidoId: pedido.id,
             };
         }
 
-        return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
+        return deniedChatAccess();
     }
 
     const { data: cotacao } = await supabaseAdmin
@@ -134,34 +151,53 @@ async function resolveChatAccess(roomId: string, userId: string) {
         .single();
 
     if (!cotacao) {
-        return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
+        return deniedChatAccess();
     }
 
     const isClient = cotacao.user_id === userId;
 
-    const { data: fornecedorByUser } = await supabaseAdmin
-        .from('fornecedores')
-        .select('id, user_id')
-        .eq('user_id', userId)
-        .limit(1)
-        .maybeSingle();
-
-    let isSupplierInQuotation = false;
-
-    if (fornecedorByUser?.id) {
+    if (requestedSupplierId) {
         const { data: proposta } = await supabaseAdmin
             .from('propostas')
             .select('id')
             .eq('cotacao_id', roomId)
-            .eq('fornecedor_id', fornecedorByUser.id)
+            .eq('fornecedor_id', requestedSupplierId)
             .limit(1)
             .maybeSingle();
 
-        isSupplierInQuotation = !!proposta;
-    }
+        if (!proposta) {
+            return deniedChatAccess();
+        }
 
-    if (!isClient && !isSupplierInQuotation) {
-        return { allowed: false, recipientId: null as string | null, clienteId: null as string | null, fornecedorId: null as string | null, cotacaoId: null as string | null, pedidoId: null as string | null };
+        const supplierUserId = await getSupplierAccessOwnerUserId(supabaseAdmin, requestedSupplierId);
+        if (!supplierUserId) {
+            return deniedChatAccess();
+        }
+
+        if (isClient) {
+            return {
+                allowed: true,
+                recipientId: supplierUserId,
+                clienteId: cotacao.user_id,
+                fornecedorId: requestedSupplierId,
+                cotacaoId: cotacao.id,
+                pedidoId: null as string | null,
+            };
+        }
+
+        const canUseRequestedSupplier = await userHasSupplierAccess(supabaseAdmin, userId, requestedSupplierId);
+        if (!canUseRequestedSupplier || supplierUserId !== userId) {
+            return deniedChatAccess();
+        }
+
+        return {
+            allowed: true,
+            recipientId: cotacao.user_id,
+            clienteId: cotacao.user_id,
+            fornecedorId: requestedSupplierId,
+            cotacaoId: cotacao.id,
+            pedidoId: null as string | null,
+        };
     }
 
     if (isClient) {
@@ -173,22 +209,61 @@ async function resolveChatAccess(roomId: string, userId: string) {
             .maybeSingle();
 
         if (supplierProposal?.fornecedor_id) {
-            const { data: supplier } = await supabaseAdmin
-                .from('fornecedores')
-                .select('id, user_id')
-                .eq('id', supplierProposal.fornecedor_id)
-                .single();
-
-            return { allowed: true, recipientId: supplier?.user_id || null, clienteId: cotacao.user_id, fornecedorId: supplier?.id || null, cotacaoId: cotacao.id, pedidoId: null as string | null };
+            const supplierUserId = await getSupplierAccessOwnerUserId(supabaseAdmin, supplierProposal.fornecedor_id);
+            return {
+                allowed: true,
+                recipientId: supplierUserId || null,
+                clienteId: cotacao.user_id,
+                fornecedorId: supplierProposal.fornecedor_id,
+                cotacaoId: cotacao.id,
+                pedidoId: null as string | null,
+            };
         }
 
-        return { allowed: true, recipientId: null as string | null, clienteId: cotacao.user_id, fornecedorId: null as string | null, cotacaoId: cotacao.id, pedidoId: null as string | null };
+        return {
+            allowed: true,
+            recipientId: null as string | null,
+            clienteId: cotacao.user_id,
+            fornecedorId: null as string | null,
+            cotacaoId: cotacao.id,
+            pedidoId: null as string | null,
+        };
     }
 
-    return { allowed: true, recipientId: cotacao.user_id, clienteId: cotacao.user_id, fornecedorId: fornecedorByUser?.id || null, cotacaoId: cotacao.id, pedidoId: null as string | null };
+    const accessibleSuppliers = await listUserSupplierAccess(supabaseAdmin, userId);
+    const accessibleSupplierIds = accessibleSuppliers.map((s) => s.id);
+    if (accessibleSupplierIds.length === 0) {
+        return deniedChatAccess();
+    }
+
+    const { data: propostasForUser } = await supabaseAdmin
+        .from('propostas')
+        .select('fornecedor_id')
+        .eq('cotacao_id', roomId)
+        .in('fornecedor_id', accessibleSupplierIds);
+
+    const matchedSupplierIds = Array.from(new Set((propostasForUser || []).map((row: any) => row.fornecedor_id).filter(Boolean)));
+    if (matchedSupplierIds.length !== 1) {
+        return deniedChatAccess();
+    }
+
+    return {
+        allowed: true,
+        recipientId: cotacao.user_id,
+        clienteId: cotacao.user_id,
+        fornecedorId: matchedSupplierIds[0],
+        cotacaoId: cotacao.id,
+        pedidoId: null as string | null,
+    };
 }
 
-async function buildChatNotificationLink(recipientId: string, roomId: string, senderId?: string, senderName?: string) {
+async function buildChatNotificationLink(
+    recipientId: string,
+    roomId: string,
+    senderId?: string,
+    senderName?: string,
+    fornecedorId?: string | null
+) {
     if (!supabaseAdmin) return '/dashboard';
 
     const { data: recipientUser } = await supabaseAdmin
@@ -218,6 +293,9 @@ async function buildChatNotificationLink(recipientId: string, roomId: string, se
 
     if (isSupplier) {
         params.set('tab', 'vendas-cotacoes');
+        if (fornecedorId) {
+            params.set('fornecedor', fornecedorId);
+        }
         return `/dashboard/fornecedor?${params.toString()}`;
     }
 
@@ -242,12 +320,13 @@ export async function GET(req: NextRequest) {
 
         const { searchParams } = new URL(req.url);
         const roomId = String(searchParams.get('roomId') || '').trim();
+        const fornecedorId = normalizeOptionalId(searchParams.get('fornecedor_id'));
 
         if (!roomId) {
             return NextResponse.json({ error: 'roomId é obrigatório' }, { status: 400 });
         }
 
-        const access = await resolveChatAccess(roomId, user.id);
+        const access = await resolveChatAccess(roomId, user.id, fornecedorId);
         if (!access.allowed) {
             return NextResponse.json({ error: 'Acesso negado ao chat' }, { status: 403 });
         }
@@ -283,6 +362,7 @@ export async function POST(req: NextRequest) {
         const body = await req.json();
         const roomId = String(body.roomId || '').trim();
         const text = String(body.text || '').trim();
+        const fornecedorId = normalizeOptionalId(body.fornecedor_id);
 
         if (!roomId || !text) {
             return NextResponse.json({ error: 'roomId e text são obrigatórios' }, { status: 400 });
@@ -292,7 +372,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Mensagem muito longa' }, { status: 400 });
         }
 
-        const access = await resolveChatAccess(roomId, user.id);
+        const access = await resolveChatAccess(roomId, user.id, fornecedorId);
         if (!access.allowed) {
             return NextResponse.json({ error: 'Acesso negado ao chat' }, { status: 403 });
         }
@@ -354,7 +434,7 @@ export async function POST(req: NextRequest) {
                 .single();
             senderName = senderData?.nome || senderData?.email || '';
 
-            const link = await buildChatNotificationLink(access.recipientId, roomId, user.id, senderName);
+            const link = await buildChatNotificationLink(access.recipientId, roomId, user.id, senderName, access.fornecedorId);
             await supabaseAdmin
                 .from('notificacoes')
                 .insert({

@@ -31,9 +31,10 @@ interface ChatInterfaceProps {
     initialRoomId?: string;       // Pre-select this room on open
     initialRoomTitle?: string;    // Title hint for the initial room
     offsetIndex?: number;
+    fornecedorId?: string | null; // Scope supplier chats to active company (multiempresa)
 }
 
-export function ChatInterface({ recipientName, recipientId, onClose, isOpen, initialMessage, initialRoomId, initialRoomTitle, offsetIndex = 0 }: ChatInterfaceProps) {
+export function ChatInterface({ recipientName, recipientId, onClose, isOpen, initialMessage, initialRoomId, initialRoomTitle, offsetIndex = 0, fornecedorId = null }: ChatInterfaceProps) {
     const [rooms, setRooms] = useState<ChatRoom[]>([]);
     const [loadingRooms, setLoadingRooms] = useState(true);
     const [selectedRoomId, setSelectedRoomId] = useState<string | null>(initialRoomId || null);
@@ -76,7 +77,13 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
         if (!recipientId) return;
         setLoadingRooms(true);
         try {
-            const res = await authFetch(`/api/chat/rooms?recipientId=${encodeURIComponent(recipientId)}`);
+            const params = new URLSearchParams();
+            params.set('recipientId', recipientId);
+            if (fornecedorId) {
+                params.set('fornecedor_id', fornecedorId);
+            }
+
+            const res = await authFetch(`/api/chat/rooms?${params.toString()}`);
             if (!res.ok) throw new Error('Erro ao carregar salas');
             const json = await res.json();
             const fetched: ChatRoom[] = json.rooms || [];
@@ -107,7 +114,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
         } finally {
             setLoadingRooms(false);
         }
-    }, [recipientId, initialRoomId, initialRoomTitle]);
+    }, [recipientId, initialRoomId, initialRoomTitle, fornecedorId]);
 
     useEffect(() => {
         if (isOpen && recipientId) {
@@ -118,7 +125,13 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
     // ─── Fetch messages for selected room ─────────────────────────────
     const fetchMessages = useCallback(async (roomId: string) => {
         try {
-            const res = await authFetch(`/api/chat/messages?roomId=${encodeURIComponent(roomId)}`);
+            const params = new URLSearchParams();
+            params.set('roomId', roomId);
+            if (fornecedorId) {
+                params.set('fornecedor_id', fornecedorId);
+            }
+
+            const res = await authFetch(`/api/chat/messages?${params.toString()}`);
             if (!res.ok) {
                 const err = await res.json();
                 throw new Error(err.error || 'Erro ao carregar mensagens');
@@ -136,7 +149,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
         } catch (error) {
             console.error('Erro ao carregar mensagens:', error);
         }
-    }, []);
+    }, [fornecedorId]);
 
     const handleReport = async () => {
         if (!currentUser || !recipientId) return;
@@ -229,6 +242,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
                     roomId: selectedRoomId,
                     text: newMessage,
                     recipientId,
+                    fornecedor_id: fornecedorId,
                 })
             });
 

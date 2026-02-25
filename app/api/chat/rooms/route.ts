@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { getSupplierAccessOwnerUserId, userHasSupplierAccess } from '@/lib/supplierAccessServer';
 
 async function getAuthUser(req: NextRequest) {
     if (!supabaseAdmin) return null;
@@ -34,7 +35,7 @@ async function getAuthUser(req: NextRequest) {
 }
 
 /**
- * GET /api/chat/rooms?recipientId=xxx
+ * GET /api/chat/rooms?recipientId=xxx&fornecedor_id=yyy?
  * Returns all chat rooms between the authenticated user and the given recipient.
  * Each room has: roomId, title, lastMessage, lastMessageAt, unreadCount
  */
@@ -51,9 +52,17 @@ export async function GET(req: NextRequest) {
 
         const { searchParams } = new URL(req.url);
         const recipientId = String(searchParams.get('recipientId') || '').trim();
+        const fornecedorIdFilter = String(searchParams.get('fornecedor_id') || '').trim() || null;
 
         if (!recipientId) {
             return NextResponse.json({ error: 'recipientId é obrigatório' }, { status: 400 });
+        }
+
+        if (fornecedorIdFilter) {
+            const hasSupplierAccess = await userHasSupplierAccess(supabaseAdmin, user.id, fornecedorIdFilter);
+            if (!hasSupplierAccess) {
+                return NextResponse.json({ error: 'Acesso negado ao fornecedor informado' }, { status: 403 });
+            }
         }
 
         // Find all chat_ids where either user has sent messages
@@ -70,19 +79,13 @@ export async function GET(req: NextRequest) {
         const myRoomIds = new Set((myRooms || []).map(r => r.chat_id));
         const theirRoomIds = new Set((theirRooms || []).map(r => r.chat_id));
 
-        // Rooms where both users participated
-        const sharedRoomIds = [...myRoomIds].filter(id => theirRoomIds.has(id));
+        const candidateRoomIds = Array.from(new Set([...myRoomIds, ...theirRoomIds])).filter(Boolean);
+        const sharedRoomIds: string[] = [];
 
-        // Also check rooms where only one user sent messages but the room belongs to both
-        // For rooms where only I sent: check if the room links to the recipient
-        const onlyMyRooms = [...myRoomIds].filter(id => !theirRoomIds.has(id));
-        const onlyTheirRooms = [...theirRoomIds].filter(id => !myRoomIds.has(id));
-
-        // Resolve room membership for single-participant rooms
-        for (const roomId of [...onlyMyRooms, ...onlyTheirRooms]) {
-            const isShared = await checkRoomBelongsToBothUsers(roomId, user.id, recipientId);
+        for (const roomId of candidateRoomIds) {
+            const isShared = await checkRoomBelongsToBothUsers(roomId, user.id, recipientId, fornecedorIdFilter);
             if (isShared) {
-                sharedRoomIds.push(roomId);
+                sharedRoomIds.push(String(roomId));
             }
         }
 
@@ -136,12 +139,20 @@ export async function GET(req: NextRequest) {
     }
 }
 
-async function checkRoomBelongsToBothUsers(roomId: string, userA: string, userB: string): Promise<boolean> {
+async function checkRoomBelongsToBothUsers(
+    roomId: string,
+    userA: string,
+    userB: string,
+    fornecedorIdFilter?: string | null
+): Promise<boolean> {
     if (!supabaseAdmin) return false;
+    const requestedSupplierId = String(fornecedorIdFilter || '').trim() || null;
 
     if (roomId.includes('::')) {
         // Format: cotacao_id::fornecedor_id
         const [cotacaoId, fornecedorId] = roomId.split('::');
+        if (!cotacaoId || !fornecedorId) return false;
+        if (requestedSupplierId && fornecedorId !== requestedSupplierId) return false;
 
         // Check if cotação belongs to one user and fornecedor to the other
         const { data: cotacao } = await supabaseAdmin
@@ -151,39 +162,64 @@ async function checkRoomBelongsToBothUsers(roomId: string, userA: string, userB:
             .single();
 
         if (!cotacao) return false;
+        const supplierUserId = await getSupplierAccessOwnerUserId(supabaseAdmin, fornecedorId);
+        if (!supplierUserId) return false;
 
-        const { data: fornecedor } = await supabaseAdmin
-            .from('fornecedores')
-            .select('user_id')
-            .eq('id', fornecedorId)
-            .single();
-
-        if (!fornecedor) return false;
-
-        const participants = [cotacao.user_id, fornecedor.user_id];
-        return participants.includes(userA) && participants.includes(userB);
-    } else {
-        // Assume it's a pedido_id
-        const { data: pedido } = await supabaseAdmin
-            .from('pedidos')
-            .select('user_id, fornecedor_id')
-            .eq('id', roomId)
-            .single();
-
-        if (!pedido) return false;
-
-        // Get fornecedor's user_id
-        const { data: fornecedor } = await supabaseAdmin
-            .from('fornecedores')
-            .select('user_id')
-            .eq('id', pedido.fornecedor_id)
-            .single();
-
-        if (!fornecedor) return false;
-
-        const participants = [pedido.user_id, fornecedor.user_id];
+        const participants = [cotacao.user_id, supplierUserId];
         return participants.includes(userA) && participants.includes(userB);
     }
+
+    // Prefer pedido room resolution
+    const { data: pedido } = await supabaseAdmin
+        .from('pedidos')
+        .select('user_id, fornecedor_id')
+        .eq('id', roomId)
+        .maybeSingle();
+
+    if (pedido) {
+        if (requestedSupplierId && pedido.fornecedor_id !== requestedSupplierId) return false;
+
+        const supplierUserId = pedido.fornecedor_id
+            ? await getSupplierAccessOwnerUserId(supabaseAdmin, pedido.fornecedor_id)
+            : null;
+        if (!supplierUserId) return false;
+
+        const participants = [pedido.user_id, supplierUserId];
+        return participants.includes(userA) && participants.includes(userB);
+    }
+
+    // Fallback: legacy room using cotacao_id only
+    const { data: cotacao } = await supabaseAdmin
+        .from('cotacoes')
+        .select('user_id')
+        .eq('id', roomId)
+        .maybeSingle();
+
+    if (!cotacao) return false;
+
+    let propostasQuery = supabaseAdmin
+        .from('propostas')
+        .select('fornecedor_id')
+        .eq('cotacao_id', roomId);
+
+    if (requestedSupplierId) {
+        propostasQuery = propostasQuery.eq('fornecedor_id', requestedSupplierId);
+    }
+
+    const { data: propostas } = await propostasQuery;
+    if (!propostas || propostas.length === 0) return false;
+
+    const participants = new Set<string>([cotacao.user_id]);
+    for (const proposta of propostas) {
+        const fornecedorId = (proposta as any)?.fornecedor_id;
+        if (!fornecedorId) continue;
+        const ownerUserId = await getSupplierAccessOwnerUserId(supabaseAdmin, fornecedorId);
+        if (ownerUserId) {
+            participants.add(ownerUserId);
+        }
+    }
+
+    return participants.has(userA) && participants.has(userB);
 }
 
 async function resolveRoomTitle(roomId: string): Promise<string> {

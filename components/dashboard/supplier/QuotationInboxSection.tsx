@@ -11,7 +11,7 @@ import { useSupplierAccessContext } from "./SupplierAccessContext";
 
 export function SupplierQuotationInboxSection() {
     const { user, profile, session, initialized } = useAuth();
-    const { activeSupplierId, requiresSelection, hasMultipleSuppliers } = useSupplierAccessContext();
+    const { activeSupplierId, requiresSelection } = useSupplierAccessContext();
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -29,10 +29,6 @@ export function SupplierQuotationInboxSection() {
     const deepLinkHandledRef = useRef<string | null>(null);
 
     const openChat = (context: { recipientName: string; recipientId: string; roomId: string; roomTitle?: string }) => {
-        if (hasMultipleSuppliers) {
-            alert("Chat multiempresa será habilitado em uma próxima etapa.");
-            return;
-        }
         setOpenChats((prev) => {
             const existing = prev.find((chat) => chat.recipientId === context.recipientId);
             if (existing) {
@@ -580,14 +576,6 @@ export function SupplierQuotationInboxSection() {
 
     return (
         <div className="space-y-6">
-            {hasMultipleSuppliers && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                    <strong>Chat temporariamente indisponível para contas multiempresa.</strong>
-                    <div className="mt-1 text-amber-800">Chat multiempresa será habilitado em uma próxima etapa.</div>
-                </div>
-            )}
-
-
             {/* Filtros e estatísticas */}
             <div className="bg-white border border-gray-200 rounded-lg p-6">
                 {filters.regions.length > 0 && (
@@ -743,6 +731,7 @@ export function SupplierQuotationInboxSection() {
                     initialRoomId={chat.initialRoomId}
                     initialRoomTitle={chat.initialRoomTitle}
                     offsetIndex={index}
+                    fornecedorId={activeSupplierId || fornecedorId}
                 />
             ))}
         </div>

@@ -96,7 +96,7 @@ interface SaleOrder {
 
 export function SupplierSalesSection() {
     const { user, session, initialized } = useAuth();
-    const { activeSupplierId, requiresSelection, hasMultipleSuppliers } = useSupplierAccessContext();
+    const { activeSupplierId, requiresSelection } = useSupplierAccessContext();
     const [activeTab, setActiveTab] = useState<"all" | WorkflowStep>("all");
     const [selectedOrder, setSelectedOrder] = useState<SaleOrder | null>(null);
     const [openChats, setOpenChats] = useState<Array<{ recipientName: string; recipientId: string; initialRoomId: string; initialRoomTitle?: string }>>([]);
@@ -474,10 +474,6 @@ export function SupplierSalesSection() {
     };
 
     const openChatForOrder = (order: SaleOrder) => {
-        if (hasMultipleSuppliers) {
-            alert("Chat multiempresa será habilitado em uma próxima etapa.");
-            return;
-        }
         const recipientId = order.clientId;
         const recipientName = 'Cliente';
 
@@ -518,12 +514,6 @@ export function SupplierSalesSection() {
 
     return (
         <div className="space-y-6">
-            {hasMultipleSuppliers && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                    <strong>Chat temporariamente indisponível para contas multiempresa.</strong>
-                    <div className="mt-1 text-amber-800">Chat multiempresa será habilitado em uma próxima etapa.</div>
-                </div>
-            )}
             {/* Top - Filters */}
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 space-y-4">
                 <div className="flex items-center gap-4">
@@ -921,6 +911,7 @@ export function SupplierSalesSection() {
                     initialRoomId={chat.initialRoomId}
                     initialRoomTitle={chat.initialRoomTitle}
                     offsetIndex={index}
+                    fornecedorId={activeSupplierId}
                 />
             ))}
         </div>
