@@ -109,6 +109,7 @@ export default function ChangePasswordPage() {
             // Atualizar flag no Supabase
             await supabase.from('users').update({
                 must_change_password: false,
+                status: 'active',
                 password_changed_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             }).eq('id', user.id);

@@ -130,6 +130,29 @@ const CardShell = ({ title, subtitle, children }: { title: string; subtitle?: st
     </div>
 );
 
+function getUserStatusMeta(statusValue: unknown) {
+    const status = String(statusValue || 'active').toLowerCase();
+    if (status === 'active') {
+        return {
+            value: 'active',
+            label: 'Ativo',
+            className: 'bg-emerald-100 text-emerald-800',
+        };
+    }
+    if (status === 'pending') {
+        return {
+            value: 'pending',
+            label: 'Pendente',
+            className: 'bg-amber-100 text-amber-800',
+        };
+    }
+    return {
+        value: status || 'suspended',
+        label: 'Inativo',
+        className: 'bg-slate-100 text-slate-700',
+    };
+}
+
 export default function AdminDashboard() {
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<"overview" | "users" | "clientes" | "fornecedores" | "fabricantes" | "audit" | "reports" | "profile" | "gestao-obra">("gestao-obra");
@@ -303,7 +326,11 @@ export default function AdminDashboard() {
                 query = query.contains('roles', [roleFilter]);
             }
             if (statusFilter !== "all") {
-                query = query.eq('status', statusFilter === 'active' ? 'active' : 'suspended');
+                if (statusFilter === 'active') {
+                    query = query.eq('status', 'active');
+                } else {
+                    query = query.in('status', ['suspended', 'pending']);
+                }
             }
             if (searchTerm.trim()) {
                 query = query.or(`email.ilike.%${searchTerm}%,nome.ilike.%${searchTerm}%`);
@@ -1118,12 +1145,17 @@ export default function AdminDashboard() {
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-3 align-top">
-                                                    <button
-                                                        onClick={() => handleToggleStatus(user.id, user.status || 'active')}
-                                                        className={`rounded-full px-2 py-1 text-[11px] font-semibold ${(user.status || 'active') === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}
-                                                    >
-                                                        {(user.status || 'active') === 'active' ? 'Ativo' : 'Inativo'}
-                                                    </button>
+                                                    {(() => {
+                                                        const statusMeta = getUserStatusMeta(user.status);
+                                                        return (
+                                                            <button
+                                                                onClick={() => handleToggleStatus(user.id, user.status || 'active')}
+                                                                className={`rounded-full px-2 py-1 text-[11px] font-semibold ${statusMeta.className}`}
+                                                            >
+                                                                {statusMeta.label}
+                                                            </button>
+                                                        );
+                                                    })()}
                                                 </td>
                                                 <td className="px-4 py-3 align-top text-sm text-slate-600">
                                                     {(() => {
@@ -1187,12 +1219,17 @@ export default function AdminDashboard() {
                                                     })()}
                                                 </div>
                                             </div>
-                                            <button
-                                                onClick={() => handleToggleStatus(user.id, user.status || 'active')}
-                                                className={`rounded-full px-2 py-1 text-[10px] font-semibold ${(user.status || 'active') === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}
-                                            >
-                                                {(user.status || 'active') === 'active' ? 'Ativo' : 'Inativo'}
-                                            </button>
+                                            {(() => {
+                                                const statusMeta = getUserStatusMeta(user.status);
+                                                return (
+                                                    <button
+                                                        onClick={() => handleToggleStatus(user.id, user.status || 'active')}
+                                                        className={`rounded-full px-2 py-1 text-[10px] font-semibold ${statusMeta.className}`}
+                                                    >
+                                                        {statusMeta.label}
+                                                    </button>
+                                                );
+                                            })()}
                                         </div>
 
                                         <div className="flex items-center gap-2 mb-3">
@@ -1923,9 +1960,14 @@ export default function AdminDashboard() {
                                             ID: {String(userPendingDeletion.id || "").slice(0, 8)}...
                                         </p>
                                     </div>
-                                    <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold ${(userPendingDeletion.status || "active") === "active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"}`}>
-                                        {(userPendingDeletion.status || "active") === "active" ? "Ativo" : "Inativo"}
-                                    </span>
+                                    {(() => {
+                                        const statusMeta = getUserStatusMeta(userPendingDeletion.status);
+                                        return (
+                                            <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold ${statusMeta.className}`}>
+                                                {statusMeta.label}
+                                            </span>
+                                        );
+                                    })()}
                                 </div>
 
                                 <div className="mt-3 flex flex-wrap gap-2">

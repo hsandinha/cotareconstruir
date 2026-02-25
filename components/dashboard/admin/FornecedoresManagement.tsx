@@ -72,6 +72,7 @@ interface Fornecedor {
     userId?: string;
     fornecedorUserId?: string | null;
     hasUserAccount?: boolean;
+    linkedFornecedoresCount?: number;
     mustChangePassword?: boolean;
     lastLoginAt?: string | null;
     emailLoginExists?: boolean;
@@ -129,6 +130,7 @@ export default function FornecedoresManagement() {
     const [grupoSearchQuery, setGrupoSearchQuery] = useState('');
     const [saving, setSaving] = useState(false);
     const [createAccessOnSave, setCreateAccessOnSave] = useState(true);
+    const [isMultiEmpresaEmailModalOpen, setIsMultiEmpresaEmailModalOpen] = useState(false);
     const [loadingCnpj, setLoadingCnpj] = useState(false);
     const [loadingCep, setLoadingCep] = useState(false);
 
@@ -289,6 +291,13 @@ export default function FornecedoresManagement() {
             // Criar mapa de usuário por id para enriquecer vínculos N:N
             const userById = new Map<string, { userId: string; mustChangePassword: boolean; lastLoginAt: string | null }>();
             const userByEmail = new Map<string, { userId: string; isFornecedor: boolean; lastLoginAt: string | null }>();
+            const supplierIdsByUserId = new Map<string, Set<string>>();
+            const addLinkedSupplier = (userId?: string | null, fornecedorId?: string | null) => {
+                if (!userId || !fornecedorId) return;
+                const set = supplierIdsByUserId.get(userId) || new Set<string>();
+                set.add(fornecedorId);
+                supplierIdsByUserId.set(userId, set);
+            };
             (usersRaw || []).forEach((user: any) => {
                 if (user?.id) {
                     userById.set(user.id, {
@@ -306,6 +315,10 @@ export default function FornecedoresManagement() {
                         lastLoginAt: user.last_login_at || null,
                     });
                 }
+                addLinkedSupplier(user?.id, user?.fornecedor_id);
+            });
+            (fornecedoresRaw || []).forEach((f: any) => {
+                addLinkedSupplier(f?.user_id, f?.id);
             });
 
             // Criar mapa de fornecedorId -> dados de acesso (legado + N:N)
@@ -323,6 +336,7 @@ export default function FornecedoresManagement() {
                 const fornecedorId = link?.fornecedor_id;
                 const userId = link?.user_id;
                 if (!fornecedorId || !userId) return;
+                addLinkedSupplier(userId, fornecedorId);
                 if (fornecedorUserMap.has(fornecedorId)) return;
                 const userInfo = userById.get(userId);
                 if (userInfo) {
@@ -341,6 +355,11 @@ export default function FornecedoresManagement() {
                 ...f,
                 hasUserAccount: fornecedorUserMap.has(f.id),
                 userId: fornecedorUserMap.get(f.id)?.userId,
+                linkedFornecedoresCount: (() => {
+                    const linkedUserId = fornecedorUserMap.get(f.id)?.userId;
+                    if (!linkedUserId) return 0;
+                    return supplierIdsByUserId.get(linkedUserId)?.size || 1;
+                })(),
                 mustChangePassword: fornecedorUserMap.get(f.id)?.mustChangePassword,
                 lastLoginAt: fornecedorUserMap.get(f.id)?.lastLoginAt || null,
                 emailLoginExists: Boolean(userByEmail.get(normalizeEmail(f.email))),
@@ -372,7 +391,7 @@ export default function FornecedoresManagement() {
         return true;
     };
 
-    const submitFornecedor = async () => {
+    const submitFornecedor = async (options?: { emailUpdateScope?: 'single' | 'all_linked' }) => {
         if (!validateFornecedorForm()) return;
 
         try {
@@ -410,6 +429,7 @@ export default function FornecedoresManagement() {
                     headers,
                     body: JSON.stringify({
                         id: editingFornecedor.id,
+                        email_update_scope: options?.emailUpdateScope || 'single',
                         ...supabaseData
                     })
                 });
@@ -422,6 +442,11 @@ export default function FornecedoresManagement() {
                     showToast('success', 'Fornecedor atualizado. Novas credenciais enviadas para o novo email.');
                 } else if (payload.emailLoginSynced) {
                     showToast('success', 'Fornecedor atualizado e email de login sincronizado.');
+                } else if (payload.contactEmailUpdatedAcrossLinkedSuppliers) {
+                    const count = Number(payload.updatedLinkedSuppliersCount || 0);
+                    showToast('success', count > 1
+                        ? `Email de contato atualizado em ${count} empresas vinculadas.`
+                        : 'Email de contato atualizado com sucesso!');
                 } else {
                     showToast('success', 'Fornecedor atualizado com sucesso!');
                 }
@@ -491,7 +516,31 @@ export default function FornecedoresManagement() {
 
     const handleSave = async () => {
         if (!validateFornecedorForm()) return;
-        await submitFornecedor();
+        const emailChanged = Boolean(
+            editingFornecedor
+            && normalizeEmail(editingFornecedor.email) !== normalizeEmail(formData.email as string | undefined)
+        );
+        const hasMultiEmpresas = Boolean(
+            editingFornecedor?.hasUserAccount
+            && (editingFornecedor?.linkedFornecedoresCount || 0) > 1
+        );
+
+        if (editingFornecedor && emailChanged && hasMultiEmpresas) {
+            setIsMultiEmpresaEmailModalOpen(true);
+            return;
+        }
+
+        await submitFornecedor({ emailUpdateScope: 'single' });
+    };
+
+    const handleSaveEmailOnlyCurrentFornecedor = async () => {
+        setIsMultiEmpresaEmailModalOpen(false);
+        await submitFornecedor({ emailUpdateScope: 'single' });
+    };
+
+    const handleSaveEmailForAllLinkedFornecedores = async () => {
+        setIsMultiEmpresaEmailModalOpen(false);
+        await submitFornecedor({ emailUpdateScope: 'all_linked' });
     };
 
     const handleDelete = async (id: string) => {
@@ -543,11 +592,13 @@ export default function FornecedoresManagement() {
             });
             setCreateAccessOnSave(true);
         }
+        setIsMultiEmpresaEmailModalOpen(false);
         setIsModalOpen(true);
     };
 
     const closeModal = () => {
         setIsModalOpen(false);
+        setIsMultiEmpresaEmailModalOpen(false);
         setEditingFornecedor(null);
         setFormData({});
     };
@@ -1210,6 +1261,78 @@ export default function FornecedoresManagement() {
                             >
                                 {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                                 {editingFornecedor ? 'Salvar' : 'Criar Fornecedor'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal: Email em fornecedor com multiempresas */}
+            {isMultiEmpresaEmailModalOpen && editingFornecedor && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+                    <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
+                        <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-6">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-900">Atualizar email em múltiplas empresas</h3>
+                                <p className="mt-1 text-sm text-slate-600">{editingFornecedor.razaoSocial}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => !saving && setIsMultiEmpresaEmailModalOpen(false)}
+                                disabled={saving}
+                                className="rounded-full p-2 hover:bg-slate-100 disabled:opacity-50"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4 p-6">
+                            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+                                Este fornecedor está vinculado a um login com <strong>{editingFornecedor.linkedFornecedoresCount}</strong> empresas.
+                                Você alterou o <strong>email de contato</strong>.
+                            </div>
+
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                                Isso <strong>não altera o email de login</strong> (acesso ao sistema). Apenas o email de contato dos fornecedores vinculados.
+                            </div>
+
+                            <div className="grid gap-3 md:grid-cols-2">
+                                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Atual</p>
+                                    <p className="mt-1 break-all text-sm font-medium text-slate-900">{editingFornecedor.email || '—'}</p>
+                                </div>
+                                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Novo email de contato</p>
+                                    <p className="mt-1 break-all text-sm font-medium text-emerald-900">{String(formData.email || '').trim() || '—'}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 p-6">
+                            <button
+                                type="button"
+                                onClick={() => setIsMultiEmpresaEmailModalOpen(false)}
+                                disabled={saving}
+                                className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 disabled:opacity-50"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSaveEmailOnlyCurrentFornecedor}
+                                disabled={saving}
+                                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                            >
+                                Somente esta empresa
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSaveEmailForAllLinkedFornecedores}
+                                disabled={saving}
+                                className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
+                            >
+                                {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                Atualizar todas as vinculadas
                             </button>
                         </div>
                     </div>

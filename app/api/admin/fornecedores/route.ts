@@ -52,6 +52,65 @@ function convertFornecedorArrayishFieldsForRetry(payload: Record<string, any>) {
     return next;
 }
 
+async function listLinkedFornecedorIdsForSupplierUser(supabase: any, fornecedorId: string) {
+    let ownerUserId: string | null = null;
+
+    try {
+        const { data: accessRow, error } = await supabase
+            .from('user_fornecedor_access')
+            .select('user_id')
+            .eq('fornecedor_id', fornecedorId)
+            .maybeSingle();
+        if (!error && accessRow?.user_id) {
+            ownerUserId = accessRow.user_id;
+        }
+    } catch {
+        // Tabela pode não existir em ambientes legados
+    }
+
+    if (!ownerUserId) {
+        const { data: fornecedorRow } = await supabase
+            .from('fornecedores')
+            .select('user_id')
+            .eq('id', fornecedorId)
+            .maybeSingle();
+        ownerUserId = fornecedorRow?.user_id || null;
+    }
+
+    const ids = new Set<string>([fornecedorId]);
+
+    if (!ownerUserId) {
+        return { ownerUserId: null, linkedFornecedorIds: [...ids] };
+    }
+
+    try {
+        const { data: links, error } = await supabase
+            .from('user_fornecedor_access')
+            .select('fornecedor_id')
+            .eq('user_id', ownerUserId);
+        if (!error) {
+            (links || []).forEach((row: any) => {
+                if (row?.fornecedor_id) ids.add(row.fornecedor_id);
+            });
+        }
+    } catch {
+        // ignore
+    }
+
+    // Fallback legado para ambientes sem vínculos N:N completos
+    if (ids.size <= 1) {
+        const { data: legacyRows } = await supabase
+            .from('fornecedores')
+            .select('id')
+            .eq('user_id', ownerUserId);
+        (legacyRows || []).forEach((row: any) => {
+            if (row?.id) ids.add(row.id);
+        });
+    }
+
+    return { ownerUserId, linkedFornecedorIds: [...ids] };
+}
+
 // Verificar se é admin
 async function verifyAdmin(request: NextRequest) {
     const authHeader = request.headers.get('authorization');
@@ -224,6 +283,7 @@ export async function PUT(request: NextRequest) {
         const body = await request.json();
         const {
             id,
+            email_update_scope,
             ...updateData
         } = body as Record<string, any>;
 
@@ -232,6 +292,10 @@ export async function PUT(request: NextRequest) {
         }
 
         const sanitizedUpdateData = sanitizeFornecedorPayload(updateData);
+        const emailUpdateScope = email_update_scope === 'all_linked' ? 'all_linked' : 'single';
+        const requestedContactEmail = typeof sanitizedUpdateData.email === 'string'
+            ? sanitizedUpdateData.email.trim()
+            : null;
 
         let { data, error } = await supabase
             .from('fornecedores')
@@ -260,11 +324,45 @@ export async function PUT(request: NextRequest) {
 
         if (error) throw error;
 
+        let warning: string | null = null;
+        let contactEmailUpdatedAcrossLinkedSuppliers = false;
+        let updatedLinkedSuppliersCount = 1;
+
+        if (emailUpdateScope === 'all_linked' && requestedContactEmail) {
+            try {
+                const { linkedFornecedorIds } = await listLinkedFornecedorIdsForSupplierUser(supabase, id);
+                const otherFornecedorIds = linkedFornecedorIds.filter((linkedId) => linkedId !== id);
+
+                if (otherFornecedorIds.length > 0) {
+                    const { error: bulkEmailError } = await supabase
+                        .from('fornecedores')
+                        .update({
+                            email: requestedContactEmail,
+                            updated_at: new Date().toISOString()
+                        })
+                        .in('id', otherFornecedorIds);
+
+                    if (bulkEmailError) {
+                        warning = 'Fornecedor atualizado, mas falhou ao propagar o email de contato para outras empresas vinculadas.';
+                    } else {
+                        contactEmailUpdatedAcrossLinkedSuppliers = true;
+                        updatedLinkedSuppliersCount = otherFornecedorIds.length + 1;
+                    }
+                }
+            } catch (bulkError) {
+                console.error('Erro ao propagar email de contato para fornecedores vinculados:', bulkError);
+                warning = 'Fornecedor atualizado, mas ocorreu erro ao propagar o email de contato para empresas vinculadas.';
+            }
+        }
+
         return NextResponse.json({
             fornecedor: data,
             emailLoginSynced: false,
             accessCredentialsResent: false,
-            warning: null,
+            warning,
+            contactEmailUpdatedAcrossLinkedSuppliers,
+            updatedLinkedSuppliersCount,
+            contactEmailUpdateScopeApplied: emailUpdateScope,
         });
     } catch (error: any) {
         console.error('Erro ao atualizar fornecedor:', error);

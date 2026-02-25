@@ -102,6 +102,10 @@ export async function GET(request: NextRequest) {
         const availableSuppliers: any[] = [];
         for (const fornecedor of availableSuppliersRaw) {
             const ownerUserId = await getSupplierAccessOwnerUserId(supabase, fornecedor.id);
+            if (ownerUserId && ownerUserId !== userId) {
+                // Não exibir empresas já vinculadas a outro usuário nesta tela
+                continue;
+            }
             availableSuppliers.push({
                 ...fornecedor,
                 ownerUserId,
@@ -235,4 +239,3 @@ export async function PUT(request: NextRequest) {
         return NextResponse.json({ error: error.message || 'Erro interno' }, { status: 500 });
     }
 }
-

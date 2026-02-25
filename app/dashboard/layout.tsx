@@ -103,6 +103,7 @@ export default function DashboardLayout({
                     .from('users')
                     .update({
                         must_change_password: false,
+                        status: 'active',
                         password_changed_at: new Date().toISOString(),
                         updated_at: new Date().toISOString(),
                     } as any)
