@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseAuth';
-import { Search, Edit2, Trash2, X, Save, Package, CreditCard, Tags, UserPlus, UserCheck, RefreshCw, Mail, Plus, Eye, MapPin, Phone, Building2, FileText, Calendar, Globe, Hash } from 'lucide-react';
+import { Search, Edit2, Trash2, X, Save, Package, CreditCard, Tags, UserPlus, UserCheck, RefreshCw, Mail, Plus, Eye, MapPin, Phone, Building2, FileText, Globe } from 'lucide-react';
 import { useToast } from '@/components/ToastProvider';
 
 // Helper para obter headers com token (com fallback para localStorage)
@@ -52,6 +52,16 @@ function formatWhatsApp(value: string): string {
     return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
 }
 
+function formatRegioesAtendimento(value: unknown): string {
+    if (Array.isArray(value)) return value.join(', ');
+    if (value === null || value === undefined) return '';
+    return String(value);
+}
+
+function normalizeEmail(value?: string | null): string {
+    return (value || '').trim().toLowerCase();
+}
+
 interface GrupoInsumo {
     id: string;
     nome: string;
@@ -60,11 +70,13 @@ interface GrupoInsumo {
 interface Fornecedor {
     id: string;
     userId?: string;
+    fornecedorUserId?: string | null;
     hasUserAccount?: boolean;
     mustChangePassword?: boolean;
     lastLoginAt?: string | null;
     codigo: string;
     razaoSocial: string;
+    nomeFantasia: string;
     codigoGrupo: string;
     grupoInsumos: string;
     grupoInsumoIds?: string[];
@@ -76,10 +88,17 @@ interface Fornecedor {
     inscricaoEstadual: string;
     endereco: string;
     numero: string;
+    complemento: string;
     bairro: string;
     cidade: string;
     estado: string;
     cep: string;
+    regioesAtendimento: string;
+    prazoEntregaPadrao: number;
+    isVerified: boolean;
+    status: string;
+    rating: number;
+    reviewCount: number;
     cartaoCredito: boolean;
     ativo: boolean;
     createdAt?: any;
@@ -103,9 +122,10 @@ export default function FornecedoresManagement() {
     const [creatingAccount, setCreatingAccount] = useState(false);
     const { showToast } = useToast();
     const [formData, setFormData] = useState<Partial<Fornecedor>>({});
-    const [selectedGrupoToAdd, setSelectedGrupoToAdd] = useState<string>('');
+    const [grupoSearchQuery, setGrupoSearchQuery] = useState('');
     const [saving, setSaving] = useState(false);
     const [createAccessOnSave, setCreateAccessOnSave] = useState(true);
+    const [isEmailChangeConfirmModalOpen, setIsEmailChangeConfirmModalOpen] = useState(false);
     const [loadingCnpj, setLoadingCnpj] = useState(false);
     const [loadingCep, setLoadingCep] = useState(false);
 
@@ -123,8 +143,10 @@ export default function FornecedoresManagement() {
             setFormData(prev => ({
                 ...prev,
                 razaoSocial: data.razao_social || prev.razaoSocial,
+                nomeFantasia: data.nome_fantasia || prev.nomeFantasia,
                 endereco: data.logradouro || '',
                 numero: data.numero || '',
+                complemento: data.complemento || prev.complemento || '',
                 bairro: data.bairro || '',
                 cidade: data.municipio || '',
                 estado: data.uf || '',
@@ -174,9 +196,12 @@ export default function FornecedoresManagement() {
         if (searchQuery) {
             const filtered = fornecedores.filter(f =>
                 f.razaoSocial.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                f.nomeFantasia.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 f.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                f.contato.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 f.cidade.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 f.grupoInsumos.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                f.codigo.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 (f.cnpj && f.cnpj.includes(searchQuery))
             );
             setFilteredFornecedores(filtered);
@@ -214,8 +239,10 @@ export default function FornecedoresManagement() {
 
                 return {
                     id: f.id,
+                    fornecedorUserId: f.user_id || null,
                     codigo: f.codigo || '',
                     razaoSocial: f.razao_social || '',
+                    nomeFantasia: f.nome_fantasia || '',
                     codigoGrupo: f.codigo_grupo || '',
                     grupoInsumos: f.grupo_insumos || '',
                     grupoInsumoIds: grupoIds,
@@ -227,10 +254,17 @@ export default function FornecedoresManagement() {
                     inscricaoEstadual: f.inscricao_estadual || '',
                     endereco: f.logradouro || '',
                     numero: f.numero || '',
+                    complemento: f.complemento || '',
                     bairro: f.bairro || '',
                     cidade: f.cidade || '',
                     estado: f.estado || '',
                     cep: f.cep || '',
+                    regioesAtendimento: formatRegioesAtendimento(f.regioes_atendimento),
+                    prazoEntregaPadrao: Number.isFinite(Number(f.prazo_entrega_padrao)) ? Number(f.prazo_entrega_padrao) : 7,
+                    isVerified: Boolean(f.is_verified),
+                    status: f.status || 'pending',
+                    rating: Number.isFinite(Number(f.rating)) ? Number(f.rating) : 0,
+                    reviewCount: Number.isFinite(Number(f.review_count)) ? Number(f.review_count) : 0,
                     cartaoCredito: f.cartao_credito || false,
                     ativo: f.ativo ?? true,
                     createdAt: f.created_at,
@@ -274,23 +308,31 @@ export default function FornecedoresManagement() {
         }
     };
 
-    const handleSave = async () => {
+    const validateFornecedorForm = (): boolean => {
         if (!formData.razaoSocial) {
             showToast('error', 'Razão Social é obrigatória');
-            return;
+            return false;
         }
         if (!formData.email) {
             showToast('error', 'Email é obrigatório');
-            return;
+            return false;
         }
+
+        return true;
+    };
+
+    const submitFornecedor = async (options?: { resendAccessOnEmailChangeOverride?: boolean }) => {
+        if (!validateFornecedorForm()) return;
 
         try {
             setSaving(true);
             const headers = await getAuthHeaders();
+            const prazoEntregaPadrao = Number(formData.prazoEntregaPadrao ?? 7);
 
             // Preparar dados para o Supabase (snake_case)
             const supabaseData = {
                 razao_social: formData.razaoSocial,
+                nome_fantasia: formData.nomeFantasia || '',
                 cnpj: formData.cnpj || '',
                 email: formData.email,
                 telefone: formData.fone || '',
@@ -299,9 +341,12 @@ export default function FornecedoresManagement() {
                 cep: formData.cep || '',
                 logradouro: formData.endereco || '',
                 numero: formData.numero || '',
+                complemento: formData.complemento || '',
                 bairro: formData.bairro || '',
                 cidade: formData.cidade || '',
                 estado: formData.estado || '',
+                regioes_atendimento: formData.regioesAtendimento || '',
+                prazo_entrega_padrao: Number.isFinite(prazoEntregaPadrao) ? prazoEntregaPadrao : 7,
                 inscricao_estadual: formData.inscricaoEstadual || '',
                 cartao_credito: formData.cartaoCredito || false,
                 ativo: formData.ativo ?? true,
@@ -312,13 +357,28 @@ export default function FornecedoresManagement() {
                 const res = await fetch('/api/admin/fornecedores', {
                     method: 'PUT',
                     headers,
-                    body: JSON.stringify({ id: editingFornecedor.id, ...supabaseData })
+                    body: JSON.stringify({
+                        id: editingFornecedor.id,
+                        resend_access_on_email_change: options?.resendAccessOnEmailChangeOverride ?? false,
+                        ...supabaseData
+                    })
                 });
+                const payload = await res.json();
                 if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.error || 'Erro ao atualizar');
+                    throw new Error(payload.error || 'Erro ao atualizar');
                 }
-                showToast('success', 'Fornecedor atualizado com sucesso!');
+
+                if (payload.accessCredentialsResent) {
+                    showToast('success', 'Fornecedor atualizado. Novas credenciais enviadas para o novo email.');
+                } else if (payload.emailLoginSynced) {
+                    showToast('success', 'Fornecedor atualizado e email de login sincronizado.');
+                } else {
+                    showToast('success', 'Fornecedor atualizado com sucesso!');
+                }
+
+                if (payload.warning) {
+                    showToast('warning', payload.warning);
+                }
             } else {
                 // Criando novo fornecedor via API
                 const res = await fetch('/api/admin/fornecedores', {
@@ -368,10 +428,32 @@ export default function FornecedoresManagement() {
             closeModal();
         } catch (error) {
             console.error('Erro ao salvar fornecedor:', error);
-            showToast('error', 'Erro ao salvar fornecedor');
+            showToast('error', error instanceof Error ? error.message : 'Erro ao salvar fornecedor');
         } finally {
             setSaving(false);
         }
+    };
+
+    const handleSave = async () => {
+        if (!validateFornecedorForm()) return;
+
+        const emailChangedWithExistingAccess = Boolean(
+            editingFornecedor &&
+            editingFornecedor.hasUserAccount &&
+            normalizeEmail(formData.email) !== normalizeEmail(editingFornecedor.email)
+        );
+
+        if (emailChangedWithExistingAccess) {
+            setIsEmailChangeConfirmModalOpen(true);
+            return;
+        }
+
+        await submitFornecedor({ resendAccessOnEmailChangeOverride: false });
+    };
+
+    const handleConfirmEmailChangeAndSave = async () => {
+        setIsEmailChangeConfirmModalOpen(false);
+        await submitFornecedor({ resendAccessOnEmailChangeOverride: true });
     };
 
     const handleDelete = async (id: string) => {
@@ -402,26 +484,34 @@ export default function FornecedoresManagement() {
             setEditingFornecedor(null);
             setFormData({
                 razaoSocial: '',
+                nomeFantasia: '',
                 cnpj: '',
                 contato: '',
+                inscricaoEstadual: '',
                 email: '',
                 fone: '',
                 whatsapp: '',
                 endereco: '',
+                numero: '',
+                complemento: '',
                 bairro: '',
                 cidade: '',
                 estado: '',
                 cep: '',
+                regioesAtendimento: '',
+                prazoEntregaPadrao: 7,
                 ativo: true,
                 cartaoCredito: false,
             });
             setCreateAccessOnSave(true);
         }
+        setIsEmailChangeConfirmModalOpen(false);
         setIsModalOpen(true);
     };
 
     const closeModal = () => {
         setIsModalOpen(false);
+        setIsEmailChangeConfirmModalOpen(false);
         setEditingFornecedor(null);
         setFormData({});
     };
@@ -429,17 +519,35 @@ export default function FornecedoresManagement() {
     const openGruposModal = (fornecedor: Fornecedor) => {
         setSelectedFornecedorGrupos(fornecedor);
         setIsGruposModalOpen(true);
-        setSelectedGrupoToAdd('');
+        setGrupoSearchQuery('');
     };
 
     const closeGruposModal = () => {
         setIsGruposModalOpen(false);
         setSelectedFornecedorGrupos(null);
-        setSelectedGrupoToAdd('');
+        setGrupoSearchQuery('');
     };
 
-    const handleAddGrupoToFornecedor = async () => {
-        if (!selectedFornecedorGrupos || !selectedGrupoToAdd) return;
+    const syncFornecedorGrupoIdsLocal = (fornecedorId: string, nextGrupoIds: string[]) => {
+        setSelectedFornecedorGrupos(prev =>
+            prev && prev.id === fornecedorId
+                ? { ...prev, grupoInsumoIds: nextGrupoIds }
+                : prev
+        );
+
+        const applyUpdate = (list: Fornecedor[]) => list.map(f =>
+            f.id === fornecedorId
+                ? { ...f, grupoInsumoIds: nextGrupoIds }
+                : f
+        );
+
+        setFornecedores(prev => applyUpdate(prev));
+        setFilteredFornecedores(prev => applyUpdate(prev));
+    };
+
+    const handleAddGrupoToFornecedor = async (grupoId: string) => {
+        if (!selectedFornecedorGrupos || !grupoId) return;
+        if (selectedFornecedorGrupos.grupoInsumoIds?.includes(grupoId)) return;
 
         try {
             setSaving(true);
@@ -451,7 +559,7 @@ export default function FornecedoresManagement() {
                 body: JSON.stringify({
                     action: 'addGrupo',
                     fornecedor_id: selectedFornecedorGrupos.id,
-                    grupo_id: selectedGrupoToAdd
+                    grupo_id: grupoId
                 })
             });
             if (!res.ok) {
@@ -459,19 +567,11 @@ export default function FornecedoresManagement() {
                 throw new Error(err.error || 'Erro ao adicionar grupo');
             }
 
-            await loadFornecedores();
-
-            // Atualizar o fornecedor selecionado após recarregar
-            setTimeout(() => {
-                const updated = fornecedores.find(f => f.id === selectedFornecedorGrupos.id);
-                if (updated) {
-                    setSelectedFornecedorGrupos(updated);
-                }
-            }, 100);
-            setSelectedGrupoToAdd('');
+            const nextGrupoIds = [...(selectedFornecedorGrupos.grupoInsumoIds || []), grupoId];
+            syncFornecedorGrupoIdsLocal(selectedFornecedorGrupos.id, Array.from(new Set(nextGrupoIds)));
         } catch (error) {
             console.error('Erro ao adicionar grupo:', error);
-            showToast('error', 'Erro ao adicionar grupo');
+            showToast('error', error instanceof Error ? error.message : 'Erro ao adicionar grupo');
         } finally {
             setSaving(false);
         }
@@ -498,18 +598,11 @@ export default function FornecedoresManagement() {
                 throw new Error(err.error || 'Erro ao remover grupo');
             }
 
-            await loadFornecedores();
-
-            // Atualizar o fornecedor selecionado após recarregar
-            setTimeout(() => {
-                const updated = fornecedores.find(f => f.id === selectedFornecedorGrupos.id);
-                if (updated) {
-                    setSelectedFornecedorGrupos(updated);
-                }
-            }, 100);
+            const nextGrupoIds = (selectedFornecedorGrupos.grupoInsumoIds || []).filter(id => id !== grupoId);
+            syncFornecedorGrupoIdsLocal(selectedFornecedorGrupos.id, nextGrupoIds);
         } catch (error) {
             console.error('Erro ao remover grupo:', error);
-            showToast('error', 'Erro ao remover grupo');
+            showToast('error', error instanceof Error ? error.message : 'Erro ao remover grupo');
         } finally {
             setSaving(false);
         }
@@ -597,6 +690,21 @@ export default function FornecedoresManagement() {
             return new Date(dateStr).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
         } catch { return '—'; }
     };
+
+    const selectedGrupoIds = new Set(selectedFornecedorGrupos?.grupoInsumoIds || []);
+    const normalizedGrupoSearch = grupoSearchQuery.trim().toLowerCase();
+    const allAvailableGrupos = grupos
+        .filter(g => !selectedGrupoIds.has(g.id))
+        .sort((a, b) => a.nome.localeCompare(b.nome));
+    const allSelectedGrupos = grupos
+        .filter(g => selectedGrupoIds.has(g.id))
+        .sort((a, b) => a.nome.localeCompare(b.nome));
+    const filteredAvailableGrupos = allAvailableGrupos.filter(g =>
+        !normalizedGrupoSearch || g.nome.toLowerCase().includes(normalizedGrupoSearch)
+    );
+    const filteredSelectedGrupos = allSelectedGrupos.filter(g =>
+        !normalizedGrupoSearch || g.nome.toLowerCase().includes(normalizedGrupoSearch)
+    );
 
     if (loading) {
         return <div className="flex items-center justify-center py-12">Carregando fornecedores...</div>;
@@ -783,144 +891,221 @@ export default function FornecedoresManagement() {
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="col-span-2">
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Razão Social *</label>
-                                    <input
-                                        type="text"
-                                        value={formData.razaoSocial || ''}
-                                        onChange={(e) => setFormData({ ...formData, razaoSocial: e.target.value })}
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
+                        <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                                    <Building2 className="w-4 h-4 text-purple-600" />
+                                    Cadastro e identificação
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">CNPJ</label>
-                                    <div className="flex gap-2">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="md:col-span-2">
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Razão Social *</label>
                                         <input
                                             type="text"
-                                            value={formData.cnpj || ''}
-                                            onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
-                                            className="flex-1 px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                            placeholder="00.000.000/0000-00"
+                                            value={formData.razaoSocial || ''}
+                                            onChange={(e) => setFormData({ ...formData, razaoSocial: e.target.value })}
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                                         />
-                                        <button
-                                            type="button"
-                                            onClick={() => formData.cnpj && handleCnpjLookup(formData.cnpj)}
-                                            disabled={loadingCnpj || !formData.cnpj}
-                                            className="px-3 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 disabled:opacity-50 transition-colors"
-                                        >
-                                            {loadingCnpj ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                                        </button>
                                     </div>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Inscrição Estadual</label>
-                                    <input
-                                        type="text"
-                                        value={formData.inscricaoEstadual || ''}
-                                        onChange={(e) => setFormData({ ...formData, inscricaoEstadual: e.target.value })}
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Email *</label>
-                                    <input
-                                        type="email"
-                                        value={formData.email || ''}
-                                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Telefone Fixo</label>
-                                    <input
-                                        type="text"
-                                        value={formData.fone || ''}
-                                        onChange={(e) => setFormData({ ...formData, fone: formatTelefoneFixo(e.target.value) })}
-                                        inputMode="numeric"
-                                        placeholder="(00) 0000-0000"
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">WhatsApp</label>
-                                    <input
-                                        type="text"
-                                        value={formData.whatsapp || ''}
-                                        onChange={(e) => setFormData({ ...formData, whatsapp: formatWhatsApp(e.target.value) })}
-                                        inputMode="numeric"
-                                        placeholder="(00) 00000-0000"
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">CEP</label>
-                                    <div className="flex gap-2">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Nome Fantasia</label>
                                         <input
                                             type="text"
-                                            value={formData.cep || ''}
-                                            onChange={(e) => setFormData({ ...formData, cep: e.target.value })}
-                                            className="flex-1 px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                            placeholder="00000-000"
+                                            value={formData.nomeFantasia || ''}
+                                            onChange={(e) => setFormData({ ...formData, nomeFantasia: e.target.value })}
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                                         />
-                                        <button
-                                            type="button"
-                                            onClick={() => formData.cep && handleCepLookup(formData.cep)}
-                                            disabled={loadingCep || !formData.cep}
-                                            className="px-3 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 disabled:opacity-50 transition-colors"
-                                        >
-                                            {loadingCep ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                                        </button>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Contato</label>
+                                        <input
+                                            type="text"
+                                            value={formData.contato || ''}
+                                            onChange={(e) => setFormData({ ...formData, contato: e.target.value })}
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">CNPJ</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={formData.cnpj || ''}
+                                                onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
+                                                className="flex-1 px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                                placeholder="00.000.000/0000-00"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => formData.cnpj && handleCnpjLookup(formData.cnpj)}
+                                                disabled={loadingCnpj || !formData.cnpj}
+                                                className="px-3 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 disabled:opacity-50 transition-colors"
+                                            >
+                                                {loadingCnpj ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Inscrição Estadual</label>
+                                        <input
+                                            type="text"
+                                            value={formData.inscricaoEstadual || ''}
+                                            onChange={(e) => setFormData({ ...formData, inscricaoEstadual: e.target.value })}
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Email *</label>
+                                        <input
+                                            type="email"
+                                            value={formData.email || ''}
+                                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
                                     </div>
                                 </div>
-                                <div className="col-span-2">
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Endereço</label>
-                                    <input
-                                        type="text"
-                                        value={formData.endereco || ''}
-                                        onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                                    <Phone className="w-4 h-4 text-purple-600" />
+                                    Contato e operação
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Número</label>
-                                    <input
-                                        type="text"
-                                        value={formData.numero || ''}
-                                        onChange={(e) => setFormData({ ...formData, numero: e.target.value })}
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Telefone Fixo</label>
+                                        <input
+                                            type="text"
+                                            value={formData.fone || ''}
+                                            onChange={(e) => setFormData({ ...formData, fone: formatTelefoneFixo(e.target.value) })}
+                                            inputMode="numeric"
+                                            placeholder="(00) 0000-0000"
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">WhatsApp</label>
+                                        <input
+                                            type="text"
+                                            value={formData.whatsapp || ''}
+                                            onChange={(e) => setFormData({ ...formData, whatsapp: formatWhatsApp(e.target.value) })}
+                                            inputMode="numeric"
+                                            placeholder="(00) 00000-0000"
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Prazo Entrega Padrão (dias)</label>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            value={formData.prazoEntregaPadrao ?? 7}
+                                            onChange={(e) => setFormData({ ...formData, prazoEntregaPadrao: Number(e.target.value || 0) })}
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+                                    <div className="md:col-span-2">
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Regiões de Atendimento</label>
+                                        <textarea
+                                            value={formData.regioesAtendimento || ''}
+                                            onChange={(e) => setFormData({ ...formData, regioesAtendimento: e.target.value })}
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none min-h-[80px]"
+                                            placeholder="Ex.: São Paulo, Campinas, ABC Paulista"
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Bairro</label>
-                                    <input
-                                        type="text"
-                                        value={formData.bairro || ''}
-                                        onChange={(e) => setFormData({ ...formData, bairro: e.target.value })}
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                                    <MapPin className="w-4 h-4 text-purple-600" />
+                                    Endereço
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Cidade</label>
-                                    <input
-                                        type="text"
-                                        value={formData.cidade || ''}
-                                        onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">CEP</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={formData.cep || ''}
+                                                onChange={(e) => setFormData({ ...formData, cep: e.target.value })}
+                                                className="flex-1 px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                                placeholder="00000-000"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => formData.cep && handleCepLookup(formData.cep)}
+                                                disabled={loadingCep || !formData.cep}
+                                                className="px-3 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 disabled:opacity-50 transition-colors"
+                                            >
+                                                {loadingCep ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="md:col-span-2">
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Logradouro</label>
+                                        <input
+                                            type="text"
+                                            value={formData.endereco || ''}
+                                            onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Número</label>
+                                        <input
+                                            type="text"
+                                            value={formData.numero || ''}
+                                            onChange={(e) => setFormData({ ...formData, numero: e.target.value })}
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Complemento</label>
+                                        <input
+                                            type="text"
+                                            value={formData.complemento || ''}
+                                            onChange={(e) => setFormData({ ...formData, complemento: e.target.value })}
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Bairro</label>
+                                        <input
+                                            type="text"
+                                            value={formData.bairro || ''}
+                                            onChange={(e) => setFormData({ ...formData, bairro: e.target.value })}
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Cidade</label>
+                                        <input
+                                            type="text"
+                                            value={formData.cidade || ''}
+                                            onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Estado</label>
+                                        <input
+                                            type="text"
+                                            value={formData.estado || ''}
+                                            onChange={(e) => setFormData({ ...formData, estado: e.target.value.toUpperCase() })}
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                            maxLength={2}
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Estado</label>
-                                    <input
-                                        type="text"
-                                        value={formData.estado || ''}
-                                        onChange={(e) => setFormData({ ...formData, estado: e.target.value })}
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                        maxLength={2}
-                                    />
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                                    <Globe className="w-4 h-4 text-purple-600" />
+                                    Opções
                                 </div>
-                                <div className="col-span-2 flex flex-wrap items-center gap-6">
+                                <div className="flex flex-wrap items-center gap-6">
                                     {!editingFornecedor && (
                                         <div className="flex items-center gap-2">
                                             <input
@@ -950,7 +1135,7 @@ export default function FornecedoresManagement() {
                                             onChange={(e) => setFormData({ ...formData, ativo: e.target.checked })}
                                             className="rounded text-blue-600"
                                         />
-                                        <label className="text-sm font-medium text-slate-700">Fornecedor Ativo</label>
+                                        <label className="text-sm font-medium text-slate-700">Fornecedor Ativo (`ativo`)</label>
                                     </div>
                                 </div>
                             </div>
@@ -976,84 +1161,204 @@ export default function FornecedoresManagement() {
                 </div>
             )}
 
-            {/* Modal de Grupos */}
-            {isGruposModalOpen && selectedFornecedorGrupos && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            {/* Modal Confirmação: Alteração de Email de Acesso */}
+            {isEmailChangeConfirmModalOpen && editingFornecedor && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+                    <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full">
                         <div className="flex items-center justify-between p-6 border-b border-slate-200">
                             <div>
-                                <h3 className="text-xl font-bold text-slate-900">Grupos de Insumos</h3>
-                                <p className="text-sm text-slate-600">{selectedFornecedorGrupos.razaoSocial}</p>
+                                <h3 className="text-lg font-bold text-slate-900">Alteração de email de acesso</h3>
+                                <p className="text-sm text-slate-600">{editingFornecedor.razaoSocial}</p>
                             </div>
-                            <button onClick={closeGruposModal} className="p-2 hover:bg-slate-100 rounded-full">
+                            <button
+                                onClick={() => setIsEmailChangeConfirmModalOpen(false)}
+                                disabled={saving}
+                                className="p-2 hover:bg-slate-100 rounded-full disabled:opacity-50"
+                            >
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
 
                         <div className="p-6 space-y-4">
-                            {/* Lista de grupos associados */}
-                            <div>
-                                <h4 className="font-semibold text-slate-800 mb-3">Grupos Associados ({selectedFornecedorGrupos.grupoInsumoIds?.length || 0})</h4>
-                                {selectedFornecedorGrupos.grupoInsumoIds && selectedFornecedorGrupos.grupoInsumoIds.length > 0 ? (
-                                    <div className="space-y-2 mb-4">
-                                        {selectedFornecedorGrupos.grupoInsumoIds.map((grupoId) => {
-                                            const grupo = grupos.find(g => g.id === grupoId);
-                                            return grupo ? (
-                                                <div key={grupoId} className="flex items-center justify-between bg-slate-50 p-3 rounded-lg">
-                                                    <div className="flex items-center gap-2">
-                                                        <Tags className="w-4 h-4 text-purple-600" />
-                                                        <span className="text-sm font-medium text-slate-900">{grupo.nome}</span>
-                                                    </div>
-                                                    <button
-                                                        onClick={() => handleRemoveGrupoFromFornecedor(grupoId)}
-                                                        disabled={saving}
-                                                        className="px-3 py-1 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
-                                                    >
-                                                        Remover
-                                                    </button>
-                                                </div>
-                                            ) : null;
-                                        })}
-                                    </div>
-                                ) : (
-                                    <p className="text-slate-500 text-sm mb-4">Nenhum grupo associado</p>
-                                )}
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                                <p className="text-sm text-amber-900">
+                                    Como você alterou o email de um fornecedor que já possui acesso ao sistema, a senha será resetada para o padrão (123456) e os novos dados de acesso serão enviados para o novo email informado.
+                                </p>
                             </div>
-
-                            {/* Adicionar novo grupo */}
-                            <div className="border-t border-slate-200 pt-4">
-                                <h4 className="font-semibold text-slate-800 mb-3">Adicionar Grupo</h4>
-                                <div className="flex gap-2">
-                                    <select
-                                        value={selectedGrupoToAdd}
-                                        onChange={(e) => setSelectedGrupoToAdd(e.target.value)}
-                                        className="flex-1 px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none"
-                                    >
-                                        <option value="">Selecione um grupo</option>
-                                        {grupos
-                                            .filter(g => !selectedFornecedorGrupos.grupoInsumoIds?.includes(g.id))
-                                            .sort((a, b) => a.nome.localeCompare(b.nome))
-                                            .map(grupo => (
-                                                <option key={grupo.id} value={grupo.id}>
-                                                    {grupo.nome}
-                                                </option>
-                                            ))}
-                                    </select>
-                                    <button
-                                        onClick={handleAddGrupoToFornecedor}
-                                        disabled={!selectedGrupoToAdd || saving}
-                                        className="px-6 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 disabled:opacity-50 transition-colors"
-                                    >
-                                        Adicionar
-                                    </button>
-                                </div>
+                            <p className="text-sm text-slate-700">
+                                O fornecedor será solicitado a trocar a senha no próximo acesso.
+                            </p>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
+                                <div className="text-slate-500">Novo email</div>
+                                <div className="font-medium text-slate-900 break-all">{(formData.email || '').trim()}</div>
                             </div>
                         </div>
 
                         <div className="flex items-center justify-end gap-3 p-6 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
                             <button
+                                onClick={() => setIsEmailChangeConfirmModalOpen(false)}
+                                disabled={saving}
+                                className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-xl transition-colors disabled:opacity-50"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleConfirmEmailChangeAndSave}
+                                disabled={saving}
+                                className="flex items-center gap-2 px-5 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50"
+                            >
+                                {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                Continuar e salvar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Grupos */}
+            {isGruposModalOpen && selectedFornecedorGrupos && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+                    <div className="bg-white rounded-2xl shadow-xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                        <div className="flex items-start justify-between gap-4 p-6 border-b border-slate-200 bg-gradient-to-r from-violet-50 to-slate-50">
+                            <div className="flex items-start gap-3 min-w-0">
+                                <div className="w-11 h-11 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center shrink-0">
+                                    <Package className="w-5 h-5" />
+                                </div>
+                                <div className="min-w-0">
+                                    <h3 className="text-xl font-bold text-slate-900">Grupos de Insumos</h3>
+                                    <p className="text-sm text-slate-600 truncate">{selectedFornecedorGrupos.razaoSocial}</p>
+                                    <div className="mt-2 flex items-center gap-2">
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-1 text-xs font-semibold">
+                                            <Tags className="w-3 h-3" />
+                                            {allSelectedGrupos.length} selecionado(s)
+                                        </span>
+                                        <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-600 px-2.5 py-1 text-xs font-medium">
+                                            {allAvailableGrupos.length} disponível(is)
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button onClick={closeGruposModal} className="p-2 hover:bg-white/80 rounded-full transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-5 overflow-y-auto">
+                            <div className="bg-violet-50 border border-violet-200 rounded-xl p-4">
+                                <p className="text-sm text-violet-900">
+                                    <strong>Dica:</strong> Use a busca e clique em <strong>+</strong> para adicionar ou em <strong>Remover</strong> para retirar grupos. As alterações são salvas imediatamente.
+                                </p>
+                            </div>
+
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input
+                                    type="text"
+                                    value={grupoSearchQuery}
+                                    onChange={(e) => setGrupoSearchQuery(e.target.value)}
+                                    placeholder="Buscar grupo por nome..."
+                                    className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-violet-500 focus:border-transparent outline-none"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                                        <h4 className="text-sm font-semibold text-slate-700">Grupos Disponíveis</h4>
+                                        <span className="text-xs text-slate-500">
+                                            {filteredAvailableGrupos.length}
+                                            {normalizedGrupoSearch ? ` de ${allAvailableGrupos.length}` : ''}
+                                        </span>
+                                    </div>
+
+                                    <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                                        {filteredAvailableGrupos.map((grupo) => (
+                                            <div key={grupo.id} className="border border-slate-200 rounded-xl bg-white p-3 flex items-center justify-between gap-3 hover:bg-violet-50 transition-colors">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center shrink-0">
+                                                        <Tags className="w-4 h-4" />
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-medium text-slate-900 truncate">{grupo.nome}</p>
+                                                        <p className="text-[11px] text-slate-500">Clique para adicionar</p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleAddGrupoToFornecedor(grupo.id)}
+                                                    disabled={saving}
+                                                    className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-50 transition-colors shrink-0"
+                                                    title="Adicionar grupo"
+                                                >
+                                                    {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                                                </button>
+                                            </div>
+                                        ))}
+
+                                        {filteredAvailableGrupos.length === 0 && (
+                                            <div className="text-center py-10 border border-dashed border-slate-200 rounded-xl bg-slate-50">
+                                                <Package className="w-9 h-9 mx-auto text-slate-300 mb-2" />
+                                                <p className="text-sm font-medium text-slate-700">
+                                                    {allAvailableGrupos.length === 0 ? 'Todos os grupos já foram associados' : 'Nenhum grupo encontrado'}
+                                                </p>
+                                                <p className="text-xs text-slate-500">
+                                                    {allAvailableGrupos.length === 0 ? 'Remova um grupo à direita para voltar a disponibilizá-lo.' : 'Tente outro termo na busca.'}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between pb-2 border-b-2 border-emerald-500">
+                                        <h4 className="text-sm font-semibold text-slate-900">Grupos Associados</h4>
+                                        <span className="px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 rounded-full">
+                                            {allSelectedGrupos.length}
+                                        </span>
+                                    </div>
+
+                                    <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                                        {filteredSelectedGrupos.map((grupo) => (
+                                            <div key={grupo.id} className="border-2 border-emerald-500 bg-emerald-50 rounded-xl p-3 flex items-center justify-between gap-3">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-semibold text-slate-900 truncate">{grupo.nome}</p>
+                                                        <p className="text-[11px] text-emerald-700">Associado a este fornecedor</p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleRemoveGrupoFromFornecedor(grupo.id)}
+                                                    disabled={saving}
+                                                    className="px-3 py-1.5 text-sm font-medium bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50 hover:border-red-300 disabled:opacity-50 transition-colors shrink-0"
+                                                >
+                                                    {saving ? '...' : 'Remover'}
+                                                </button>
+                                            </div>
+                                        ))}
+
+                                        {filteredSelectedGrupos.length === 0 && (
+                                            <div className="text-center py-10 border border-dashed border-emerald-200 rounded-xl bg-emerald-50/40">
+                                                <Tags className="w-9 h-9 mx-auto text-emerald-300 mb-2" />
+                                                <p className="text-sm font-medium text-slate-700">
+                                                    {allSelectedGrupos.length === 0 ? 'Nenhum grupo associado' : 'Nenhum associado corresponde à busca'}
+                                                </p>
+                                                <p className="text-xs text-slate-500">
+                                                    {allSelectedGrupos.length === 0 ? 'Use a coluna de grupos disponíveis para adicionar.' : 'Limpe a busca para ver todos os associados.'}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 p-5 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
+                            <div className="text-xs text-slate-500">
+                                Total associado: <span className="font-semibold text-slate-700">{allSelectedGrupos.length}</span>
+                            </div>
+                            <button
                                 onClick={closeGruposModal}
-                                className="px-6 py-2 bg-slate-600 text-white rounded-xl hover:bg-slate-700 transition-colors"
+                                className="px-6 py-2 bg-slate-700 text-white rounded-xl hover:bg-slate-800 transition-colors"
                             >
                                 Fechar
                             </button>
@@ -1130,6 +1435,9 @@ export default function FornecedoresManagement() {
                                 </div>
                                 <div>
                                     <h3 className="text-lg font-bold text-slate-900">{selectedFornecedorDetail.razaoSocial}</h3>
+                                    {selectedFornecedorDetail.nomeFantasia && (
+                                        <p className="text-sm text-slate-500 mt-0.5">{selectedFornecedorDetail.nomeFantasia}</p>
+                                    )}
                                     <div className="flex items-center gap-3 mt-1">
                                         <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${selectedFornecedorDetail.ativo ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-600'}`}>
                                             {selectedFornecedorDetail.ativo ? 'Ativo' : 'Inativo'}
@@ -1148,9 +1456,6 @@ export default function FornecedoresManagement() {
                                                 <CreditCard className="w-3 h-3" /> Cartão
                                             </span>
                                         )}
-                                        {selectedFornecedorDetail.codigo && (
-                                            <span className="text-xs text-slate-500">Cód: {selectedFornecedorDetail.codigo}</span>
-                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -1167,6 +1472,7 @@ export default function FornecedoresManagement() {
                                     <FileText className="w-3.5 h-3.5" /> Documentos
                                 </h4>
                                 <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+                                    <DetailField label="Nome Fantasia" value={selectedFornecedorDetail.nomeFantasia} />
                                     <DetailField label="CNPJ" value={selectedFornecedorDetail.cnpj} />
                                     <DetailField label="Inscrição Estadual" value={selectedFornecedorDetail.inscricaoEstadual} />
                                 </div>
@@ -1197,8 +1503,22 @@ export default function FornecedoresManagement() {
                                 <div className="grid grid-cols-2 gap-x-8 gap-y-2">
                                     <DetailField label="CEP" value={selectedFornecedorDetail.cep} />
                                     <DetailField label="Logradouro" value={selectedFornecedorDetail.endereco ? `${selectedFornecedorDetail.endereco}${selectedFornecedorDetail.numero ? `, ${selectedFornecedorDetail.numero}` : ''}` : ''} />
+                                    <DetailField label="Complemento" value={selectedFornecedorDetail.complemento} />
                                     <DetailField label="Bairro" value={selectedFornecedorDetail.bairro} />
                                     <DetailField label="Cidade / UF" value={selectedFornecedorDetail.cidade ? `${selectedFornecedorDetail.cidade} - ${selectedFornecedorDetail.estado}` : ''} />
+                                </div>
+                            </div>
+
+                            <hr className="border-slate-100" />
+
+                            {/* Operação */}
+                            <div>
+                                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                    <Globe className="w-3.5 h-3.5" /> Operação e Atendimento
+                                </h4>
+                                <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+                                    <DetailField label="Regiões de Atendimento" value={selectedFornecedorDetail.regioesAtendimento} />
+                                    <DetailField label="Prazo Entrega Padrão" value={`${selectedFornecedorDetail.prazoEntregaPadrao || 0} dia(s)`} />
                                 </div>
                             </div>
 
@@ -1226,23 +1546,6 @@ export default function FornecedoresManagement() {
                                 )}
                             </div>
 
-                            <hr className="border-slate-100" />
-
-                            {/* Sistema */}
-                            <div>
-                                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                    <Calendar className="w-3.5 h-3.5" /> Informações do Sistema
-                                </h4>
-                                <div className="grid grid-cols-2 gap-x-8 gap-y-2">
-                                    <DetailField label="ID" value={selectedFornecedorDetail.id} mono />
-                                    <DetailField label="Código" value={selectedFornecedorDetail.codigo} />
-                                    <DetailField label="Cadastrado em" value={formatDate(selectedFornecedorDetail.createdAt)} />
-                                    <DetailField label="Última atualização" value={formatDate(selectedFornecedorDetail.updatedAt)} />
-                                    <DetailField label="User ID" value={selectedFornecedorDetail.userId || '—'} mono />
-                                    <DetailField label="Aceita Cartão" value={selectedFornecedorDetail.cartaoCredito ? 'Sim' : 'Não'} />
-                                    <DetailField label="Último login" value={selectedFornecedorDetail.lastLoginAt ? formatDate(selectedFornecedorDetail.lastLoginAt) : 'Nunca'} />
-                                </div>
-                            </div>
                         </div>
 
                         {/* Footer */}

@@ -13,7 +13,12 @@ export function Footer() {
           <div className="space-y-4">
             <Link href="#hero" className="flex items-center space-x-2">
               <span className="inline-flex  items-center justify-center rounded-lg bg-white/95">
-                <Image src="/logo.png" alt="Comprar & Construir" width={60} height={60} />
+                <Image
+                  src="/logo.png"
+                  alt="Comprar & Construir"
+                  width={60}
+                  height={60}
+                />
               </span>
               <span className="text-xl font-bold">Comprar & Construir</span>
             </Link>
