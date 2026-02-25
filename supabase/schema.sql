@@ -208,6 +208,24 @@ CREATE TABLE public.fornecedor_grupo (
     PRIMARY KEY (fornecedor_id, grupo_id)
 );
 
+-- USUÁRIO <-> FORNECEDOR (contas com acesso a múltiplos fornecedores)
+CREATE TABLE public.user_fornecedor_access (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    fornecedor_id UUID NOT NULL REFERENCES public.fornecedores(id) ON DELETE CASCADE,
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    created_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (user_id, fornecedor_id)
+);
+
+CREATE INDEX idx_user_fornecedor_access_user_id ON public.user_fornecedor_access(user_id);
+CREATE INDEX idx_user_fornecedor_access_fornecedor_id ON public.user_fornecedor_access(fornecedor_id);
+CREATE UNIQUE INDEX idx_user_fornecedor_access_one_primary_per_user
+    ON public.user_fornecedor_access(user_id)
+    WHERE is_primary = TRUE;
+
 -- FORNECEDOR <-> FABRICANTE (fabricantes que o fornecedor representa)
 CREATE TABLE public.fornecedor_fabricante (
     fornecedor_id UUID REFERENCES public.fornecedores(id) ON DELETE CASCADE,
@@ -602,6 +620,7 @@ CREATE TRIGGER update_fornecedores_updated_at BEFORE UPDATE ON public.fornecedor
 CREATE TRIGGER update_clientes_updated_at BEFORE UPDATE ON public.clientes FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_obras_updated_at BEFORE UPDATE ON public.obras FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_fornecedor_materiais_updated_at BEFORE UPDATE ON public.fornecedor_materiais FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_user_fornecedor_access_updated_at BEFORE UPDATE ON public.user_fornecedor_access FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_ofertas_updated_at BEFORE UPDATE ON public.ofertas FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_cotacoes_updated_at BEFORE UPDATE ON public.cotacoes FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_propostas_updated_at BEFORE UPDATE ON public.propostas FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -625,6 +644,7 @@ ALTER TABLE public.servico_fase ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.servico_grupo ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.material_grupo ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fornecedor_grupo ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_fornecedor_access ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fornecedor_materiais ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ofertas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cotacoes ENABLE ROW LEVEL SECURITY;
@@ -690,29 +710,39 @@ CREATE POLICY fornecedores_all ON public.fornecedores FOR ALL USING (is_admin())
 -- FORNECEDOR_GRUPO: fornecedor pode gerenciar seus grupos
 CREATE POLICY fornecedor_grupo_select ON public.fornecedor_grupo FOR SELECT TO authenticated USING (true);
 CREATE POLICY fornecedor_grupo_insert ON public.fornecedor_grupo FOR INSERT WITH CHECK (
-    is_admin() OR 
-    EXISTS (SELECT 1 FROM public.fornecedores f JOIN public.users u ON f.user_id = u.id WHERE f.id = fornecedor_id AND u.id = auth.uid())
+    is_admin() OR
+    EXISTS (SELECT 1 FROM public.user_fornecedor_access ufa WHERE ufa.fornecedor_id = fornecedor_id AND ufa.user_id = auth.uid()) OR
+    EXISTS (SELECT 1 FROM public.fornecedores f WHERE f.id = fornecedor_id AND f.user_id = auth.uid())
 );
 CREATE POLICY fornecedor_grupo_delete ON public.fornecedor_grupo FOR DELETE USING (
-    is_admin() OR 
-    EXISTS (SELECT 1 FROM public.fornecedores f JOIN public.users u ON f.user_id = u.id WHERE f.id = fornecedor_id AND u.id = auth.uid())
+    is_admin() OR
+    EXISTS (SELECT 1 FROM public.user_fornecedor_access ufa WHERE ufa.fornecedor_id = fornecedor_id AND ufa.user_id = auth.uid()) OR
+    EXISTS (SELECT 1 FROM public.fornecedores f WHERE f.id = fornecedor_id AND f.user_id = auth.uid())
 );
+
+-- USER_FORNECEDOR_ACCESS: usuário pode ver seus vínculos, admin gerencia
+CREATE POLICY user_fornecedor_access_select ON public.user_fornecedor_access FOR SELECT USING (user_id = auth.uid() OR is_admin());
+CREATE POLICY user_fornecedor_access_manage ON public.user_fornecedor_access FOR ALL USING (is_admin()) WITH CHECK (is_admin());
 
 -- FORNECEDOR_MATERIAIS: fornecedor pode ver e gerenciar seus próprios materiais
 CREATE POLICY fornecedor_materiais_select ON public.fornecedor_materiais FOR SELECT TO authenticated USING (
-    is_admin() OR 
+    is_admin() OR
+    EXISTS (SELECT 1 FROM public.user_fornecedor_access ufa WHERE ufa.fornecedor_id = fornecedor_id AND ufa.user_id = auth.uid()) OR
     EXISTS (SELECT 1 FROM public.fornecedores f WHERE f.id = fornecedor_id AND f.user_id = auth.uid())
 );
 CREATE POLICY fornecedor_materiais_insert ON public.fornecedor_materiais FOR INSERT WITH CHECK (
-    is_admin() OR 
+    is_admin() OR
+    EXISTS (SELECT 1 FROM public.user_fornecedor_access ufa WHERE ufa.fornecedor_id = fornecedor_id AND ufa.user_id = auth.uid()) OR
     EXISTS (SELECT 1 FROM public.fornecedores f WHERE f.id = fornecedor_id AND f.user_id = auth.uid())
 );
 CREATE POLICY fornecedor_materiais_update ON public.fornecedor_materiais FOR UPDATE USING (
-    is_admin() OR 
+    is_admin() OR
+    EXISTS (SELECT 1 FROM public.user_fornecedor_access ufa WHERE ufa.fornecedor_id = fornecedor_id AND ufa.user_id = auth.uid()) OR
     EXISTS (SELECT 1 FROM public.fornecedores f WHERE f.id = fornecedor_id AND f.user_id = auth.uid())
 );
 CREATE POLICY fornecedor_materiais_delete ON public.fornecedor_materiais FOR DELETE USING (
-    is_admin() OR 
+    is_admin() OR
+    EXISTS (SELECT 1 FROM public.user_fornecedor_access ufa WHERE ufa.fornecedor_id = fornecedor_id AND ufa.user_id = auth.uid()) OR
     EXISTS (SELECT 1 FROM public.fornecedores f WHERE f.id = fornecedor_id AND f.user_id = auth.uid())
 );
 
@@ -726,6 +756,7 @@ CREATE POLICY obras_delete ON public.obras FOR DELETE USING (user_id = auth.uid(
 CREATE POLICY ofertas_select ON public.ofertas FOR SELECT TO authenticated USING (true);
 CREATE POLICY ofertas_manage ON public.ofertas FOR ALL USING (
     is_admin() OR
+    EXISTS (SELECT 1 FROM public.user_fornecedor_access ufa WHERE ufa.fornecedor_id = fornecedor_id AND ufa.user_id = auth.uid()) OR
     EXISTS (SELECT 1 FROM public.fornecedores f WHERE f.id = fornecedor_id AND f.user_id = auth.uid())
 );
 

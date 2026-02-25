@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { resolveSupplierAccess } from '@/lib/supplierAccessServer';
 
 function extractTaxesFromObservacoes(observacoes: string | null | undefined) {
     if (!observacoes) return 0;
@@ -59,28 +60,6 @@ function normalizeGroupName(value: string | null | undefined) {
         .replace(/[\u0300-\u036f]/g, '');
 }
 
-async function getFornecedorId(userId: string): Promise<string | null> {
-    if (!supabaseAdmin) return null;
-
-    // 1) Fonte mais confiável: fornecedores.user_id vinculado ao usuário autenticado
-    const { data: fornecedorByUser } = await supabaseAdmin
-        .from('fornecedores')
-        .select('id')
-        .eq('user_id', userId)
-        .single();
-
-    if (fornecedorByUser?.id) return fornecedorByUser.id;
-
-    // 2) Fallback para vínculo legado em users.fornecedor_id
-    const { data: userData } = await supabaseAdmin
-        .from('users')
-        .select('fornecedor_id')
-        .eq('id', userId)
-        .single();
-
-    return userData?.fornecedor_id || null;
-}
-
 // GET: Load cotações for the authenticated fornecedor (bypasses RLS)
 export async function GET(req: NextRequest) {
     try {
@@ -93,7 +72,15 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Configuração do servidor incompleta' }, { status: 500 });
         }
 
-        const fornecedorId = await getFornecedorId(user.id);
+        const requestedFornecedorId = new URL(req.url).searchParams.get('fornecedor_id');
+        const resolvedAccess = await resolveSupplierAccess(supabaseAdmin, user.id, requestedFornecedorId);
+        if (!resolvedAccess.ok) {
+            return NextResponse.json(
+                { error: resolvedAccess.error, code: resolvedAccess.code },
+                { status: resolvedAccess.status }
+            );
+        }
+        const fornecedorId = resolvedAccess.fornecedorId;
 
         // Get fornecedor data (status, regioes_atendimento)
         let fornecedorStatus = 'ativo';
@@ -108,7 +95,17 @@ export async function GET(req: NextRequest) {
 
             if (fornecedor) {
                 fornecedorStatus = fornecedor.status || 'ativo';
-                regioes = (fornecedor.regioes_atendimento || []).map((r: string) => r.toLowerCase());
+                const rawRegioes = fornecedor.regioes_atendimento;
+                if (Array.isArray(rawRegioes)) {
+                    regioes = rawRegioes.map((r: string) => String(r || '').toLowerCase()).filter(Boolean);
+                } else if (typeof rawRegioes === 'string') {
+                    regioes = rawRegioes
+                        .split(',')
+                        .map((r: string) => r.trim().toLowerCase())
+                        .filter(Boolean);
+                } else {
+                    regioes = [];
+                }
             }
         }
 

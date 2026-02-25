@@ -15,6 +15,7 @@ import {
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "../../../lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
+import { useSupplierAccessContext } from "./SupplierAccessContext";
 
 const MAX_INVOICE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 const ALLOWED_INVOICE_TYPES = new Set([
@@ -95,6 +96,7 @@ interface SaleOrder {
 
 export function SupplierSalesSection() {
     const { user, session, initialized } = useAuth();
+    const { activeSupplierId, requiresSelection, hasMultipleSuppliers } = useSupplierAccessContext();
     const [activeTab, setActiveTab] = useState<"all" | WorkflowStep>("all");
     const [selectedOrder, setSelectedOrder] = useState<SaleOrder | null>(null);
     const [openChats, setOpenChats] = useState<Array<{ recipientName: string; recipientId: string; initialRoomId: string; initialRoomTitle?: string }>>([]);
@@ -117,10 +119,16 @@ export function SupplierSalesSection() {
 
     // Function to fetch orders via API route (bypasses RLS)
     const fetchOrders = useCallback(async () => {
+        if (requiresSelection) {
+            setOrders([]);
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         try {
             const headers = await getAuthHeaders(session?.access_token);
-            const res = await fetch('/api/pedidos', { headers, credentials: 'include' });
+            const supplierQuery = activeSupplierId ? `?fornecedor_id=${encodeURIComponent(activeSupplierId)}` : '';
+            const res = await fetch(`/api/pedidos${supplierQuery}`, { headers, credentials: 'include' });
 
             if (!res.ok) {
                 console.error('Erro ao carregar vendas:', res.status);
@@ -197,7 +205,7 @@ export function SupplierSalesSection() {
         } finally {
             setLoading(false);
         }
-    }, [session]);
+    }, [session, activeSupplierId, requiresSelection]);
 
     // Map Supabase status to component status
     const mapSupabaseStatus = (status: string): SaleStatus => {
@@ -359,6 +367,7 @@ export function SupplierSalesSection() {
                 credentials: 'include',
                 body: JSON.stringify({
                     action: 'update_status',
+                    fornecedor_id: activeSupplierId,
                     pedido_id: order.id,
                     status: action.nextStatus,
                     summary_update: Object.keys(summaryUpdate).length > 0 ? summaryUpdate : undefined,
@@ -397,6 +406,12 @@ export function SupplierSalesSection() {
             return;
         }
 
+        if (requiresSelection) {
+            setOrders([]);
+            setLoading(false);
+            return;
+        }
+
         // Initial fetch via API route (handles fornecedor_id lookup server-side)
         fetchOrders();
 
@@ -415,7 +430,7 @@ export function SupplierSalesSection() {
         return () => {
             channel.unsubscribe();
         };
-    }, [user, initialized, fetchOrders]);
+    }, [user, initialized, fetchOrders, requiresSelection]);
 
     const filteredOrders = orders.filter(order => {
         if (activeTab !== 'all') {
@@ -439,6 +454,7 @@ export function SupplierSalesSection() {
                 credentials: 'include',
                 body: JSON.stringify({
                     action: 'update_status',
+                    fornecedor_id: activeSupplierId,
                     pedido_id: orderId,
                     status: supabaseStatus
                 })
@@ -458,6 +474,10 @@ export function SupplierSalesSection() {
     };
 
     const openChatForOrder = (order: SaleOrder) => {
+        if (hasMultipleSuppliers) {
+            alert("Chat multiempresa será habilitado em uma próxima etapa.");
+            return;
+        }
         const recipientId = order.clientId;
         const recipientName = 'Cliente';
 
@@ -498,6 +518,12 @@ export function SupplierSalesSection() {
 
     return (
         <div className="space-y-6">
+            {hasMultipleSuppliers && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    <strong>Chat temporariamente indisponível para contas multiempresa.</strong>
+                    <div className="mt-1 text-amber-800">Chat multiempresa será habilitado em uma próxima etapa.</div>
+                </div>
+            )}
             {/* Top - Filters */}
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 space-y-4">
                 <div className="flex items-center gap-4">

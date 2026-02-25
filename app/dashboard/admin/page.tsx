@@ -118,6 +118,18 @@ const RoleSelector = ({
     );
 };
 
+const CardShell = ({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) => (
+    <div className="rounded-[20px] border border-slate-100 bg-white/80 shadow-sm">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+            <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">{subtitle || ""}</p>
+                <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+            </div>
+        </div>
+        <div className="px-5 py-4">{children}</div>
+    </div>
+);
+
 export default function AdminDashboard() {
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<"overview" | "users" | "clientes" | "fornecedores" | "fabricantes" | "audit" | "reports" | "profile" | "gestao-obra">("gestao-obra");
@@ -179,6 +191,14 @@ export default function AdminDashboard() {
     const [isDeleteUserModalOpen, setIsDeleteUserModalOpen] = useState(false);
     const [userPendingDeletion, setUserPendingDeletion] = useState<any | null>(null);
     const [isDeletingUser, setIsDeletingUser] = useState(false);
+    const [isSupplierLinksModalOpen, setIsSupplierLinksModalOpen] = useState(false);
+    const [supplierLinksTargetUser, setSupplierLinksTargetUser] = useState<any | null>(null);
+    const [supplierLinksSearchInput, setSupplierLinksSearchInput] = useState("");
+    const [supplierLinksLoading, setSupplierLinksLoading] = useState(false);
+    const [supplierLinksSaving, setSupplierLinksSaving] = useState(false);
+    const [supplierLinksLinked, setSupplierLinksLinked] = useState<any[]>([]);
+    const [supplierLinksAvailable, setSupplierLinksAvailable] = useState<any[]>([]);
+    const [supplierLinksPrimaryId, setSupplierLinksPrimaryId] = useState<string | null>(null);
 
     // Profile Tab State
     const [profileName, setProfileName] = useState("");
@@ -564,6 +584,154 @@ export default function AdminDashboard() {
         }
     };
 
+    const isFornecedorUser = (user: any) =>
+        user?.role === "fornecedor" || (Array.isArray(user?.roles) && user.roles.includes("fornecedor"));
+
+    const fetchSupplierLinksData = async (userId: string, search = "") => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+            throw new Error("Sessão não encontrada");
+        }
+
+        const query = new URLSearchParams({ userId });
+        if (search.trim()) query.set("search", search.trim());
+
+        const response = await fetch(`/api/admin/user-fornecedor-access?${query.toString()}`, {
+            headers: {
+                Authorization: `Bearer ${session.access_token}`,
+            },
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload?.error || "Erro ao carregar empresas vinculadas");
+        }
+
+        setSupplierLinksLinked(payload.linkedSuppliers || []);
+        setSupplierLinksAvailable(payload.availableSuppliers || []);
+        setSupplierLinksPrimaryId(
+            (payload.linkedSuppliers || []).find((s: any) => s.isPrimary)?.id || null
+        );
+
+        return payload;
+    };
+
+    const openSupplierLinksModal = async (targetUser: any) => {
+        if (!targetUser?.id) return;
+        setSupplierLinksTargetUser(targetUser);
+        setSupplierLinksSearchInput("");
+        setSupplierLinksLoading(true);
+        setIsSupplierLinksModalOpen(true);
+        try {
+            await fetchSupplierLinksData(targetUser.id, "");
+        } catch (error: any) {
+            console.error("Error loading supplier links:", error);
+            showToast("error", error?.message || "Erro ao carregar vínculos de fornecedores.");
+        } finally {
+            setSupplierLinksLoading(false);
+        }
+    };
+
+    const closeSupplierLinksModal = (force = false) => {
+        if (supplierLinksSaving && !force) return;
+        setIsSupplierLinksModalOpen(false);
+        setSupplierLinksTargetUser(null);
+        setSupplierLinksSearchInput("");
+        setSupplierLinksLinked([]);
+        setSupplierLinksAvailable([]);
+        setSupplierLinksPrimaryId(null);
+        setSupplierLinksLoading(false);
+    };
+
+    const handleSupplierLinksSearch = async () => {
+        if (!supplierLinksTargetUser?.id) return;
+        setSupplierLinksLoading(true);
+        try {
+            await fetchSupplierLinksData(supplierLinksTargetUser.id, supplierLinksSearchInput);
+        } catch (error: any) {
+            showToast("error", error?.message || "Erro ao buscar fornecedores.");
+        } finally {
+            setSupplierLinksLoading(false);
+        }
+    };
+
+    const handleAddSupplierLinkCandidate = (supplier: any) => {
+        if (!supplier?.id) return;
+        if (supplier.reserved) return;
+
+        setSupplierLinksLinked((prev) => {
+            if (prev.some((item) => item.id === supplier.id)) return prev;
+            return [...prev, { ...supplier, isPrimary: false }];
+        });
+        setSupplierLinksAvailable((prev) => prev.filter((item) => item.id !== supplier.id));
+        setSupplierLinksPrimaryId((prev) => prev || supplier.id);
+    };
+
+    const handleRemoveSupplierLinkCandidate = (supplierId: string) => {
+        let removedSupplier: any | null = null;
+        setSupplierLinksLinked((prev) => {
+            const next = prev.filter((item) => {
+                const shouldKeep = item.id !== supplierId;
+                if (!shouldKeep) removedSupplier = item;
+                return shouldKeep;
+            });
+            setSupplierLinksPrimaryId((currentPrimary) =>
+                currentPrimary === supplierId ? (next[0]?.id || null) : currentPrimary
+            );
+            return next;
+        });
+
+        if (removedSupplier) {
+            setSupplierLinksAvailable((prev) => {
+                if (prev.some((item) => item.id === removedSupplier.id)) return prev;
+                return [{ ...removedSupplier, reserved: false, ownerUserId: null }, ...prev];
+            });
+        }
+    };
+
+    const handleSaveSupplierLinks = async () => {
+        if (!supplierLinksTargetUser?.id) return;
+        if (supplierLinksLinked.length > 0 && !supplierLinksPrimaryId) {
+            showToast("error", "Selecione um fornecedor principal.");
+            return;
+        }
+
+        setSupplierLinksSaving(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.access_token) throw new Error("Sessão não encontrada");
+
+            const response = await fetch("/api/admin/user-fornecedor-access", {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({
+                    userId: supplierLinksTargetUser.id,
+                    supplierIds: supplierLinksLinked.map((item) => item.id),
+                    primarySupplierId: supplierLinksLinked.length > 0 ? supplierLinksPrimaryId : null,
+                }),
+            });
+
+            const payload = await response.json();
+            if (!response.ok) {
+                throw new Error(payload?.error || "Erro ao salvar vínculos");
+            }
+
+            setSupplierLinksLinked(payload.linkedSuppliers || []);
+            setSupplierLinksPrimaryId(payload.primarySupplierId || null);
+            showToast("success", "Empresas vinculadas atualizadas com sucesso.");
+            fetchUsersPage(usersPageIndex);
+            closeSupplierLinksModal(true);
+        } catch (error: any) {
+            console.error("Error saving supplier links:", error);
+            showToast("error", error?.message || "Erro ao salvar vínculos.");
+        } finally {
+            setSupplierLinksSaving(false);
+        }
+    };
+
     const handleCreateUser = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newUserEmail || !newUserPassword || !newUserName) {
@@ -685,18 +853,6 @@ export default function AdminDashboard() {
                 <p className="mt-2 text-3xl font-semibold text-slate-900">{value}</p>
             </div>
             <span className={`rounded-full px-3 py-1 text-xs font-semibold text-white ${accent}`}>{title.split(" ")[0]}</span>
-        </div>
-    );
-
-    const CardShell = ({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) => (
-        <div className="rounded-[20px] border border-slate-100 bg-white/80 shadow-sm">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
-                <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">{subtitle || ""}</p>
-                    <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
-                </div>
-            </div>
-            <div className="px-5 py-4">{children}</div>
         </div>
     );
 
@@ -980,6 +1136,14 @@ export default function AdminDashboard() {
                                                     })()}
                                                 </td>
                                                 <td className="px-4 py-3 align-top text-right text-sm font-medium space-x-2">
+                                                    {isFornecedorUser(user) && (
+                                                        <button
+                                                            onClick={() => openSupplierLinksModal(user)}
+                                                            className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                                                        >
+                                                            Empresas
+                                                        </button>
+                                                    )}
                                                     <button
                                                         onClick={() => openDeleteUserModal(user)}
                                                         className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100"
@@ -1071,6 +1235,14 @@ export default function AdminDashboard() {
                                         )}
 
                                         <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
+                                            {isFornecedorUser(user) && (
+                                                <button
+                                                    onClick={() => openSupplierLinksModal(user)}
+                                                    className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                                                >
+                                                    Empresas
+                                                </button>
+                                            )}
                                             <button
                                                 onClick={() => openDeleteUserModal(user)}
                                                 className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100 ml-auto"
@@ -1520,6 +1692,194 @@ export default function AdminDashboard() {
                     </div>
                 )}
             </div>
+
+            {/* Supplier Links Modal */}
+            {isSupplierLinksModalOpen && supplierLinksTargetUser && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+                    onClick={() => closeSupplierLinksModal()}
+                >
+                    <div
+                        className="w-full max-w-4xl rounded-2xl bg-white shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-6">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-900">Empresas vinculadas</h3>
+                                <p className="mt-1 text-sm text-slate-600">
+                                    Gerencie os fornecedores (CNPJs) acessados por este login.
+                                </p>
+                                <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                                    <span className="font-semibold">{supplierLinksTargetUser.name || supplierLinksTargetUser.companyName || "Sem Nome"}</span>
+                                    {" • "}
+                                    {supplierLinksTargetUser.email}
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => closeSupplierLinksModal()}
+                                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                                disabled={supplierLinksSaving}
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="grid gap-0 md:grid-cols-2">
+                            <div className="border-b border-slate-100 p-6 md:border-b-0 md:border-r">
+                                <div className="mb-4 flex items-center justify-between">
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-slate-900">Vinculados ({supplierLinksLinked.length})</h4>
+                                        <p className="text-xs text-slate-500">Escolha um fornecedor principal (compatibilidade legada).</p>
+                                    </div>
+                                </div>
+
+                                <div className="mb-4 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-900">
+                                    Alterar o fornecedor principal atualiza o ponteiro legado usado por partes antigas do sistema.
+                                </div>
+
+                                <div className="space-y-3 max-h-[360px] overflow-auto pr-1">
+                                    {supplierLinksLoading ? (
+                                        <div className="text-sm text-slate-500">Carregando...</div>
+                                    ) : supplierLinksLinked.length === 0 ? (
+                                        <div className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                                            Nenhum fornecedor vinculado.
+                                        </div>
+                                    ) : (
+                                        supplierLinksLinked.map((supplier) => (
+                                            <div key={supplier.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <p className="truncate text-sm font-semibold text-slate-900">
+                                                            {supplier.nome_fantasia || supplier.razao_social || "Fornecedor"}
+                                                        </p>
+                                                        {supplier.nome_fantasia && supplier.razao_social && (
+                                                            <p className="truncate text-xs text-slate-500">{supplier.razao_social}</p>
+                                                        )}
+                                                        <p className="mt-1 text-xs text-slate-600">CNPJ: {supplier.cnpj || "Não informado"}</p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveSupplierLinkCandidate(supplier.id)}
+                                                        className="rounded-lg border border-red-100 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100"
+                                                        disabled={supplierLinksSaving}
+                                                    >
+                                                        Remover
+                                                    </button>
+                                                </div>
+
+                                                <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                                                    <input
+                                                        type="radio"
+                                                        name="primary-linked-supplier"
+                                                        checked={supplierLinksPrimaryId === supplier.id}
+                                                        onChange={() => setSupplierLinksPrimaryId(supplier.id)}
+                                                        disabled={supplierLinksSaving}
+                                                    />
+                                                    <span className="font-semibold">Fornecedor principal</span>
+                                                </label>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="p-6">
+                                <div className="mb-4">
+                                    <h4 className="text-sm font-semibold text-slate-900">Adicionar fornecedor</h4>
+                                    <p className="text-xs text-slate-500">Busque por razão social, fantasia, CNPJ ou email.</p>
+                                </div>
+
+                                <div className="mb-4 flex items-center gap-2">
+                                    <input
+                                        type="text"
+                                        value={supplierLinksSearchInput}
+                                        onChange={(e) => setSupplierLinksSearchInput(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                handleSupplierLinksSearch();
+                                            }
+                                        }}
+                                        placeholder="Buscar fornecedor..."
+                                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+                                        disabled={supplierLinksSaving}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleSupplierLinksSearch}
+                                        className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                                        disabled={supplierLinksSaving || supplierLinksLoading}
+                                    >
+                                        Buscar
+                                    </button>
+                                </div>
+
+                                <div className="space-y-3 max-h-[420px] overflow-auto pr-1">
+                                    {supplierLinksLoading ? (
+                                        <div className="text-sm text-slate-500">Buscando fornecedores...</div>
+                                    ) : supplierLinksAvailable.length === 0 ? (
+                                        <div className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                                            Nenhum fornecedor disponível para adicionar.
+                                        </div>
+                                    ) : (
+                                        supplierLinksAvailable.map((supplier) => (
+                                            <div key={supplier.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <p className="truncate text-sm font-semibold text-slate-900">
+                                                            {supplier.nome_fantasia || supplier.razao_social || "Fornecedor"}
+                                                        </p>
+                                                        {supplier.nome_fantasia && supplier.razao_social && (
+                                                            <p className="truncate text-xs text-slate-500">{supplier.razao_social}</p>
+                                                        )}
+                                                        <p className="mt-1 text-xs text-slate-600">CNPJ: {supplier.cnpj || "Não informado"}</p>
+                                                        <p className="text-xs text-slate-500">
+                                                            {[supplier.cidade, supplier.estado].filter(Boolean).join(" / ") || "Sem localização"}
+                                                        </p>
+                                                        {supplier.reserved && (
+                                                            <p className="mt-2 text-xs font-semibold text-rose-700">
+                                                                Já vinculado a outro usuário
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleAddSupplierLinkCandidate(supplier)}
+                                                        className="rounded-lg border border-indigo-100 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                                        disabled={supplierLinksSaving || supplier.reserved}
+                                                    >
+                                                        Adicionar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 border-t border-slate-100 p-6">
+                            <button
+                                type="button"
+                                onClick={() => closeSupplierLinksModal()}
+                                className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                                disabled={supplierLinksSaving}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSaveSupplierLinks}
+                                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                                disabled={supplierLinksSaving || supplierLinksLoading}
+                            >
+                                {supplierLinksSaving ? "Salvando..." : "Salvar vínculos"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Delete User Modal */}
             {isDeleteUserModalOpen && userPendingDeletion && (

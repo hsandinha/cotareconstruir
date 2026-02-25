@@ -7,9 +7,11 @@ import { getAuthHeaders } from "@/lib/authHeaders";
 import { SupplierQuotationResponseSection } from "./QuotationResponseSection";
 import { ChatInterface } from "@/components/ChatInterface";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSupplierAccessContext } from "./SupplierAccessContext";
 
 export function SupplierQuotationInboxSection() {
     const { user, profile, session, initialized } = useAuth();
+    const { activeSupplierId, requiresSelection, hasMultipleSuppliers } = useSupplierAccessContext();
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -27,6 +29,10 @@ export function SupplierQuotationInboxSection() {
     const deepLinkHandledRef = useRef<string | null>(null);
 
     const openChat = (context: { recipientName: string; recipientId: string; roomId: string; roomTitle?: string }) => {
+        if (hasMultipleSuppliers) {
+            alert("Chat multiempresa será habilitado em uma próxima etapa.");
+            return;
+        }
         setOpenChats((prev) => {
             const existing = prev.find((chat) => chat.recipientId === context.recipientId);
             if (existing) {
@@ -59,9 +65,16 @@ export function SupplierQuotationInboxSection() {
 
     // Fetch cotações via API route (bypasses RLS)
     const fetchQuotations = useCallback(async () => {
+        if (requiresSelection) {
+            setQuotations([]);
+            setLoading(false);
+            return [];
+        }
         try {
+            setIsInactive(false);
             const headers = await getAuthHeaders(session?.access_token);
-            const res = await fetch('/api/cotacoes', { headers, credentials: 'include' });
+            const supplierQuery = activeSupplierId ? `?fornecedor_id=${encodeURIComponent(activeSupplierId)}` : '';
+            const res = await fetch(`/api/cotacoes${supplierQuery}`, { headers, credentials: 'include' });
 
             if (!res.ok) {
                 console.error('Erro ao carregar cotações:', res.status);
@@ -72,7 +85,7 @@ export function SupplierQuotationInboxSection() {
 
             const json = await res.json();
 
-            const pedidosRes = await fetch('/api/pedidos', { headers });
+            const pedidosRes = await fetch(`/api/pedidos${supplierQuery}`, { headers });
             const pedidosJson = pedidosRes.ok ? await pedidosRes.json() : { data: [] };
             const pedidosData = pedidosJson.data || [];
             const pedidoByCotacao = new Map(pedidosData.map((pedido: any) => [pedido.cotacao_id, pedido]));
@@ -156,10 +169,16 @@ export function SupplierQuotationInboxSection() {
         } finally {
             setLoading(false);
         }
-    }, [session]);
+    }, [session, activeSupplierId, requiresSelection]);
 
     useEffect(() => {
         if (!initialized || !user) return;
+        if (requiresSelection) {
+            setLoading(false);
+            setQuotations([]);
+            setSelectedQuotation(null);
+            return;
+        }
 
         fetchQuotations();
 
@@ -195,7 +214,7 @@ export function SupplierQuotationInboxSection() {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [user, initialized, fetchQuotations]);
+    }, [user, initialized, fetchQuotations, requiresSelection]);
 
     useEffect(() => {
         if (!initialized || !user || quotations.length === 0) return;
@@ -392,6 +411,7 @@ export function SupplierQuotationInboxSection() {
                 return (
                     <SupplierQuotationResponseSection
                         quotation={selectedQuotation}
+                        fornecedorId={activeSupplierId}
                         onBack={() => {
                             setSelectedQuotation(null);
                         }}
@@ -548,6 +568,7 @@ export function SupplierQuotationInboxSection() {
         return (
             <SupplierQuotationResponseSection
                 quotation={selectedQuotation}
+                fornecedorId={activeSupplierId}
                 onBack={() => {
                     setSelectedQuotation(null);
                     fetchQuotations();
@@ -559,6 +580,12 @@ export function SupplierQuotationInboxSection() {
 
     return (
         <div className="space-y-6">
+            {hasMultipleSuppliers && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    <strong>Chat temporariamente indisponível para contas multiempresa.</strong>
+                    <div className="mt-1 text-amber-800">Chat multiempresa será habilitado em uma próxima etapa.</div>
+                </div>
+            )}
 
 
             {/* Filtros e estatísticas */}

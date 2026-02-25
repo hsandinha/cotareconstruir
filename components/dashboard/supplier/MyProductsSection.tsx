@@ -10,6 +10,7 @@ import {
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
+import { useSupplierAccessContext } from "./SupplierAccessContext";
 
 // Helper para obter headers com token de autenticação
 
@@ -33,9 +34,10 @@ interface ProdutoConfigurado {
 
 export function SupplierMyProductsSection() {
     const { user, session, initialized } = useAuth();
+    const { activeSupplierId, requiresSelection } = useSupplierAccessContext();
     const [searchTerm, setSearchTerm] = useState("");
     const [loading, setLoading] = useState(true);
-    const [fornecedorId, setFornecedorId] = useState<string | null>(null);
+    const fornecedorId = activeSupplierId;
     const [produtos, setProdutos] = useState<ProdutoConfigurado[]>([]);
 
     // Edição inline
@@ -45,39 +47,18 @@ export function SupplierMyProductsSection() {
     const [editQtdMinima, setEditQtdMinima] = useState("1");
     const [saving, setSaving] = useState(false);
 
-    // Carregar fornecedor_id
-    useEffect(() => {
-        if (!initialized || !user) return;
-
-        const loadFornecedorId = async () => {
-            const { data: userData } = await supabase
-                .from("users")
-                .select("fornecedor_id")
-                .eq("id", user.id)
-                .single();
-
-            if (userData?.fornecedor_id) {
-                setFornecedorId(userData.fornecedor_id);
-                return;
-            }
-
-            const { data: fornecedorData } = await supabase
-                .from("fornecedores")
-                .select("id")
-                .eq("user_id", user.id)
-                .single();
-
-            if (fornecedorData) {
-                setFornecedorId(fornecedorData.id);
-            }
-        };
-
-        loadFornecedorId();
-    }, [user, initialized]);
-
     // Carregar produtos configurados + ofertas
     useEffect(() => {
-        if (!fornecedorId) return;
+        if (requiresSelection) {
+            setLoading(false);
+            setProdutos([]);
+            return;
+        }
+        if (!fornecedorId) {
+            setLoading(false);
+            setProdutos([]);
+            return;
+        }
 
         const loadData = async () => {
             setLoading(true);
@@ -166,7 +147,7 @@ export function SupplierMyProductsSection() {
         };
 
         loadData();
-    }, [fornecedorId]);
+    }, [fornecedorId, requiresSelection, session?.access_token]);
 
     // Filtrar por busca
     const produtosFiltrados = useMemo(() => {

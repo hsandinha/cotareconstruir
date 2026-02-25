@@ -13,9 +13,10 @@ interface SupplierQuotationResponseSectionProps {
     onBack: () => void;
     mode?: 'create' | 'update';
     onUpdate?: () => Promise<void>;
+    fornecedorId?: string | null;
 }
 
-export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'create', onUpdate }: SupplierQuotationResponseSectionProps) {
+export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'create', onUpdate, fornecedorId }: SupplierQuotationResponseSectionProps) {
     const { user, profile, session } = useAuth();
     const [responses, setResponses] = useState<{ [key: string]: { preco: string, disponibilidade: string } }>({});
     const [paymentMethod, setPaymentMethod] = useState("");
@@ -139,6 +140,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 headers,
                 body: JSON.stringify({
                     action: 'create',
+                    fornecedor_id: fornecedorId || undefined,
                     cotacao_id: quotation.id,
                     valor_total: totalValue + freteVal + impostosVal,
                     valor_frete: freteVal,

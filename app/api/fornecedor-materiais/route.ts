@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { userHasSupplierAccess } from '@/lib/supplierAccessServer';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
@@ -57,24 +58,9 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'fornecedor_id é obrigatório' }, { status: 400 });
         }
 
-        // Verify that the user owns this fornecedor
-        const { data: fornecedor } = await supabaseAdmin
-            .from('fornecedores')
-            .select('id, user_id')
-            .eq('id', fornecedor_id)
-            .single();
-
-        if (!fornecedor || fornecedor.user_id !== user.id) {
-            // Also check users.fornecedor_id
-            const { data: userData } = await supabaseAdmin
-                .from('users')
-                .select('fornecedor_id')
-                .eq('id', user.id)
-                .single();
-
-            if (!userData || userData.fornecedor_id !== fornecedor_id) {
-                return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
-            }
+        const hasAccess = await userHasSupplierAccess(supabaseAdmin, user.id, fornecedor_id);
+        if (!hasAccess) {
+            return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
         }
 
         if (action === 'upsert') {
@@ -202,23 +188,9 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'fornecedor_id é obrigatório' }, { status: 400 });
         }
 
-        // Verify ownership
-        const { data: fornecedor } = await supabaseAdmin
-            .from('fornecedores')
-            .select('id, user_id')
-            .eq('id', fornecedor_id)
-            .single();
-
-        if (!fornecedor || fornecedor.user_id !== user.id) {
-            const { data: userData } = await supabaseAdmin
-                .from('users')
-                .select('fornecedor_id')
-                .eq('id', user.id)
-                .single();
-
-            if (!userData || userData.fornecedor_id !== fornecedor_id) {
-                return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
-            }
+        const hasAccess = await userHasSupplierAccess(supabaseAdmin, user.id, fornecedor_id);
+        if (!hasAccess) {
+            return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
         }
 
         const { data, error } = await supabaseAdmin

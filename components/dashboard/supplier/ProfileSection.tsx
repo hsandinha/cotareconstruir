@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
+import { useSupplierAccessContext } from "./SupplierAccessContext";
 import { formatCepBr, formatCnpjBr, formatPhoneBr, isValidCNPJ } from "../../../lib/utils";
 import { useToast } from "@/components/ToastProvider";
 import { SupplierVerificationSection } from "./VerificationSection";
@@ -15,6 +16,7 @@ import {
 export function SupplierProfileSection() {
     const { user, profile, session, initialized } = useAuth();
     const { showToast } = useToast();
+    const { activeSupplierId, requiresSelection } = useSupplierAccessContext();
 
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -23,8 +25,6 @@ export function SupplierProfileSection() {
     const [profileComplete, setProfileComplete] = useState(0);
 
     const [userUid, setUserUid] = useState<string | null>(null);
-    const [fornecedorId, setFornecedorId] = useState<string | null>(null);
-
     // Estados de UI
     const [showGroups, setShowGroups] = useState(true);
     const [showVerification, setShowVerification] = useState(false);
@@ -83,6 +83,11 @@ export function SupplierProfileSection() {
         if (!initialized || !user) return;
 
         const loadProfile = async () => {
+            if (requiresSelection) {
+                setLoading(false);
+                return;
+            }
+
             setUserUid(user.id);
             try {
                 const headers = await getAuthHeaders(session?.access_token);
@@ -91,9 +96,15 @@ export function SupplierProfileSection() {
                     return;
                 }
 
-                const res = await fetch('/api/supplier/profile', { headers });
+                const query = activeSupplierId ? `?fornecedor_id=${encodeURIComponent(activeSupplierId)}` : '';
+                const res = await fetch(`/api/supplier/profile${query}`, { headers });
                 if (!res.ok) {
-                    console.error('Erro ao carregar perfil via API:', await res.text());
+                    const errorPayload = await res.json().catch(() => ({}));
+                    if (res.status === 409 && errorPayload?.code === 'supplier_selection_required') {
+                        setLoading(false);
+                        return;
+                    }
+                    console.error('Erro ao carregar perfil via API:', errorPayload || await res.text());
                     setLoading(false);
                     return;
                 }
@@ -124,14 +135,11 @@ export function SupplierProfileSection() {
                 });
 
                 setPreferences({
-                    regioesAtendimento: up?.operating_regions || "",
+                    regioesAtendimento: Array.isArray(f?.regioes_atendimento)
+                        ? f.regioes_atendimento.join(", ")
+                        : (f?.regioes_atendimento || up?.operating_regions || ""),
                     categoriasMateriais: up?.operating_categories || "",
                 });
-
-                if (up?.fornecedor_id) {
-                    setFornecedorId(up.fornecedor_id);
-                }
-
                 setSupplierGroups(sg || []);
                 setAvailableGroups(ag || []);
                 setMateriaisByGrupo(mbg || {});
@@ -143,7 +151,7 @@ export function SupplierProfileSection() {
         };
 
         loadProfile();
-    }, [user, initialized]);
+    }, [user, initialized, activeSupplierId, requiresSelection, session?.access_token]);
 
     const handleConsultCNPJ = async () => {
         const clean = company.cnpj.replace(/\D/g, '');
@@ -230,7 +238,7 @@ export function SupplierProfileSection() {
             const res = await fetch('/api/supplier/profile', {
                 method: 'PUT',
                 headers,
-                body: JSON.stringify({ company, manager, preferences }),
+                body: JSON.stringify({ company, manager, preferences, fornecedorId: activeSupplierId }),
             });
 
             if (!res.ok) {
@@ -258,7 +266,7 @@ export function SupplierProfileSection() {
     };
 
     const handleSaveGroups = async () => {
-        if (!fornecedorId) {
+        if (!activeSupplierId) {
             showToast("error", "Fornecedor não identificado.");
             return;
         }
@@ -269,7 +277,7 @@ export function SupplierProfileSection() {
             const res = await fetch('/api/supplier/profile', {
                 method: 'POST',
                 headers,
-                body: JSON.stringify({ fornecedorId, groups: supplierGroups }),
+                body: JSON.stringify({ fornecedorId: activeSupplierId, groups: supplierGroups }),
             });
 
             if (!res.ok) {

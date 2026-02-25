@@ -125,7 +125,6 @@ export default function FornecedoresManagement() {
     const [grupoSearchQuery, setGrupoSearchQuery] = useState('');
     const [saving, setSaving] = useState(false);
     const [createAccessOnSave, setCreateAccessOnSave] = useState(true);
-    const [isEmailChangeConfirmModalOpen, setIsEmailChangeConfirmModalOpen] = useState(false);
     const [loadingCnpj, setLoadingCnpj] = useState(false);
     const [loadingCep, setLoadingCep] = useState(false);
 
@@ -228,7 +227,13 @@ export default function FornecedoresManagement() {
                 const err = await res.json();
                 throw new Error(err.error || 'Erro ao carregar');
             }
-            const { fornecedores: fornecedoresRaw, grupos: gruposRaw, users: usersRaw, fornecedorGrupos: fornecedorGruposRaw } = await res.json();
+            const {
+                fornecedores: fornecedoresRaw,
+                grupos: gruposRaw,
+                users: usersRaw,
+                fornecedorGrupos: fornecedorGruposRaw,
+                userFornecedorAccess: userFornecedorAccessRaw
+            } = await res.json();
 
             // Mapear dados do Supabase para o formato do componente
             const fornecedoresData: Fornecedor[] = (fornecedoresRaw || []).map((f: any) => {
@@ -277,7 +282,19 @@ export default function FornecedoresManagement() {
                 nome: g.nome || ''
             }));
 
-            // Criar mapa de fornecedorId -> dados de acesso
+            // Criar mapa de usuário por id para enriquecer vínculos N:N
+            const userById = new Map<string, { userId: string; mustChangePassword: boolean; lastLoginAt: string | null }>();
+            (usersRaw || []).forEach((user: any) => {
+                if (user?.id) {
+                    userById.set(user.id, {
+                        userId: user.id,
+                        mustChangePassword: Boolean(user.must_change_password),
+                        lastLoginAt: user.last_login_at || null,
+                    });
+                }
+            });
+
+            // Criar mapa de fornecedorId -> dados de acesso (legado + N:N)
             const fornecedorUserMap = new Map<string, { userId: string; mustChangePassword: boolean; lastLoginAt: string | null }>();
             (usersRaw || []).forEach((user: any) => {
                 if (user.fornecedor_id) {
@@ -285,6 +302,22 @@ export default function FornecedoresManagement() {
                         userId: user.id,
                         mustChangePassword: Boolean(user.must_change_password),
                         lastLoginAt: user.last_login_at || null,
+                    });
+                }
+            });
+            (userFornecedorAccessRaw || []).forEach((link: any) => {
+                const fornecedorId = link?.fornecedor_id;
+                const userId = link?.user_id;
+                if (!fornecedorId || !userId) return;
+                if (fornecedorUserMap.has(fornecedorId)) return;
+                const userInfo = userById.get(userId);
+                if (userInfo) {
+                    fornecedorUserMap.set(fornecedorId, userInfo);
+                } else {
+                    fornecedorUserMap.set(fornecedorId, {
+                        userId,
+                        mustChangePassword: false,
+                        lastLoginAt: null,
                     });
                 }
             });
@@ -321,7 +354,7 @@ export default function FornecedoresManagement() {
         return true;
     };
 
-    const submitFornecedor = async (options?: { resendAccessOnEmailChangeOverride?: boolean }) => {
+    const submitFornecedor = async () => {
         if (!validateFornecedorForm()) return;
 
         try {
@@ -359,7 +392,6 @@ export default function FornecedoresManagement() {
                     headers,
                     body: JSON.stringify({
                         id: editingFornecedor.id,
-                        resend_access_on_email_change: options?.resendAccessOnEmailChangeOverride ?? false,
                         ...supabaseData
                     })
                 });
@@ -411,7 +443,12 @@ export default function FornecedoresManagement() {
                             const accErr = await accRes.json();
                             throw new Error(accErr.error || 'Erro ao criar acesso');
                         }
-                        showToast('success', 'Fornecedor criado com acesso! Credenciais enviadas por email.');
+                        const accPayload = await accRes.json();
+                        if (accPayload.linkedExistingAccount) {
+                            showToast('success', 'Fornecedor criado e vinculado a uma conta de acesso já existente.');
+                        } else {
+                            showToast('success', 'Fornecedor criado com acesso! Credenciais enviadas por email.');
+                        }
                     } catch (accessError: any) {
                         if (accessError.message?.includes('já possui uma conta')) {
                             showToast('success', 'Fornecedor criado! Email já possui conta no sistema.');
@@ -436,24 +473,7 @@ export default function FornecedoresManagement() {
 
     const handleSave = async () => {
         if (!validateFornecedorForm()) return;
-
-        const emailChangedWithExistingAccess = Boolean(
-            editingFornecedor &&
-            editingFornecedor.hasUserAccount &&
-            normalizeEmail(formData.email) !== normalizeEmail(editingFornecedor.email)
-        );
-
-        if (emailChangedWithExistingAccess) {
-            setIsEmailChangeConfirmModalOpen(true);
-            return;
-        }
-
-        await submitFornecedor({ resendAccessOnEmailChangeOverride: false });
-    };
-
-    const handleConfirmEmailChangeAndSave = async () => {
-        setIsEmailChangeConfirmModalOpen(false);
-        await submitFornecedor({ resendAccessOnEmailChangeOverride: true });
+        await submitFornecedor();
     };
 
     const handleDelete = async (id: string) => {
@@ -505,13 +525,11 @@ export default function FornecedoresManagement() {
             });
             setCreateAccessOnSave(true);
         }
-        setIsEmailChangeConfirmModalOpen(false);
         setIsModalOpen(true);
     };
 
     const closeModal = () => {
         setIsModalOpen(false);
-        setIsEmailChangeConfirmModalOpen(false);
         setEditingFornecedor(null);
         setFormData({});
     };
@@ -641,7 +659,12 @@ export default function FornecedoresManagement() {
                 throw new Error(err.error || 'Erro ao criar conta');
             }
 
-            showToast('success', 'Conta criada com sucesso! Credenciais enviadas por email.');
+            const payload = await res.json();
+            if (payload.linkedExistingAccount) {
+                showToast('success', 'Fornecedor vinculado a uma conta existente com sucesso.');
+            } else {
+                showToast('success', 'Conta criada com sucesso! Credenciais enviadas por email.');
+            }
             closeCreateAccountModal();
             loadFornecedores();
         } catch (error: any) {
@@ -1155,60 +1178,6 @@ export default function FornecedoresManagement() {
                             >
                                 {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                                 {editingFornecedor ? 'Salvar' : 'Criar Fornecedor'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Modal Confirmação: Alteração de Email de Acesso */}
-            {isEmailChangeConfirmModalOpen && editingFornecedor && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-                    <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full">
-                        <div className="flex items-center justify-between p-6 border-b border-slate-200">
-                            <div>
-                                <h3 className="text-lg font-bold text-slate-900">Alteração de email de acesso</h3>
-                                <p className="text-sm text-slate-600">{editingFornecedor.razaoSocial}</p>
-                            </div>
-                            <button
-                                onClick={() => setIsEmailChangeConfirmModalOpen(false)}
-                                disabled={saving}
-                                className="p-2 hover:bg-slate-100 rounded-full disabled:opacity-50"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-
-                        <div className="p-6 space-y-4">
-                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                                <p className="text-sm text-amber-900">
-                                    Como você alterou o email de um fornecedor que já possui acesso ao sistema, a senha será resetada para o padrão (123456) e os novos dados de acesso serão enviados para o novo email informado.
-                                </p>
-                            </div>
-                            <p className="text-sm text-slate-700">
-                                O fornecedor será solicitado a trocar a senha no próximo acesso.
-                            </p>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
-                                <div className="text-slate-500">Novo email</div>
-                                <div className="font-medium text-slate-900 break-all">{(formData.email || '').trim()}</div>
-                            </div>
-                        </div>
-
-                        <div className="flex items-center justify-end gap-3 p-6 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
-                            <button
-                                onClick={() => setIsEmailChangeConfirmModalOpen(false)}
-                                disabled={saving}
-                                className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-xl transition-colors disabled:opacity-50"
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                onClick={handleConfirmEmailChangeAndSave}
-                                disabled={saving}
-                                className="flex items-center gap-2 px-5 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50"
-                            >
-                                {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                Continuar e salvar
                             </button>
                         </div>
                     </div>

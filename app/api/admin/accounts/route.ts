@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendEmail, getFornecedorRecadastroEmailTemplate } from '@/lib/emailService';
+import { getSupplierAccessOwnerUserId, syncLegacySupplierPointersForUser, upsertUserSupplierAccessLink } from '@/lib/supplierAccessServer';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -49,16 +50,72 @@ export async function POST(request: NextRequest) {
         const { supabase } = auth;
 
         const { email, entityType, entityId, entityName, whatsapp } = await request.json();
+        const normalizedEmail = String(email || '').trim().toLowerCase();
 
-        if (!email || !entityType || !entityId) {
+        if (!normalizedEmail || !entityType || !entityId) {
             return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 });
         }
 
         const defaultPassword = '123456';
 
+        if (entityType === 'fornecedor') {
+            const { data: existingUser, error: existingUserError } = await supabase
+                .from('users')
+                .select('id, email, role, roles, fornecedor_id')
+                .ilike('email', normalizedEmail)
+                .maybeSingle();
+
+            if (existingUserError) throw existingUserError;
+
+            if (existingUser) {
+                const isFornecedorUser = existingUser.role === 'fornecedor' || existingUser.roles?.includes('fornecedor');
+                if (!isFornecedorUser) {
+                    return NextResponse.json(
+                        { error: 'Este email já está vinculado a uma conta que não é de fornecedor' },
+                        { status: 409 }
+                    );
+                }
+
+                const currentOwnerUserId = await getSupplierAccessOwnerUserId(supabase, entityId);
+                if (currentOwnerUserId && currentOwnerUserId !== existingUser.id) {
+                    return NextResponse.json(
+                        { error: 'Este fornecedor já está vinculado a outro usuário' },
+                        { status: 409 }
+                    );
+                }
+
+                let shouldBePrimary = false;
+                try {
+                    const { data: existingLinks } = await supabase
+                        .from('user_fornecedor_access')
+                        .select('id')
+                        .eq('user_id', existingUser.id)
+                        .limit(1);
+                    shouldBePrimary = !existingLinks || existingLinks.length === 0;
+                } catch {
+                    shouldBePrimary = !existingUser.fornecedor_id;
+                }
+
+                await upsertUserSupplierAccessLink(supabase, {
+                    userId: existingUser.id,
+                    fornecedorId: entityId,
+                    isPrimary: shouldBePrimary,
+                    createdBy: auth.user.id,
+                });
+                await syncLegacySupplierPointersForUser(supabase, existingUser.id);
+
+                return NextResponse.json({
+                    success: true,
+                    userId: existingUser.id,
+                    createdNewAccount: false,
+                    linkedExistingAccount: true,
+                });
+            }
+        }
+
         // 1. Criar usuário no Supabase Auth
         const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-            email,
+            email: normalizedEmail,
             password: defaultPassword,
             email_confirm: true,
         });
@@ -77,7 +134,7 @@ export async function POST(request: NextRequest) {
             .from('users')
             .insert({
                 id: userId,
-                email,
+                email: normalizedEmail,
                 nome: entityName || '',
                 role: entityType,
                 roles: [entityType],
@@ -100,24 +157,39 @@ export async function POST(request: NextRequest) {
 
         if (entityError) throw entityError;
 
+        if (entityType === 'fornecedor') {
+            await upsertUserSupplierAccessLink(supabase, {
+                userId,
+                fornecedorId: entityId,
+                isPrimary: true,
+                createdBy: auth.user.id,
+            });
+            await syncLegacySupplierPointersForUser(supabase, userId);
+        }
+
         // 4. Log
         console.log(`✅ Conta criada: ${email} (${entityType}) -> userId: ${userId}`);
 
         // 5. Enviar email de recadastramento + credenciais (somente fornecedor)
         if (entityType === 'fornecedor') {
             const template = getFornecedorRecadastroEmailTemplate({
-                recipientEmail: email,
+                recipientEmail: normalizedEmail,
                 temporaryPassword: defaultPassword,
             });
             await sendEmail({
-                to: email,
+                to: normalizedEmail,
                 subject: template.subject,
                 html: template.html,
                 text: template.text,
             });
         }
 
-        return NextResponse.json({ success: true, userId });
+        return NextResponse.json({
+            success: true,
+            userId,
+            createdNewAccount: true,
+            linkedExistingAccount: false,
+        });
 
     } catch (error: any) {
         console.error('Erro ao criar conta:', error);

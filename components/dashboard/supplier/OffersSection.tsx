@@ -14,6 +14,7 @@ import { CheckCircleIcon } from "@heroicons/react/24/solid";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
+import { useSupplierAccessContext } from "./SupplierAccessContext";
 
 // Helper para obter headers com token de autenticação
 
@@ -49,10 +50,11 @@ interface FornecedorMaterial {
 
 export function SupplierOffersSection() {
     const { user, profile, session, initialized } = useAuth();
+    const { activeSupplierId, requiresSelection } = useSupplierAccessContext();
     const [ofertas, setOfertas] = useState<Oferta[]>([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [fornecedorId, setFornecedorId] = useState<string | null>(null);
+    const fornecedorId = activeSupplierId;
     const [materiaisConfigurados, setMateriaisConfigurados] = useState<FornecedorMaterial[]>([]);
 
     // Form state
@@ -64,39 +66,20 @@ export function SupplierOffersSection() {
     const [dataFim, setDataFim] = useState("");
     const [savingOffer, setSavingOffer] = useState(false);
 
-    // Load fornecedor_id
-    useEffect(() => {
-        if (!initialized || !user) return;
-
-        const loadFornecedorId = async () => {
-            const { data: userData } = await supabase
-                .from('users')
-                .select('fornecedor_id')
-                .eq('id', user.id)
-                .single();
-
-            if (userData?.fornecedor_id) {
-                setFornecedorId(userData.fornecedor_id);
-                return;
-            }
-
-            const { data: fornecedorData } = await supabase
-                .from('fornecedores')
-                .select('id')
-                .eq('user_id', user.id)
-                .single();
-
-            if (fornecedorData) {
-                setFornecedorId(fornecedorData.id);
-            }
-        };
-
-        loadFornecedorId();
-    }, [user, initialized]);
-
     // Load ofertas and materiais configurados
     useEffect(() => {
-        if (!fornecedorId) return;
+        if (requiresSelection) {
+            setOfertas([]);
+            setMateriaisConfigurados([]);
+            setLoading(false);
+            return;
+        }
+        if (!fornecedorId) {
+            setOfertas([]);
+            setMateriaisConfigurados([]);
+            setLoading(false);
+            return;
+        }
 
         const loadData = async () => {
             setLoading(true);
@@ -169,7 +152,7 @@ export function SupplierOffersSection() {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [fornecedorId]);
+    }, [fornecedorId, requiresSelection, session?.access_token]);
 
     const selectedMaterial = useMemo(() => {
         return materiaisConfigurados.find(m => m.material_id === selectedMaterialId);

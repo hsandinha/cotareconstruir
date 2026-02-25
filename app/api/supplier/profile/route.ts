@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { resolveSupplierAccess, userHasSupplierAccess } from '@/lib/supplierAccessServer';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -73,24 +74,34 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Perfil não encontrado' }, { status: 404 });
         }
 
-        // 2. Buscar dados do fornecedor (se vinculado)
+        const requestedFornecedorId = new URL(request.url).searchParams.get('fornecedor_id');
+        const resolvedAccess = await resolveSupplierAccess(supabase, user.id, requestedFornecedorId);
+        if (!resolvedAccess.ok) {
+            return NextResponse.json(
+                { error: resolvedAccess.error, code: resolvedAccess.code },
+                { status: resolvedAccess.status }
+            );
+        }
+        const selectedFornecedorId = resolvedAccess.fornecedorId;
+
+        // 2. Buscar dados do fornecedor (se vinculado/selecionado)
         let fornecedor = null;
-        if (userProfile.fornecedor_id) {
+        if (selectedFornecedorId) {
             const { data } = await supabase
                 .from('fornecedores')
                 .select('*')
-                .eq('id', userProfile.fornecedor_id)
+                .eq('id', selectedFornecedorId)
                 .single();
             fornecedor = data;
         }
 
         // 3. Buscar grupos do fornecedor
         let supplierGroups: string[] = [];
-        if (userProfile.fornecedor_id) {
+        if (selectedFornecedorId) {
             const { data: gruposData } = await supabase
                 .from('fornecedor_grupo')
                 .select('grupo_id')
-                .eq('fornecedor_id', userProfile.fornecedor_id);
+                .eq('fornecedor_id', selectedFornecedorId);
             if (gruposData) {
                 supplierGroups = gruposData.map(g => g.grupo_id);
             }
@@ -148,6 +159,9 @@ export async function GET(request: NextRequest) {
             supplierGroups,
             allGroups: allGroups || [],
             materiaisByGrupo,
+            selectedFornecedorId,
+            hasMultipleSuppliers: resolvedAccess.hasMultipleSuppliers,
+            suppliers: resolvedAccess.suppliers,
         });
 
     } catch (error: any) {
@@ -166,27 +180,21 @@ export async function PUT(request: NextRequest) {
 
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
         const body = await request.json();
-        const { company, manager, preferences } = body;
+        const { company, manager, preferences, fornecedorId: requestedFornecedorId } = body;
+        const resolvedAccess = await resolveSupplierAccess(supabase, user.id, requestedFornecedorId);
+        if (!resolvedAccess.ok) {
+            return NextResponse.json(
+                { error: resolvedAccess.error, code: resolvedAccess.code },
+                { status: resolvedAccess.status }
+            );
+        }
+        const selectedFornecedorId = resolvedAccess.fornecedorId;
 
         // 1. Atualizar tabela users
         const userUpdates: any = {
-            company_name: company.razaoSocial,
-            cnpj: company.cnpj?.replace(/\D/g, '') || null,
-            state_registration: company.inscricaoEstadual || null,
-            phone: company.telefone?.replace(/\D/g, '') || null,
             manager_name: manager.nome,
             manager_role: manager.cargo,
-            email: manager.email,
             whatsapp: manager.whatsapp?.replace(/\D/g, '') || null,
-            cep: company.cep?.replace(/\D/g, '') || null,
-            endereco: company.logradouro,
-            numero: company.numero,
-            bairro: company.bairro,
-            cidade: company.cidade,
-            estado: company.estado,
-            complemento: company.complemento,
-            operating_regions: preferences.regioesAtendimento,
-            operating_categories: preferences.categoriasMateriais,
             updated_at: new Date().toISOString()
         };
 
@@ -195,14 +203,8 @@ export async function PUT(request: NextRequest) {
             .update(userUpdates)
             .eq('id', user.id);
 
-        // 2. Atualizar tabela fornecedores (se vinculado)
-        const { data: userProfile } = await supabase
-            .from('users')
-            .select('fornecedor_id')
-            .eq('id', user.id)
-            .single();
-
-        if (userProfile?.fornecedor_id) {
+        // 2. Atualizar tabela fornecedores (empresa selecionada)
+        if (selectedFornecedorId) {
             const fornecedorUpdates: any = {
                 razao_social: company.razaoSocial,
                 cnpj: company.cnpj?.replace(/\D/g, '') || null,
@@ -218,13 +220,14 @@ export async function PUT(request: NextRequest) {
                 bairro: company.bairro || null,
                 cidade: company.cidade || null,
                 estado: company.estado || null,
+                regioes_atendimento: preferences?.regioesAtendimento || null,
                 updated_at: new Date().toISOString()
             };
 
             await supabase
                 .from('fornecedores')
                 .update(fornecedorUpdates)
-                .eq('id', userProfile.fornecedor_id);
+                .eq('id', selectedFornecedorId);
         }
 
         return NextResponse.json({ success: true });
@@ -251,14 +254,8 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Fornecedor não identificado' }, { status: 400 });
         }
 
-        // Verificar se o fornecedor pertence ao usuário
-        const { data: userProfile } = await supabase
-            .from('users')
-            .select('fornecedor_id')
-            .eq('id', user.id)
-            .single();
-
-        if (userProfile?.fornecedor_id !== fornecedorId) {
+        const hasAccess = await userHasSupplierAccess(supabase, user.id, fornecedorId);
+        if (!hasAccess) {
             return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
         }
 

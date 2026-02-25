@@ -16,6 +16,7 @@ import { CheckCircleIcon, ClockIcon } from "@heroicons/react/24/solid";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
+import { useSupplierAccessContext } from "./SupplierAccessContext";
 
 // Helper para obter headers com token de autenticação
 
@@ -44,10 +45,11 @@ interface GrupoInsumo {
 
 export function SupplierMaterialsSection() {
     const { user, profile, session, initialized } = useAuth();
+    const { activeSupplierId, requiresSelection } = useSupplierAccessContext();
     const [searchTerm, setSearchTerm] = useState("");
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
     const [loading, setLoading] = useState(true);
-    const [fornecedorId, setFornecedorId] = useState<string | null>(null);
+    const fornecedorId = activeSupplierId;
 
     // Dados base do sistema
     const [materiaisBase, setMateriaisBase] = useState<MaterialBase[]>([]);
@@ -74,55 +76,35 @@ export function SupplierMaterialsSection() {
     const [requestGrupo, setRequestGrupo] = useState("");
     const [sendingRequest, setSendingRequest] = useState(false);
 
-    // Carregar dados do usuário e fornecedor
+    // Carregar grupos do fornecedor ativo
     useEffect(() => {
-        const loadUserData = async () => {
+        const loadSupplierContextData = async () => {
             if (!initialized) return;
+            if (requiresSelection) {
+                setFornecedorGrupoIds([]);
+                setLoading(false);
+                return;
+            }
 
-            if (user) {
-                let fId: string | null = null;
+            if (user && fornecedorId) {
+                const { data: gruposData } = await supabase
+                    .from('fornecedor_grupo')
+                    .select('grupo_id')
+                    .eq('fornecedor_id', fornecedorId);
 
-                // Primeiro tenta via users.fornecedor_id
-                const { data: userData } = await supabase
-                    .from('users')
-                    .select('fornecedor_id')
-                    .eq('id', user.id)
-                    .single();
-
-                if (userData?.fornecedor_id) {
-                    fId = userData.fornecedor_id;
+                if (gruposData) {
+                    setFornecedorGrupoIds(gruposData.map(g => g.grupo_id));
                 } else {
-                    // Fallback: buscar na tabela fornecedores por user_id
-                    const { data: fornecedorData } = await supabase
-                        .from('fornecedores')
-                        .select('id')
-                        .eq('user_id', user.id)
-                        .single();
-
-                    if (fornecedorData) {
-                        fId = fornecedorData.id;
-                    }
+                    setFornecedorGrupoIds([]);
                 }
-
-                if (fId) {
-                    setFornecedorId(fId);
-
-                    // Buscar grupos do fornecedor na tabela de relacionamento
-                    const { data: gruposData } = await supabase
-                        .from('fornecedor_grupo')
-                        .select('grupo_id')
-                        .eq('fornecedor_id', fId);
-
-                    if (gruposData) {
-                        setFornecedorGrupoIds(gruposData.map(g => g.grupo_id));
-                    }
-                }
+            } else {
+                setFornecedorGrupoIds([]);
             }
             setLoading(false);
         };
 
-        loadUserData();
-    }, [user, initialized]);
+        loadSupplierContextData();
+    }, [user, initialized, fornecedorId, requiresSelection]);
 
     // Carregar materiais base e grupos
     useEffect(() => {

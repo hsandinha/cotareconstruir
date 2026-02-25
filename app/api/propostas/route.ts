@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { resolveSupplierAccess } from '@/lib/supplierAccessServer';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
@@ -35,26 +36,6 @@ async function getAuthUser(req: NextRequest) {
     return user;
 }
 
-async function getFornecedorId(userId: string): Promise<string | null> {
-    if (!supabaseAdmin) return null;
-
-    const { data: fornecedorByUser } = await supabaseAdmin
-        .from('fornecedores')
-        .select('id')
-        .eq('user_id', userId)
-        .single();
-
-    if (fornecedorByUser?.id) return fornecedorByUser.id;
-
-    const { data: userData } = await supabaseAdmin
-        .from('users')
-        .select('fornecedor_id')
-        .eq('id', userId)
-        .single();
-
-    return userData?.fornecedor_id || null;
-}
-
 // POST: Create a proposal (proposta) for a cotação
 export async function POST(req: NextRequest) {
     try {
@@ -71,7 +52,18 @@ export async function POST(req: NextRequest) {
         const { action } = body;
 
         if (action === 'create') {
-            const fornecedorId = await getFornecedorId(user.id);
+            const requestedFornecedorId = typeof body.fornecedor_id === 'string'
+                ? body.fornecedor_id
+                : null;
+            const resolvedAccess = await resolveSupplierAccess(supabaseAdmin, user.id, requestedFornecedorId);
+            if (!resolvedAccess.ok) {
+                return NextResponse.json(
+                    { error: resolvedAccess.error, code: resolvedAccess.code },
+                    { status: resolvedAccess.status }
+                );
+            }
+
+            const fornecedorId = resolvedAccess.fornecedorId;
             if (!fornecedorId) {
                 return NextResponse.json({ error: 'Fornecedor não encontrado' }, { status: 404 });
             }

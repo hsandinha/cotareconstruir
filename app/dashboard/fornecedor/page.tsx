@@ -6,6 +6,7 @@ import { SupplierProfileSection } from "../../../components/dashboard/supplier/P
 import { SupplierMaterialsSection } from "../../../components/dashboard/supplier/MaterialsSection";
 import { SupplierMyProductsSection } from "../../../components/dashboard/supplier/MyProductsSection";
 import { SupplierSalesAndQuotationsSection } from "../../../components/dashboard/supplier/SalesAndQuotationsSection";
+import { SupplierAccessProvider, useSupplierAccessContext } from "@/components/dashboard/supplier/SupplierAccessContext";
 import { NotificationBell } from "../../../components/NotificationBell";
 import { ProfileSwitcher } from "../../../components/ProfileSwitcher";
 import PendingProfileModal from "../../../components/PendingProfileModal";
@@ -47,9 +48,19 @@ function FornecedorDashboardContent() {
     });
 
     const { user, profile, session, initialized, logout } = useAuth();
+    const {
+        suppliers,
+        activeSupplierId,
+        activeSupplier,
+        setActiveSupplierId,
+        hasMultipleSuppliers,
+        requiresSelection,
+        loading: supplierAccessLoading,
+    } = useSupplierAccessContext();
 
     const fetchDashboardData = useCallback(async () => {
         if (!user) return;
+        if (supplierAccessLoading) return;
 
         try {
             setUserId(user.id);
@@ -67,11 +78,24 @@ function FornecedorDashboardContent() {
             }
 
             const authHeaders = await getAuthHeaders(session?.access_token);
+            const fornecedorQuery = activeSupplierId
+                ? `?fornecedor_id=${encodeURIComponent(activeSupplierId)}`
+                : '';
+
+            if (requiresSelection) {
+                setStats({
+                    activeConsultations: 0,
+                    sentProposals: 0,
+                    registeredMaterials: 0,
+                    approvals: 0,
+                });
+                return;
+            }
 
             const [cotacoesRes, pedidosRes, materiaisRes] = await Promise.all([
-                fetch('/api/cotacoes', { headers: authHeaders }).then(r => r.ok ? r.json() : { data: [] }),
-                fetch('/api/pedidos', { headers: authHeaders }).then(r => r.ok ? r.json() : { data: [] }),
-                fetch('/api/fornecedor-materiais' + (profile?.fornecedor_id ? `?fornecedor_id=${profile.fornecedor_id}` : ''), { headers: authHeaders }).then(r => r.ok ? r.json() : { data: [] }),
+                fetch(`/api/cotacoes${fornecedorQuery}`, { headers: authHeaders }).then(async (r) => r.ok ? r.json() : { data: [] }),
+                fetch(`/api/pedidos${fornecedorQuery}`, { headers: authHeaders }).then(async (r) => r.ok ? r.json() : { data: [] }),
+                fetch('/api/fornecedor-materiais' + fornecedorQuery, { headers: authHeaders }).then(async (r) => r.ok ? r.json() : { data: [] }),
             ]);
 
             const cotacoesData = cotacoesRes.data || [];
@@ -88,7 +112,7 @@ function FornecedorDashboardContent() {
         } catch (error) {
             console.error("Error fetching stats:", error);
         }
-    }, [user, profile, session]);
+    }, [user, profile, session, activeSupplierId, requiresSelection, supplierAccessLoading]);
 
     useEffect(() => {
         if (!searchParams) return;
@@ -137,6 +161,17 @@ function FornecedorDashboardContent() {
     }, [user, initialized, router, fetchDashboardData]);
 
     function renderTabContent() {
+        if (hasMultipleSuppliers && !activeSupplierId) {
+            return (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center">
+                    <p className="text-lg font-semibold text-amber-900">Selecione uma empresa para continuar</p>
+                    <p className="mt-2 text-sm text-amber-800">
+                        Este login possui acesso a mais de um CNPJ. Escolha a empresa no modal ou no seletor do topo.
+                    </p>
+                </div>
+            );
+        }
+
         switch (tab) {
             case "perfil":
                 return <SupplierProfileSection />;
@@ -165,6 +200,27 @@ function FornecedorDashboardContent() {
                             <span className="text-lg font-light text-gray-600 ml-1">& Construir</span>
                         </div>
                         <div className="flex items-center space-x-4">
+                            {(suppliers.length > 0) && (
+                                <div className="hidden md:flex items-center">
+                                    <div className="rounded-xl border border-slate-200 bg-white px-2 py-1 shadow-sm">
+                                        <label className="sr-only" htmlFor="supplier-company-switcher">Empresa ativa</label>
+                                        <select
+                                            id="supplier-company-switcher"
+                                            value={activeSupplierId || ""}
+                                            onChange={(e) => setActiveSupplierId(e.target.value || null)}
+                                            className="max-w-[280px] bg-transparent px-2 py-1 text-sm font-medium text-slate-700 focus:outline-none"
+                                        >
+                                            <option value="" disabled={suppliers.length > 1}>Selecionar empresa</option>
+                                            {suppliers.map((supplier) => (
+                                                <option key={supplier.id} value={supplier.id}>
+                                                    {(supplier.nome_fantasia || supplier.razao_social || "Fornecedor")}
+                                                    {supplier.isPrimary ? " (principal)" : ""}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            )}
                             <NotificationBell />
                             <ProfileSwitcher
                                 currentRole="fornecedor"
@@ -286,6 +342,64 @@ function FornecedorDashboardContent() {
                 }}
             />
 
+            {/* Seleção obrigatória de empresa (multi-CNPJ) */}
+            {hasMultipleSuppliers && requiresSelection && (
+                <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
+                    <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
+                        <div className="border-b border-slate-100 p-6">
+                            <h3 className="text-xl font-bold text-slate-900">Escolha a empresa para acessar</h3>
+                            <p className="mt-1 text-sm text-slate-600">
+                                Este login possui acesso a múltiplos CNPJs. Selecione a empresa que deseja operar agora.
+                            </p>
+                        </div>
+
+                        <div className="grid gap-4 p-6 md:grid-cols-2">
+                            {suppliers.map((supplier) => (
+                                <button
+                                    key={supplier.id}
+                                    type="button"
+                                    onClick={() => setActiveSupplierId(supplier.id)}
+                                    className="group rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-emerald-300 hover:shadow-md"
+                                >
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-sm font-semibold text-slate-900">
+                                                {supplier.nome_fantasia || supplier.razao_social || "Fornecedor"}
+                                            </p>
+                                            {supplier.nome_fantasia && supplier.razao_social && (
+                                                <p className="mt-1 text-xs text-slate-500">{supplier.razao_social}</p>
+                                            )}
+                                        </div>
+                                        <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${supplier.ativo ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                                            {supplier.ativo ? "Ativo" : "Inativo"}
+                                        </span>
+                                    </div>
+                                    <div className="mt-3 space-y-1 text-xs text-slate-600">
+                                        <p>CNPJ: {supplier.cnpj || "Não informado"}</p>
+                                        {supplier.isPrimary && (
+                                            <p className="font-semibold text-emerald-700">Conta principal</p>
+                                        )}
+                                    </div>
+                                    <div className="mt-4 inline-flex items-center rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white group-hover:bg-emerald-700">
+                                        Entrar com esta empresa
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="border-t border-slate-100 px-6 py-4 text-right">
+                            <button
+                                type="button"
+                                onClick={async () => { await logout(); }}
+                                className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                            >
+                                Sair
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <ChatNotificationListener />
         </div>
     );
@@ -294,7 +408,9 @@ function FornecedorDashboardContent() {
 export default function FornecedorDashboard() {
     return (
         <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-            <FornecedorDashboardContent />
+            <SupplierAccessProvider>
+                <FornecedorDashboardContent />
+            </SupplierAccessProvider>
         </Suspense>
     );
 }

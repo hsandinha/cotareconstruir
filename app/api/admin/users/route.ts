@@ -210,6 +210,30 @@ export async function DELETE(request: NextRequest) {
             throw new Error(userProfileError.message);
         }
 
+        const { data: supplierAccessLinks, error: supplierAccessLinksError } = await supabase
+            .from('user_fornecedor_access')
+            .select('fornecedor_id')
+            .eq('user_id', userId);
+
+        if (supplierAccessLinksError && !/relation .* does not exist/i.test(supplierAccessLinksError.message || '')) {
+            throw new Error(supplierAccessLinksError.message);
+        }
+
+        const linkedSupplierIds = (supplierAccessLinks || [])
+            .map((row: any) => row.fornecedor_id)
+            .filter(Boolean);
+
+        if (linkedSupplierIds.length > 0) {
+            const { error: fornecedoresUnlinkManyError } = await supabase
+                .from('fornecedores')
+                .update({ user_id: null })
+                .in('id', linkedSupplierIds);
+
+            if (fornecedoresUnlinkManyError) {
+                throw new Error(fornecedoresUnlinkManyError.message);
+            }
+        }
+
         if (userProfile?.fornecedor_id) {
             const { error: fornecedorUnlinkError } = await supabase
                 .from('fornecedores')
@@ -229,6 +253,17 @@ export async function DELETE(request: NextRequest) {
 
             if (clienteUnlinkError) {
                 throw new Error(clienteUnlinkError.message);
+            }
+        }
+
+        if (supplierAccessLinks && supplierAccessLinks.length > 0) {
+            const { error: supplierAccessDeleteError } = await supabase
+                .from('user_fornecedor_access')
+                .delete()
+                .eq('user_id', userId);
+
+            if (supplierAccessDeleteError) {
+                throw new Error(supplierAccessDeleteError.message);
             }
         }
 
