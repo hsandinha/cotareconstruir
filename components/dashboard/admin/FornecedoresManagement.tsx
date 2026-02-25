@@ -74,6 +74,10 @@ interface Fornecedor {
     hasUserAccount?: boolean;
     mustChangePassword?: boolean;
     lastLoginAt?: string | null;
+    emailLoginExists?: boolean;
+    emailLoginIsFornecedor?: boolean;
+    emailLoginUserId?: string | null;
+    emailLoginLastLoginAt?: string | null;
     codigo: string;
     razaoSocial: string;
     nomeFantasia: string;
@@ -284,11 +288,21 @@ export default function FornecedoresManagement() {
 
             // Criar mapa de usuário por id para enriquecer vínculos N:N
             const userById = new Map<string, { userId: string; mustChangePassword: boolean; lastLoginAt: string | null }>();
+            const userByEmail = new Map<string, { userId: string; isFornecedor: boolean; lastLoginAt: string | null }>();
             (usersRaw || []).forEach((user: any) => {
                 if (user?.id) {
                     userById.set(user.id, {
                         userId: user.id,
                         mustChangePassword: Boolean(user.must_change_password),
+                        lastLoginAt: user.last_login_at || null,
+                    });
+                }
+                const emailKey = normalizeEmail(user?.email);
+                if (emailKey && !userByEmail.has(emailKey)) {
+                    const isFornecedor = user?.role === 'fornecedor' || user?.roles?.includes?.('fornecedor');
+                    userByEmail.set(emailKey, {
+                        userId: user.id,
+                        isFornecedor: Boolean(isFornecedor),
                         lastLoginAt: user.last_login_at || null,
                     });
                 }
@@ -329,6 +343,10 @@ export default function FornecedoresManagement() {
                 userId: fornecedorUserMap.get(f.id)?.userId,
                 mustChangePassword: fornecedorUserMap.get(f.id)?.mustChangePassword,
                 lastLoginAt: fornecedorUserMap.get(f.id)?.lastLoginAt || null,
+                emailLoginExists: Boolean(userByEmail.get(normalizeEmail(f.email))),
+                emailLoginIsFornecedor: Boolean(userByEmail.get(normalizeEmail(f.email))?.isFornecedor),
+                emailLoginUserId: userByEmail.get(normalizeEmail(f.email))?.userId || null,
+                emailLoginLastLoginAt: userByEmail.get(normalizeEmail(f.email))?.lastLoginAt || null,
             }));
 
             setFornecedores(fornecedoresComFlag);
@@ -727,6 +745,20 @@ export default function FornecedoresManagement() {
     );
     const filteredSelectedGrupos = allSelectedGrupos.filter(g =>
         !normalizedGrupoSearch || g.nome.toLowerCase().includes(normalizedGrupoSearch)
+    );
+
+    const createAccountWillLinkExistingFornecedorLogin = Boolean(
+        selectedFornecedorForAccount
+        && !selectedFornecedorForAccount.hasUserAccount
+        && selectedFornecedorForAccount.emailLoginExists
+        && selectedFornecedorForAccount.emailLoginIsFornecedor
+    );
+
+    const createAccountEmailBelongsToNonSupplierUser = Boolean(
+        selectedFornecedorForAccount
+        && !selectedFornecedorForAccount.hasUserAccount
+        && selectedFornecedorForAccount.emailLoginExists
+        && !selectedFornecedorForAccount.emailLoginIsFornecedor
     );
 
     if (loading) {
@@ -1355,20 +1387,43 @@ export default function FornecedoresManagement() {
                                 <div className="flex items-start gap-3">
                                     <Mail className="w-5 h-5 text-blue-600 mt-0.5" />
                                     <div className="text-sm">
-                                        <p className="font-medium text-blue-900 mb-1">Credenciais serão enviadas para:</p>
+                                        <p className="font-medium text-blue-900 mb-1">
+                                            {createAccountWillLinkExistingFornecedorLogin
+                                                ? 'Conta existente identificada para este email:'
+                                                : 'Credenciais serão enviadas para:'}
+                                        </p>
                                         <p className="text-blue-700">📧 {selectedFornecedorForAccount.email}</p>
                                         <p className="text-blue-700">📱 {selectedFornecedorForAccount.whatsapp}</p>
+                                        {createAccountWillLinkExistingFornecedorLogin && (
+                                            <p className="mt-2 text-blue-800">
+                                                Ao continuar, este fornecedor será apenas associado ao login já existente.
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                                <p className="text-sm text-amber-800">
-                                    <strong>Senha padrão:</strong> 123456
-                                    <br />
-                                    O fornecedor será solicitado a trocar a senha no primeiro acesso.
-                                </p>
-                            </div>
+                            {createAccountWillLinkExistingFornecedorLogin ? (
+                                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                                    <p className="text-sm text-emerald-800">
+                                        A senha atual será mantida. Nenhum reset de senha será feito neste fluxo.
+                                    </p>
+                                </div>
+                            ) : createAccountEmailBelongsToNonSupplierUser ? (
+                                <div className="bg-rose-50 border border-rose-200 rounded-lg p-4">
+                                    <p className="text-sm text-rose-800">
+                                        Este email já pertence a uma conta que não é de fornecedor. Use outro email ou ajuste o usuário em <strong>Gerenciar Usuários</strong>.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                                    <p className="text-sm text-amber-800">
+                                        <strong>Senha padrão:</strong> 123456
+                                        <br />
+                                        O fornecedor será solicitado a trocar a senha no primeiro acesso.
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex items-center justify-end gap-3 p-6 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
@@ -1381,11 +1436,13 @@ export default function FornecedoresManagement() {
                             </button>
                             <button
                                 onClick={handleCreateAccount}
-                                disabled={creatingAccount}
+                                disabled={creatingAccount || createAccountEmailBelongsToNonSupplierUser}
                                 className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
                             >
-                                <UserPlus className="w-4 h-4" />
-                                {creatingAccount ? 'Criando...' : 'Criar e Enviar'}
+                                {createAccountWillLinkExistingFornecedorLogin ? <UserCheck className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+                                {creatingAccount
+                                    ? (createAccountWillLinkExistingFornecedorLogin ? 'Associando...' : 'Criando...')
+                                    : (createAccountWillLinkExistingFornecedorLogin ? 'Associar Conta' : 'Criar e Enviar')}
                             </button>
                         </div>
                     </div>
