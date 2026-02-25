@@ -1281,11 +1281,11 @@ export default function FornecedoresManagement() {
 
             {/* Modal: Alteração de email (sincroniza login + contato) */}
             {isMultiEmpresaEmailModalOpen && editingFornecedor && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-                    <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-4">
+                    <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
                         <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-6">
                             <div>
-                                <h3 className="text-lg font-bold text-slate-900">Atualizar email de acesso</h3>
+                                <h3 className="text-xl font-semibold text-slate-900">Atualizar email de acesso</h3>
                                 <p className="mt-1 text-sm text-slate-600">{editingFornecedor.razaoSocial}</p>
                             </div>
                             <button
@@ -1298,52 +1298,83 @@ export default function FornecedoresManagement() {
                             </button>
                         </div>
 
-                        <div className="space-y-4 p-6">
-                            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-                                Você alterou o email de um fornecedor com acesso ao sistema.
-                                {(editingFornecedor.linkedFornecedoresCount || 0) > 1 && (
-                                    <>
-                                        {' '}Este login está vinculado a <strong>{editingFornecedor.linkedFornecedoresCount}</strong> empresas.
-                                    </>
-                                )}
+                        <div className="space-y-5 p-6">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                <p className="text-sm font-medium text-slate-900">
+                                    Você alterou o email de um fornecedor com acesso ao sistema.
+                                </p>
+                                <p className="mt-1 text-sm text-slate-600">
+                                    {(editingFornecedor.linkedFornecedoresCount || 0) > 1
+                                        ? `Este login está vinculado a ${editingFornecedor.linkedFornecedoresCount} empresas. Escolha como tratar o acesso.`
+                                        : 'O sistema atualizará o login e reenviará os dados de acesso para o novo email.'}
+                                </p>
                             </div>
 
                             {(editingFornecedor.linkedFornecedoresCount || 0) > 1 ? (
                                 <div className="space-y-3">
-                                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                                        <strong>Somente esta empresa:</strong> desmembra o acesso deste CNPJ do login compartilhado e cria/vincula um novo login usando o novo email.
-                                        Se for criada nova conta, a senha será redefinida para <strong>123456</strong> e enviada por email.
+                                    <div className="rounded-xl border border-slate-200 p-4">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <p className="text-sm font-semibold text-slate-900">Opção 1: Somente esta empresa</p>
+                                            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
+                                                Desmembrar acesso
+                                            </span>
+                                        </div>
+                                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                                            Remove este CNPJ do login compartilhado e cria/vincula um novo login com o novo email.
+                                            Se for criada nova conta, a senha será redefinida para <span className="font-semibold text-slate-800">123456</span> e enviada por email.
+                                        </p>
                                     </div>
-                                    <div className="rounded-xl border border-purple-200 bg-purple-50 p-4 text-sm text-purple-900">
-                                        <strong>Atualizar todas as vinculadas:</strong> mantém o login compartilhado, atualiza o email de login (usuário + Auth),
-                                        redefine a senha para <strong>123456</strong> e propaga o email de contato para as empresas vinculadas.
+                                    <div className="rounded-xl border border-slate-200 p-4">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <p className="text-sm font-semibold text-slate-900">Opção 2: Atualizar todas as vinculadas</p>
+                                            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
+                                                Manter login compartilhado
+                                            </span>
+                                        </div>
+                                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                                            Atualiza o email do login (usuário + Auth), redefine a senha para <span className="font-semibold text-slate-800">123456</span>
+                                            e propaga o email de contato para as empresas vinculadas.
+                                        </p>
                                     </div>
                                 </div>
                             ) : (
-                                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                                    O sistema irá <strong>atualizar o email de login automaticamente</strong> (usuário + Auth),
-                                    redefinir a senha para <strong>123456</strong> e enviar os novos dados de acesso para o novo email.
+                                <div className="rounded-xl border border-slate-200 p-4">
+                                    <p className="text-sm leading-6 text-slate-700">
+                                        O sistema irá <span className="font-semibold text-slate-900">atualizar o email de login</span> (usuário + Auth),
+                                        redefinir a senha para <span className="font-semibold text-slate-900">123456</span> e enviar os novos dados de acesso para o novo email.
+                                    </p>
                                 </div>
                             )}
 
-                            <div className="grid gap-3 md:grid-cols-2">
-                                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Atual</p>
-                                    <p className="mt-1 break-all text-sm font-medium text-slate-900">{editingFornecedor.email || '—'}</p>
+                            <div className="rounded-xl border border-slate-200">
+                                <div className="border-b border-slate-200 px-4 py-3">
+                                    <p className="text-sm font-semibold text-slate-900">Comparativo de email</p>
                                 </div>
-                                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Novo email (contato + login)</p>
-                                    <p className="mt-1 break-all text-sm font-medium text-emerald-900">{String(formData.email || '').trim() || '—'}</p>
+                                <div className="grid gap-0 md:grid-cols-2">
+                                    <div className="p-4 md:border-r md:border-slate-200">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Atual</p>
+                                        <p className="mt-1 break-all text-sm font-medium text-slate-900">{editingFornecedor.email || '—'}</p>
+                                    </div>
+                                    <div className="bg-slate-50 p-4">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                            {(editingFornecedor.linkedFornecedoresCount || 0) > 1 ? 'Novo email (contato + login)' : 'Novo email'}
+                                        </p>
+                                        <p className="mt-1 break-all text-sm font-medium text-slate-900">{String(formData.email || '').trim() || '—'}</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 p-6">
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white p-6">
+                            <p className="text-xs text-slate-500">
+                                {saving ? 'Processando atualização...' : 'A alteração de email redefine a senha para 123456 quando houver atualização de login.'}
+                            </p>
+                            <div className="flex flex-wrap items-center justify-end gap-3">
                             <button
                                 type="button"
                                 onClick={() => setIsMultiEmpresaEmailModalOpen(false)}
                                 disabled={saving}
-                                className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 disabled:opacity-50"
+                                className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
                             >
                                 Cancelar
                             </button>
@@ -1353,7 +1384,7 @@ export default function FornecedoresManagement() {
                                         type="button"
                                         onClick={handleSaveEmailOnlyCurrentFornecedor}
                                         disabled={saving}
-                                        className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                                        className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                                     >
                                         Somente esta empresa
                                     </button>
@@ -1361,7 +1392,7 @@ export default function FornecedoresManagement() {
                                         type="button"
                                         onClick={handleSaveEmailForAllLinkedFornecedores}
                                         disabled={saving}
-                                        className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
+                                        className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
                                     >
                                         {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                                         Atualizar login e empresas vinculadas
@@ -1372,12 +1403,13 @@ export default function FornecedoresManagement() {
                                     type="button"
                                     onClick={handleConfirmFornecedorEmailChange}
                                     disabled={saving}
-                                    className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
+                                    className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
                                 >
                                     {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                                     Atualizar login e salvar
                                 </button>
                             )}
+                            </div>
                         </div>
                     </div>
                 </div>
