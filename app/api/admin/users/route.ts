@@ -199,11 +199,54 @@ export async function DELETE(request: NextRequest) {
 
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        // Deletar do Auth (cascade deleta da tabela users)
-        const { error } = await supabase.auth.admin.deleteUser(userId);
+        // Buscar perfil para limpar vínculos antes da exclusão
+        const { data: userProfile, error: userProfileError } = await supabase
+            .from('users')
+            .select('id, cliente_id, fornecedor_id')
+            .eq('id', userId)
+            .maybeSingle();
 
-        if (error) {
-            throw new Error(error.message);
+        if (userProfileError) {
+            throw new Error(userProfileError.message);
+        }
+
+        if (userProfile?.fornecedor_id) {
+            const { error: fornecedorUnlinkError } = await supabase
+                .from('fornecedores')
+                .update({ user_id: null })
+                .eq('id', userProfile.fornecedor_id);
+
+            if (fornecedorUnlinkError) {
+                throw new Error(fornecedorUnlinkError.message);
+            }
+        }
+
+        if (userProfile?.cliente_id) {
+            const { error: clienteUnlinkError } = await supabase
+                .from('clientes')
+                .update({ user_id: null })
+                .eq('id', userProfile.cliente_id);
+
+            if (clienteUnlinkError) {
+                throw new Error(clienteUnlinkError.message);
+            }
+        }
+
+        // Deletar do Auth
+        const { error: authDeleteError } = await supabase.auth.admin.deleteUser(userId);
+
+        if (authDeleteError && !/not found/i.test(authDeleteError.message || '')) {
+            throw new Error(authDeleteError.message);
+        }
+
+        // Deletar explicitamente o perfil na tabela users (não depender de cascade/trigger)
+        const { error: profileDeleteError } = await supabase
+            .from('users')
+            .delete()
+            .eq('id', userId);
+
+        if (profileDeleteError) {
+            throw new Error(profileDeleteError.message);
         }
 
         return NextResponse.json({

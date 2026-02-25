@@ -176,6 +176,9 @@ export default function AdminDashboard() {
     const [newUserName, setNewUserName] = useState("");
     const [newUserRole, setNewUserRole] = useState("cliente");
     const [isCreatingUser, setIsCreatingUser] = useState(false);
+    const [isDeleteUserModalOpen, setIsDeleteUserModalOpen] = useState(false);
+    const [userPendingDeletion, setUserPendingDeletion] = useState<any | null>(null);
+    const [isDeletingUser, setIsDeletingUser] = useState(false);
 
     // Profile Tab State
     const [profileName, setProfileName] = useState("");
@@ -511,21 +514,53 @@ export default function AdminDashboard() {
         }
     };
 
-    const handleDeleteUser = async (userId: string) => {
-        if (!confirm("Tem certeza que deseja excluir este usuário? Esta ação não pode ser desfeita.")) return;
-        try {
-            const { error } = await supabase
-                .from('users')
-                .delete()
-                .eq('id', userId);
+    const openDeleteUserModal = (user: any) => {
+        setUserPendingDeletion(user);
+        setIsDeleteUserModalOpen(true);
+    };
 
-            if (error) throw error;
+    const closeDeleteUserModal = () => {
+        if (isDeletingUser) return;
+        setIsDeleteUserModalOpen(false);
+        setUserPendingDeletion(null);
+    };
+
+    const handleDeleteUser = async () => {
+        const userId = userPendingDeletion?.id;
+        if (!userId) return;
+
+        setIsDeletingUser(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.access_token) {
+                throw new Error("Sessão não encontrada");
+            }
+
+            const response = await fetch(`/api/admin/users?userId=${encodeURIComponent(userId)}`, {
+                method: "DELETE",
+                headers: {
+                    "Authorization": `Bearer ${session.access_token}`,
+                },
+            });
+
+            const result = await response.json();
+            if (!response.ok) {
+                const apiMessage =
+                    (typeof result?.error === "string" ? result.error : undefined)
+                    || result?.error?.message
+                    || result?.message;
+                throw new Error(apiMessage || "Erro ao excluir usuário");
+            }
 
             showToast("success", "Usuário excluído com sucesso!");
+            setIsDeleteUserModalOpen(false);
+            setUserPendingDeletion(null);
             fetchUsersPage(usersPageIndex);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error deleting user:", error);
-            showToast("error", "Erro ao excluir usuário.");
+            showToast("error", error?.message || "Erro ao excluir usuário.");
+        } finally {
+            setIsDeletingUser(false);
         }
     };
 
@@ -946,7 +981,7 @@ export default function AdminDashboard() {
                                                 </td>
                                                 <td className="px-4 py-3 align-top text-right text-sm font-medium space-x-2">
                                                     <button
-                                                        onClick={() => handleDeleteUser(user.id)}
+                                                        onClick={() => openDeleteUserModal(user)}
                                                         className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100"
                                                     >
                                                         Excluir
@@ -1037,7 +1072,7 @@ export default function AdminDashboard() {
 
                                         <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
                                             <button
-                                                onClick={() => handleDeleteUser(user.id)}
+                                                onClick={() => openDeleteUserModal(user)}
                                                 className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100 ml-auto"
                                             >
                                                 Excluir
@@ -1485,6 +1520,102 @@ export default function AdminDashboard() {
                     </div>
                 )}
             </div>
+
+            {/* Delete User Modal */}
+            {isDeleteUserModalOpen && userPendingDeletion && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+                    onClick={closeDeleteUserModal}
+                >
+                    <div
+                        className="w-full max-w-lg rounded-2xl bg-white shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="border-b border-slate-100 p-6">
+                            <div className="flex items-start gap-4">
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                                    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                        <path d="M3 6h18" />
+                                        <path d="M8 6V4h8v2" />
+                                        <path d="M19 6l-1 14H6L5 6" />
+                                        <path d="M10 11v6" />
+                                        <path d="M14 11v6" />
+                                    </svg>
+                                </div>
+                                <div className="min-w-0">
+                                    <h3 className="text-lg font-bold text-slate-900">Excluir usuário</h3>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        Esta ação remove o acesso ao sistema e não pode ser desfeita.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4 p-6">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <p className="truncate text-sm font-semibold text-slate-900">
+                                            {userPendingDeletion.name || userPendingDeletion.companyName || "Sem Nome"}
+                                        </p>
+                                        <p className="truncate text-xs text-slate-600">{userPendingDeletion.email}</p>
+                                        <p className="mt-1 text-[11px] text-slate-500">
+                                            ID: {String(userPendingDeletion.id || "").slice(0, 8)}...
+                                        </p>
+                                    </div>
+                                    <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold ${(userPendingDeletion.status || "active") === "active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"}`}>
+                                        {(userPendingDeletion.status || "active") === "active" ? "Ativo" : "Inativo"}
+                                    </span>
+                                </div>
+
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    {(userPendingDeletion.roles || (userPendingDeletion.role ? [userPendingDeletion.role] : ["cliente"])).map((role: string) => (
+                                        <span
+                                            key={role}
+                                            className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${role === "admin"
+                                                ? "bg-red-100 text-red-700"
+                                                : role === "fornecedor"
+                                                    ? "bg-purple-100 text-purple-700"
+                                                    : "bg-blue-100 text-blue-700"
+                                                }`}
+                                        >
+                                            {role}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">O que acontece ao excluir</p>
+                                <ul className="mt-2 space-y-1 text-sm text-amber-900">
+                                    <li>• O login do usuário será removido do sistema.</li>
+                                    <li>• Vínculos com cliente/fornecedor serão desvinculados automaticamente.</li>
+                                    <li>• Será necessário recriar a conta caso precise acesso novamente.</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 border-t border-slate-100 p-6">
+                            <button
+                                type="button"
+                                onClick={closeDeleteUserModal}
+                                className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                                disabled={isDeletingUser}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleDeleteUser}
+                                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                                disabled={isDeletingUser}
+                            >
+                                {isDeletingUser ? "Excluindo..." : "Excluir usuário"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Create User Modal */}
             {isCreateUserModalOpen && (
