@@ -110,6 +110,12 @@ interface Fornecedor {
     updatedAt?: any;
 }
 
+interface ExistingSupplierLoginAssociationPrompt {
+    requestedEmail: string;
+    existingUserEmail: string;
+    existingUserLinkedSuppliersCount: number;
+}
+
 export default function FornecedoresManagement() {
     const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
     const [filteredFornecedores, setFilteredFornecedores] = useState<Fornecedor[]>([]);
@@ -131,6 +137,7 @@ export default function FornecedoresManagement() {
     const [saving, setSaving] = useState(false);
     const [createAccessOnSave, setCreateAccessOnSave] = useState(true);
     const [isMultiEmpresaEmailModalOpen, setIsMultiEmpresaEmailModalOpen] = useState(false);
+    const [existingSupplierLoginAssociationPrompt, setExistingSupplierLoginAssociationPrompt] = useState<ExistingSupplierLoginAssociationPrompt | null>(null);
     const [loadingCnpj, setLoadingCnpj] = useState(false);
     const [loadingCep, setLoadingCep] = useState(false);
 
@@ -391,7 +398,10 @@ export default function FornecedoresManagement() {
         return true;
     };
 
-    const submitFornecedor = async (options?: { emailUpdateScope?: 'single' | 'all_linked' }) => {
+    const submitFornecedor = async (options?: {
+        emailUpdateScope?: 'single' | 'all_linked';
+        emailConflictAction?: 'link_existing_supplier_account';
+    }) => {
         if (!validateFornecedorForm()) return;
 
         try {
@@ -430,15 +440,31 @@ export default function FornecedoresManagement() {
                     body: JSON.stringify({
                         id: editingFornecedor.id,
                         email_update_scope: options?.emailUpdateScope || 'single',
+                        email_conflict_action: options?.emailConflictAction || null,
                         ...supabaseData
                     })
                 });
                 const payload = await res.json();
                 if (!res.ok) {
+                    if (res.status === 409 && payload?.code === 'supplier_login_exists_can_link') {
+                        setExistingSupplierLoginAssociationPrompt({
+                            requestedEmail: String(formData.email || '').trim(),
+                            existingUserEmail: String(payload.existingUserEmail || formData.email || '').trim(),
+                            existingUserLinkedSuppliersCount: Number(payload.existingUserLinkedSuppliersCount || 1),
+                        });
+                        return;
+                    }
                     throw new Error(payload.error || 'Erro ao atualizar');
                 }
 
-                if (payload.loginSplitFromSharedAccount && payload.linkedExistingAccount) {
+                if (payload.associatedToExistingSupplierLogin) {
+                    const count = Number(payload.updatedLinkedSuppliersCount || 0);
+                    showToast('success',
+                        count > 1 && payload.contactEmailUpdatedAcrossLinkedSuppliers
+                            ? `Fornecedor associado ao login existente e email de contato atualizado em ${count} empresas.`
+                            : 'Fornecedor associado ao login existente. A conta agora possui múltiplas empresas.'
+                    );
+                } else if (payload.loginSplitFromSharedAccount && payload.linkedExistingAccount) {
                     showToast('success', 'Fornecedor desvinculado do login compartilhado e associado a uma conta existente.');
                 } else if (payload.loginSplitFromSharedAccount && payload.createdNewAccount) {
                     if (payload.accessCredentialsResent) {
@@ -555,6 +581,14 @@ export default function FornecedoresManagement() {
         await submitFornecedor({ emailUpdateScope: 'single' });
     };
 
+    const handleConfirmAssociateToExistingSupplierLogin = async () => {
+        setExistingSupplierLoginAssociationPrompt(null);
+        await submitFornecedor({
+            emailUpdateScope: 'single',
+            emailConflictAction: 'link_existing_supplier_account',
+        });
+    };
+
     const handleDelete = async (id: string) => {
         if (!confirm('Deseja realmente excluir este fornecedor?')) return;
 
@@ -605,12 +639,14 @@ export default function FornecedoresManagement() {
             setCreateAccessOnSave(true);
         }
         setIsMultiEmpresaEmailModalOpen(false);
+        setExistingSupplierLoginAssociationPrompt(null);
         setIsModalOpen(true);
     };
 
     const closeModal = () => {
         setIsModalOpen(false);
         setIsMultiEmpresaEmailModalOpen(false);
+        setExistingSupplierLoginAssociationPrompt(null);
         setEditingFornecedor(null);
         setFormData({});
     };
@@ -1410,6 +1446,88 @@ export default function FornecedoresManagement() {
                                 </button>
                             )}
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal: Email já pertence a outro login fornecedor (oferece associação multiempresa) */}
+            {existingSupplierLoginAssociationPrompt && editingFornecedor && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-4">
+                    <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                        <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-6">
+                            <div>
+                                <h3 className="text-xl font-semibold text-slate-900">Associar a login existente?</h3>
+                                <p className="mt-1 text-sm text-slate-600">{editingFornecedor.razaoSocial}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => !saving && setExistingSupplierLoginAssociationPrompt(null)}
+                                disabled={saving}
+                                className="rounded-full p-2 hover:bg-slate-100 disabled:opacity-50"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4 p-6">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                <p className="text-sm font-medium text-slate-900">
+                                    Este email já pertence a um usuário de acesso de fornecedor.
+                                </p>
+                                <p className="mt-1 text-sm text-slate-600">
+                                    Você pode associar esta empresa ao mesmo login e transformar a conta em multiempresa.
+                                </p>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200">
+                                <div className="grid md:grid-cols-2">
+                                    <div className="p-4 md:border-r md:border-slate-200">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email informado</p>
+                                        <p className="mt-1 break-all text-sm font-medium text-slate-900">
+                                            {existingSupplierLoginAssociationPrompt.requestedEmail || '—'}
+                                        </p>
+                                    </div>
+                                    <div className="bg-slate-50 p-4">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Conta já existente</p>
+                                        <p className="mt-1 break-all text-sm font-medium text-slate-900">
+                                            {existingSupplierLoginAssociationPrompt.existingUserEmail || '—'}
+                                        </p>
+                                        <p className="mt-2 text-xs text-slate-600">
+                                            Empresas vinculadas hoje: <span className="font-semibold text-slate-800">{Math.max(existingSupplierLoginAssociationPrompt.existingUserLinkedSuppliersCount || 1, 1)}</span>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200 p-4">
+                                <p className="text-sm text-slate-700">
+                                    Ao confirmar, este fornecedor será vinculado ao login existente. O email de contato deste cadastro será salvo com o valor informado.
+                                </p>
+                                <p className="mt-2 text-sm text-slate-600">
+                                    <span className="font-medium text-slate-800">Não haverá reset de senha</span> nesse fluxo, pois a conta já existe.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 bg-white p-6">
+                            <button
+                                type="button"
+                                onClick={() => setExistingSupplierLoginAssociationPrompt(null)}
+                                disabled={saving}
+                                className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirmAssociateToExistingSupplierLogin}
+                                disabled={saving}
+                                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                            >
+                                {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                Associar e salvar
+                            </button>
                         </div>
                     </div>
                 </div>

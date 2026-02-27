@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendEmail, getFornecedorRecadastroEmailTemplate } from '@/lib/emailService';
-import { getSupplierAccessOwnerUserId, syncLegacySupplierPointersForUser, upsertUserSupplierAccessLink } from '@/lib/supplierAccessServer';
+import { getSupplierAccessOwnerUserId, listUserSupplierAccess, syncLegacySupplierPointersForUser, upsertUserSupplierAccessLink } from '@/lib/supplierAccessServer';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -290,6 +290,7 @@ export async function PUT(request: NextRequest) {
         const {
             id,
             email_update_scope,
+            email_conflict_action,
             ...updateData
         } = body as Record<string, any>;
 
@@ -310,6 +311,9 @@ export async function PUT(request: NextRequest) {
 
         const sanitizedUpdateData = sanitizeFornecedorPayload(updateData);
         const emailUpdateScope = email_update_scope === 'all_linked' ? 'all_linked' : 'single';
+        const emailConflictAction = email_conflict_action === 'link_existing_supplier_account'
+            ? 'link_existing_supplier_account'
+            : null;
         const requestedContactEmail = typeof sanitizedUpdateData.email === 'string'
             ? sanitizedUpdateData.email.trim()
             : null;
@@ -327,6 +331,7 @@ export async function PUT(request: NextRequest) {
         let loginSplitFromSharedAccount = false;
         let linkedExistingAccount = false;
         let createdNewAccount = false;
+        let associatedToExistingSupplierLogin = false;
 
         if (contactEmailChanged && requestedContactEmail) {
             const linkedInfo = await listLinkedFornecedorIdsForSupplierUser(supabase, id);
@@ -480,70 +485,158 @@ export async function PUT(request: NextRequest) {
                     } else if (loginEmailChanged) {
                         const { data: emailConflictUsers, error: emailConflictUsersError } = await supabase
                             .from('users')
-                            .select('id')
+                            .select('id, email, role, roles, fornecedor_id')
                             .ilike('email', requestedContactEmail)
                             .neq('id', linkedOwnerUserId)
                             .limit(1);
                         if (emailConflictUsersError) throw emailConflictUsersError;
 
                         if (emailConflictUsers && emailConflictUsers.length > 0) {
-                            return NextResponse.json(
-                                { error: 'Este email já está em uso por outro usuário de acesso' },
-                                { status: 409 }
-                            );
-                        }
+                            const conflictUser = emailConflictUsers[0];
+                            const conflictIsFornecedor = conflictUser.role === 'fornecedor' || conflictUser.roles?.includes?.('fornecedor');
 
-                        const defaultPassword = '123456';
-                        const { error: authUpdateError } = await supabase.auth.admin.updateUserById(linkedOwnerUserId, {
-                            email: requestedContactEmail,
-                            email_confirm: true,
-                            password: defaultPassword,
-                        });
+                            if (conflictIsFornecedor && emailConflictAction === 'link_existing_supplier_account') {
+                                // Reassocia este fornecedor ao login existente (vira multiempresa)
+                                try {
+                                    const currentOwnerAfterCheck = await getSupplierAccessOwnerUserId(supabase, id);
+                                    if (currentOwnerAfterCheck && currentOwnerAfterCheck !== linkedOwnerUserId && currentOwnerAfterCheck !== conflictUser.id) {
+                                        return NextResponse.json(
+                                            { error: 'Este fornecedor já está vinculado a outro usuário' },
+                                            { status: 409 }
+                                        );
+                                    }
 
-                        if (authUpdateError) {
-                            const authMsg = String(authUpdateError.message || '');
-                            if (
-                                authMsg.toLowerCase().includes('already') ||
-                                authMsg.toLowerCase().includes('registered') ||
-                                authMsg.toLowerCase().includes('duplicate')
-                            ) {
+                                    try {
+                                        const { error: removeLinkError } = await supabase
+                                            .from('user_fornecedor_access')
+                                            .delete()
+                                            .eq('user_id', linkedOwnerUserId)
+                                            .eq('fornecedor_id', id);
+                                        if (removeLinkError) throw removeLinkError;
+                                    } catch (removeError) {
+                                        console.error('Erro ao remover vínculo N:N antes de associar a login existente:', removeError);
+                                    }
+
+                                    await syncLegacySupplierPointersForUser(supabase, linkedOwnerUserId);
+
+                                    let shouldBePrimary = false;
+                                    try {
+                                        const targetLinks = await listUserSupplierAccess(supabase, conflictUser.id);
+                                        shouldBePrimary = targetLinks.length === 0;
+                                    } catch {
+                                        shouldBePrimary = !conflictUser.fornecedor_id;
+                                    }
+
+                                    await upsertUserSupplierAccessLink(supabase, {
+                                        userId: conflictUser.id,
+                                        fornecedorId: id,
+                                        isPrimary: shouldBePrimary,
+                                        createdBy: auth.user.id,
+                                    });
+                                    await syncLegacySupplierPointersForUser(supabase, conflictUser.id);
+
+                                    linkedExistingAccount = true;
+                                    associatedToExistingSupplierLogin = true;
+                                    linkedOwnerUserId = conflictUser.id;
+
+                                    const relinkedInfo = await listLinkedFornecedorIdsForSupplierUser(supabase, id);
+                                    linkedFornecedorIdsForEmailPropagation = relinkedInfo.linkedFornecedorIds.length > 0
+                                        ? relinkedInfo.linkedFornecedorIds
+                                        : [id];
+                                } catch (associationError: any) {
+                                    console.error('Erro ao associar fornecedor a login existente pelo email:', associationError);
+                                    return NextResponse.json(
+                                        { error: associationError?.message || 'Erro ao associar fornecedor ao login existente' },
+                                        { status: 500 }
+                                    );
+                                }
+                            } else if (conflictIsFornecedor) {
+                                let targetLinkedSuppliersCount = 1;
+                                try {
+                                    const targetLinks = await listUserSupplierAccess(supabase, conflictUser.id);
+                                    targetLinkedSuppliersCount = Math.max(targetLinks.length, 1);
+                                } catch {
+                                    targetLinkedSuppliersCount = conflictUser.fornecedor_id ? 1 : 0;
+                                }
+
                                 return NextResponse.json(
-                                    { error: 'Este email já está em uso por outra conta de login' },
+                                    {
+                                        error: 'Este email já está em uso por outro usuário de acesso',
+                                        code: 'supplier_login_exists_can_link',
+                                        canLinkToExistingSupplierLogin: true,
+                                        existingUserId: conflictUser.id,
+                                        existingUserEmail: conflictUser.email || requestedContactEmail,
+                                        existingUserLinkedSuppliersCount: targetLinkedSuppliersCount,
+                                    },
+                                    { status: 409 }
+                                );
+                            } else {
+                                return NextResponse.json(
+                                    { error: 'Este email já está em uso por outro usuário de acesso' },
                                     { status: 409 }
                                 );
                             }
-                            throw authUpdateError;
                         }
 
-                        const { error: userEmailSyncError } = await supabase
-                            .from('users')
-                            .update({
+                        if (!associatedToExistingSupplierLogin) {
+                            if (!linkedOwnerUserId) {
+                                return NextResponse.json(
+                                    { error: 'Não foi possível localizar a conta de acesso vinculada ao fornecedor' },
+                                    { status: 409 }
+                                );
+                            }
+                            const defaultPassword = '123456';
+                            const { error: authUpdateError } = await supabase.auth.admin.updateUserById(linkedOwnerUserId, {
                                 email: requestedContactEmail,
-                                status: 'pending',
-                                must_change_password: true,
-                                password_changed_at: null,
-                                updated_at: new Date().toISOString(),
-                            } as any)
-                            .eq('id', linkedOwnerUserId);
-                        if (userEmailSyncError) throw userEmailSyncError;
-
-                        emailLoginSynced = true;
-
-                        try {
-                            const template = getFornecedorRecadastroEmailTemplate({
-                                recipientEmail: requestedContactEmail,
-                                temporaryPassword: defaultPassword,
+                                email_confirm: true,
+                                password: defaultPassword,
                             });
-                            await sendEmail({
-                                to: requestedContactEmail,
-                                subject: template.subject,
-                                html: template.html,
-                                text: template.text,
-                            });
-                            accessCredentialsResent = true;
-                        } catch (mailError) {
-                            console.error('Erro ao enviar credenciais após troca de email do fornecedor:', mailError);
-                            warning = 'Email de login atualizado, mas houve falha ao enviar as novas credenciais para o novo email.';
+
+                            if (authUpdateError) {
+                                const authMsg = String(authUpdateError.message || '');
+                                if (
+                                    authMsg.toLowerCase().includes('already') ||
+                                    authMsg.toLowerCase().includes('registered') ||
+                                    authMsg.toLowerCase().includes('duplicate')
+                                ) {
+                                    return NextResponse.json(
+                                        { error: 'Este email já está em uso por outra conta de login' },
+                                        { status: 409 }
+                                    );
+                                }
+                                throw authUpdateError;
+                            }
+
+                            const { error: userEmailSyncError } = await supabase
+                                .from('users')
+                                .update({
+                                    email: requestedContactEmail,
+                                    status: 'pending',
+                                    must_change_password: true,
+                                    password_changed_at: null,
+                                    updated_at: new Date().toISOString(),
+                                } as any)
+                                .eq('id', linkedOwnerUserId);
+                            if (userEmailSyncError) throw userEmailSyncError;
+
+                            emailLoginSynced = true;
+
+                            try {
+                                const template = getFornecedorRecadastroEmailTemplate({
+                                    recipientEmail: requestedContactEmail,
+                                    temporaryPassword: defaultPassword,
+                                });
+                                await sendEmail({
+                                    to: requestedContactEmail,
+                                    subject: template.subject,
+                                    html: template.html,
+                                    text: template.text,
+                                });
+                                accessCredentialsResent = true;
+                            } catch (mailError) {
+                                console.error('Erro ao enviar credenciais após troca de email do fornecedor:', mailError);
+                                warning = 'Email de login atualizado, mas houve falha ao enviar as novas credenciais para o novo email.';
+                            }
                         }
                     } else {
                         // Mantém consistência caso já estejam sincronizando apenas contato para o mesmo email
@@ -621,6 +714,7 @@ export async function PUT(request: NextRequest) {
             loginSplitFromSharedAccount,
             linkedExistingAccount,
             createdNewAccount,
+            associatedToExistingSupplierLogin,
         });
     } catch (error: any) {
         console.error('Erro ao atualizar fornecedor:', error);
