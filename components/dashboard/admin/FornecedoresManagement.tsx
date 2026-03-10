@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseAuth';
-import { Search, Edit2, Trash2, X, Save, Package, CreditCard, Tags, UserPlus, UserCheck, RefreshCw, Mail, Plus, Eye, MapPin, Phone, Building2, FileText, Globe } from 'lucide-react';
+import { Search, Edit2, Trash2, X, Save, Package, CreditCard, Tags, UserPlus, UserCheck, RefreshCw, Mail, Plus, Eye, MapPin, Phone, Building2, FileText, Globe, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useToast } from '@/components/ToastProvider';
 
 // Helper para obter headers com token (com fallback para localStorage)
@@ -116,12 +116,68 @@ interface ExistingSupplierLoginAssociationPrompt {
     existingUserLinkedSuppliersCount: number;
 }
 
+type FornecedorSortKey =
+    | 'razaoSocial'
+    | 'grupos'
+    | 'contato'
+    | 'cidade'
+    | 'conta'
+    | 'ultimoLogin'
+    | 'cartao'
+    | 'status';
+
+type SortDirection = 'asc' | 'desc';
+
+interface FornecedorSortConfig {
+    key: FornecedorSortKey;
+    direction: SortDirection;
+}
+
+function getFornecedorSortValue(fornecedor: Fornecedor, key: FornecedorSortKey): string | number | null {
+    switch (key) {
+        case 'razaoSocial':
+            return fornecedor.razaoSocial || '';
+        case 'grupos':
+            return fornecedor.grupoInsumoIds?.length || 0;
+        case 'contato':
+            return fornecedor.contato || '';
+        case 'cidade':
+            return `${fornecedor.cidade || ''} ${fornecedor.estado || ''}`.trim();
+        case 'conta':
+            return fornecedor.hasUserAccount ? 1 : 0;
+        case 'ultimoLogin':
+            return fornecedor.lastLoginAt ? new Date(fornecedor.lastLoginAt).getTime() : null;
+        case 'cartao':
+            return fornecedor.cartaoCredito ? 1 : 0;
+        case 'status':
+            return fornecedor.ativo ? 1 : 0;
+        default:
+            return '';
+    }
+}
+
+function compareFornecedores(a: Fornecedor, b: Fornecedor, sortConfig: FornecedorSortConfig): number {
+    const aValue = getFornecedorSortValue(a, sortConfig.key);
+    const bValue = getFornecedorSortValue(b, sortConfig.key);
+
+    if (aValue === null && bValue === null) return 0;
+    if (aValue === null) return 1;
+    if (bValue === null) return -1;
+
+    const comparison = typeof aValue === 'string' && typeof bValue === 'string'
+        ? aValue.localeCompare(bValue, 'pt-BR', { sensitivity: 'base' })
+        : Number(aValue) - Number(bValue);
+
+    return sortConfig.direction === 'asc' ? comparison : -comparison;
+}
+
 export default function FornecedoresManagement() {
     const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
     const [filteredFornecedores, setFilteredFornecedores] = useState<Fornecedor[]>([]);
     const [grupos, setGrupos] = useState<GrupoInsumo[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+    const [sortConfig, setSortConfig] = useState<FornecedorSortConfig>({ key: 'razaoSocial', direction: 'asc' });
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isGruposModalOpen, setIsGruposModalOpen] = useState(false);
     const [isCreateAccountModalOpen, setIsCreateAccountModalOpen] = useState(false);
@@ -204,23 +260,32 @@ export default function FornecedoresManagement() {
         loadFornecedores();
     }, []);
 
+    const handleSort = (key: FornecedorSortKey) => {
+        setSortConfig(prev =>
+            prev.key === key
+                ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+                : { key, direction: 'asc' }
+        );
+    };
+
     useEffect(() => {
-        if (searchQuery) {
+        const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+        if (normalizedSearchQuery) {
             const filtered = fornecedores.filter(f =>
-                f.razaoSocial.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                f.nomeFantasia.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                f.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                f.contato.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                f.cidade.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                f.grupoInsumos.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                f.codigo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                (f.cnpj && f.cnpj.includes(searchQuery))
+                f.razaoSocial.toLowerCase().includes(normalizedSearchQuery) ||
+                f.nomeFantasia.toLowerCase().includes(normalizedSearchQuery) ||
+                f.email.toLowerCase().includes(normalizedSearchQuery) ||
+                f.contato.toLowerCase().includes(normalizedSearchQuery) ||
+                f.cidade.toLowerCase().includes(normalizedSearchQuery) ||
+                f.grupoInsumos.toLowerCase().includes(normalizedSearchQuery) ||
+                f.codigo.toLowerCase().includes(normalizedSearchQuery) ||
+                (f.cnpj && f.cnpj.includes(normalizedSearchQuery))
             );
-            setFilteredFornecedores(filtered);
+            setFilteredFornecedores([...filtered].sort((a, b) => compareFornecedores(a, b, sortConfig)));
         } else {
-            setFilteredFornecedores(fornecedores);
+            setFilteredFornecedores([...fornecedores].sort((a, b) => compareFornecedores(a, b, sortConfig)));
         }
-    }, [searchQuery, fornecedores]);
+    }, [searchQuery, fornecedores, sortConfig]);
 
     const loadFornecedores = async () => {
         try {
@@ -860,6 +925,28 @@ export default function FornecedoresManagement() {
         && !selectedFornecedorForAccount.emailLoginIsFornecedor
     );
 
+    const getSortIcon = (key: FornecedorSortKey) => {
+        if (sortConfig.key !== key) {
+            return <ArrowUpDown className="h-3.5 w-3.5 text-slate-400 group-hover:text-slate-600" />;
+        }
+        return sortConfig.direction === 'asc'
+            ? <ArrowUp className="h-3.5 w-3.5 text-blue-600" />
+            : <ArrowDown className="h-3.5 w-3.5 text-blue-600" />;
+    };
+
+    const renderSortableHeader = (label: string, key: FornecedorSortKey) => (
+        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">
+            <button
+                type="button"
+                onClick={() => handleSort(key)}
+                className="group inline-flex items-center gap-1.5 hover:text-slate-900 transition-colors"
+            >
+                <span>{label}</span>
+                {getSortIcon(key)}
+            </button>
+        </th>
+    );
+
     if (loading) {
         return <div className="flex items-center justify-center py-12">Carregando fornecedores...</div>;
     }
@@ -921,14 +1008,14 @@ export default function FornecedoresManagement() {
                     <table className="w-full">
                         <thead className="bg-slate-50 border-b border-slate-200">
                             <tr>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Razão Social</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Grupo(s)</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Contato</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Cidade</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Conta</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Último login</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Cartão</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Status</th>
+                                {renderSortableHeader('Razão Social', 'razaoSocial')}
+                                {renderSortableHeader('Grupo(s)', 'grupos')}
+                                {renderSortableHeader('Contato', 'contato')}
+                                {renderSortableHeader('Cidade', 'cidade')}
+                                {renderSortableHeader('Conta', 'conta')}
+                                {renderSortableHeader('Último login', 'ultimoLogin')}
+                                {renderSortableHeader('Cartão', 'cartao')}
+                                {renderSortableHeader('Status', 'status')}
                                 <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Ações</th>
                             </tr>
                         </thead>

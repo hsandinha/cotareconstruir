@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, type ChangeEvent } from "react";
 import {
     MagnifyingGlassIcon,
     CheckIcon,
@@ -8,6 +8,8 @@ import {
     PlusCircleIcon,
     ArrowUpIcon,
     ArrowDownIcon,
+    ArrowDownTrayIcon,
+    ArrowUpTrayIcon,
     ExclamationTriangleIcon,
     PaperAirplaneIcon,
     Squares2X2Icon
@@ -17,6 +19,15 @@ import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
 import { useSupplierAccessContext } from "./SupplierAccessContext";
+import {
+    buildCsv,
+    downloadCsvFile,
+    getCsvRowValue,
+    normalizeCsvKey,
+    parseBooleanish,
+    parseSpreadsheetFile,
+    parseFlexibleNumber
+} from "@/lib/csvSpreadsheet";
 
 // Helper para obter headers com token de autenticação
 
@@ -75,6 +86,9 @@ export function SupplierMaterialsSection() {
     const [requestMaterialDesc, setRequestMaterialDesc] = useState("");
     const [requestGrupo, setRequestGrupo] = useState("");
     const [sendingRequest, setSendingRequest] = useState(false);
+    const [importingSpreadsheet, setImportingSpreadsheet] = useState(false);
+    const [exportingSpreadsheet, setExportingSpreadsheet] = useState(false);
+    const spreadsheetInputRef = useRef<HTMLInputElement | null>(null);
 
     // Carregar grupos do fornecedor ativo
     useEffect(() => {
@@ -465,6 +479,156 @@ export function SupplierMaterialsSection() {
         return grupos.find(g => g.id === grupoId)?.nome || grupoId;
     };
 
+    const handleDownloadSpreadsheet = async () => {
+        if (materiaisDisponiveis.length === 0) {
+            alert("Nenhum material disponível para exportar.");
+            return;
+        }
+
+        setExportingSpreadsheet(true);
+        try {
+            const rows = materiaisDisponiveis.map((material) => {
+                const config = fornecedorMateriais.get(material.id);
+                return {
+                    material_id: material.id,
+                    material_nome: material.nome,
+                    unidade: material.unidade,
+                    grupos: (material.gruposInsumoIds || []).map(getGrupoNome).join(" | "),
+                    preco: config?.preco ?? 0,
+                    estoque: config?.estoque ?? 0,
+                    ativo: config ? (config.ativo ? 1 : 0) : 1,
+                };
+            });
+
+            const csv = buildCsv(rows, [
+                "material_id",
+                "material_nome",
+                "unidade",
+                "grupos",
+                "preco",
+                "estoque",
+                "ativo",
+            ]);
+
+            const today = new Date().toISOString().slice(0, 10);
+            downloadCsvFile(`materiais_fornecedor_${today}.csv`, csv);
+        } catch (error) {
+            console.error("Erro ao gerar planilha de materiais:", error);
+            alert("Erro ao gerar planilha. Tente novamente.");
+        } finally {
+            setExportingSpreadsheet(false);
+        }
+    };
+
+    const handleImportSpreadsheetClick = () => {
+        spreadsheetInputRef.current?.click();
+    };
+
+    const handleImportSpreadsheetFile = async (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+
+        if (!file) return;
+        if (!fornecedorId) {
+            alert("Fornecedor não selecionado.");
+            return;
+        }
+
+        setImportingSpreadsheet(true);
+        try {
+            const rows = await parseSpreadsheetFile(file);
+            if (rows.length === 0) {
+                alert("A planilha está vazia ou em formato inválido.");
+                return;
+            }
+
+            const allowedMaterialIds = new Set(materiaisDisponiveis.map((material) => material.id));
+            const materialIdByName = new Map(
+                materiaisDisponiveis.map((material) => [normalizeCsvKey(material.nome), material.id])
+            );
+
+            const updatesByMaterialId = new Map<string, {
+                material_id: string;
+                preco: number;
+                estoque: number;
+                ativo: boolean;
+            }>();
+            let ignoredRows = 0;
+
+            for (const row of rows) {
+                const rowMaterialId = getCsvRowValue(row, ["material_id", "materialid", "id_material", "id"]);
+                const rowMaterialName = getCsvRowValue(row, ["material_nome", "material", "nome"]);
+                const normalizedMaterialName = normalizeCsvKey(rowMaterialName);
+
+                const materialId = (rowMaterialId || materialIdByName.get(normalizedMaterialName) || "").trim();
+                if (!materialId || !allowedMaterialIds.has(materialId)) {
+                    ignoredRows++;
+                    continue;
+                }
+
+                const precoValue = parseFlexibleNumber(getCsvRowValue(row, ["preco", "preco_unitario", "valor", "price"]));
+                const estoqueValue = parseFlexibleNumber(getCsvRowValue(row, ["estoque", "quantidade", "stock"]));
+                const ativoValue = parseBooleanish(getCsvRowValue(row, ["ativo", "status", "disponivel"]), true);
+
+                updatesByMaterialId.set(materialId, {
+                    material_id: materialId,
+                    preco: Math.max(0, precoValue ?? 0),
+                    estoque: Math.max(0, Math.trunc(estoqueValue ?? 0)),
+                    ativo: ativoValue,
+                });
+            }
+
+            const updates = Array.from(updatesByMaterialId.values());
+            if (updates.length === 0) {
+                alert("Nenhuma linha válida foi encontrada para importação.");
+                return;
+            }
+
+            const headers = await getAuthHeaders(session?.access_token);
+            const res = await fetch("/api/fornecedor-materiais", {
+                method: "POST",
+                headers,
+                credentials: "include",
+                body: JSON.stringify({
+                    action: "bulk_upsert",
+                    fornecedor_id: fornecedorId,
+                    items: updates,
+                }),
+            });
+
+            const json = await res.json();
+            if (!res.ok) {
+                throw new Error(json.error || "Erro ao importar planilha");
+            }
+
+            const updatedRows = Array.isArray(json.data) ? json.data : [];
+            setFornecedorMateriais((prev) => {
+                const next = new Map(prev);
+                updatedRows.forEach((item: any) => {
+                    next.set(item.material_id, {
+                        materialId: item.material_id,
+                        preco: item.preco ?? 0,
+                        estoque: item.estoque ?? 0,
+                        ativo: item.ativo ?? true,
+                        updatedAt: item.updated_at || new Date().toISOString(),
+                    });
+                });
+                return next;
+            });
+
+            const skippedCount = Number(json.skipped_count || 0) + ignoredRows;
+            alert(
+                `Importação concluída: ${json.updated_count || updates.length} materiais atualizados` +
+                (skippedCount > 0 ? `, ${skippedCount} linhas ignoradas.` : ".")
+            );
+        } catch (error: any) {
+            console.error("Erro ao importar planilha de materiais:", error);
+            alert(error.message || "Erro ao importar planilha.");
+        } finally {
+            setImportingSpreadsheet(false);
+        }
+    };
+
     if (loading) {
         return (
             <div className="p-8 flex items-center justify-center">
@@ -499,13 +663,38 @@ export function SupplierMaterialsSection() {
                         Configure preços e estoque dos materiais disponíveis para sua empresa.
                     </p>
                 </div>
-                <button
-                    onClick={() => setShowRequestModal(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 transition-colors"
-                >
-                    <PlusCircleIcon className="h-5 w-5" />
-                    Solicitar Novo Material
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                    <button
+                        onClick={handleDownloadSpreadsheet}
+                        disabled={exportingSpreadsheet || importingSpreadsheet || loadingMateriais}
+                        className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                        <ArrowDownTrayIcon className="h-4 w-4" />
+                        {exportingSpreadsheet ? "Gerando..." : "Baixar Lista (CSV)"}
+                    </button>
+                    <button
+                        onClick={handleImportSpreadsheetClick}
+                        disabled={importingSpreadsheet || exportingSpreadsheet}
+                        className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                        <ArrowUpTrayIcon className="h-4 w-4" />
+                        {importingSpreadsheet ? "Importando..." : "Importar Lista (CSV/XLSX)"}
+                    </button>
+                    <input
+                        ref={spreadsheetInputRef}
+                        type="file"
+                        accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                        className="hidden"
+                        onChange={handleImportSpreadsheetFile}
+                    />
+                    <button
+                        onClick={() => setShowRequestModal(true)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 transition-colors"
+                    >
+                        <PlusCircleIcon className="h-5 w-5" />
+                        Solicitar Novo Material
+                    </button>
+                </div>
             </div>
 
             {/* Stats Cards */}

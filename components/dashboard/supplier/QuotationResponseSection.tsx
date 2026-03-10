@@ -1,9 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, type ChangeEvent } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "../../../lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
+import { ArrowDownTrayIcon, ArrowUpTrayIcon } from "@heroicons/react/24/outline";
+import {
+    buildCsv,
+    downloadCsvFile,
+    getCsvRowValue,
+    normalizeCsvKey,
+    parseSpreadsheetFile,
+    parseFlexibleNumber
+} from "@/lib/csvSpreadsheet";
 
 // Helper para obter headers com token de autenticação
 
@@ -26,6 +35,9 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
     const [freightValue, setFreightValue] = useState("");
     const [taxValue, setTaxValue] = useState("");
     const [loading, setLoading] = useState(false);
+    const [importingCsv, setImportingCsv] = useState(false);
+    const [exportingCsv, setExportingCsv] = useState(false);
+    const csvInputRef = useRef<HTMLInputElement | null>(null);
 
     // Extract resumo outside useEffect so it's accessible in JSX
     const resumo = quotation?._proposta_resumo;
@@ -72,6 +84,213 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 [field]: value
             }
         }));
+    };
+
+    const parseDisponibilidade = (value: string): 'disponivel' | 'sob_consulta' | 'indisponivel' | '' => {
+        const normalized = normalizeCsvKey(value);
+        if (!normalized) return '';
+
+        if ([
+            'disponivel',
+            'imediata',
+            'imediato',
+            'sim',
+            'yes',
+            'ok',
+            '1',
+            'true'
+        ].includes(normalized)) return 'disponivel';
+
+        if ([
+            'sobconsulta',
+            'consulta',
+            'comconsulta',
+            'parcial',
+            'talvez'
+        ].includes(normalized)) return 'sob_consulta';
+
+        if ([
+            'indisponivel',
+            'naodisponivel',
+            'nao',
+            '0',
+            'false'
+        ].includes(normalized)) return 'indisponivel';
+
+        return '';
+    };
+
+    const normalizePaymentMethod = (value: string): string => {
+        const normalized = normalizeCsvKey(value);
+        if (!normalized) return "";
+        if (normalized.includes("vista")) return "vista";
+        if (normalized === "15dias" || normalized === "15") return "15-dias";
+        if (normalized === "30dias" || normalized === "30") return "30-dias";
+        if (normalized.includes("3060") && normalized.includes("90")) return "30-60-90-dias";
+        if (normalized.includes("3060")) return "30-60-dias";
+        return "";
+    };
+
+    const normalizeValidity = (value: string): string => {
+        const normalized = normalizeCsvKey(value);
+        if (!normalized) return "";
+        if (normalized.includes("7")) return "7-dias";
+        if (normalized.includes("15")) return "15-dias";
+        if (normalized.includes("30")) return "30-dias";
+        if (normalized.includes("60")) return "60-dias";
+        return "";
+    };
+
+    const handleDownloadCsv = async () => {
+        if (!quotation?.items || quotation.items.length === 0) {
+            alert("Não há itens para exportar.");
+            return;
+        }
+
+        setExportingCsv(true);
+        try {
+            const rows = quotation.items.map((item: any, index: number) => {
+                const response = responses[item.id] || { preco: "", disponibilidade: "" };
+                return {
+                    cotacao_item_id: item.id,
+                    material: item.descricao,
+                    unidade: item.unidade,
+                    quantidade: item.quantidade,
+                    preco_unitario: response.preco,
+                    disponibilidade: response.disponibilidade,
+                    forma_pagamento: index === 0 ? paymentMethod : "",
+                    validade: index === 0 ? validity : "",
+                    prazo_entrega_dias: index === 0 ? deliveryDays : "",
+                    valor_frete: index === 0 ? freightValue : "",
+                    valor_impostos: index === 0 ? taxValue : "",
+                    observacoes: index === 0 ? observations : "",
+                };
+            });
+
+            const csv = buildCsv(rows, [
+                "cotacao_item_id",
+                "material",
+                "unidade",
+                "quantidade",
+                "preco_unitario",
+                "disponibilidade",
+                "forma_pagamento",
+                "validade",
+                "prazo_entrega_dias",
+                "valor_frete",
+                "valor_impostos",
+                "observacoes",
+            ]);
+
+            const cotacaoRef = quotation.numero || quotation.id || "cotacao";
+            downloadCsvFile(`resposta_${cotacaoRef}.csv`, csv);
+        } catch (error) {
+            console.error("Erro ao gerar CSV da cotação:", error);
+            alert("Erro ao gerar planilha. Tente novamente.");
+        } finally {
+            setExportingCsv(false);
+        }
+    };
+
+    const handleImportCsvClick = () => {
+        csvInputRef.current?.click();
+    };
+
+    const handleImportCsvFile = async (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+
+        if (!file) return;
+
+        setImportingCsv(true);
+        try {
+            const rows = await parseSpreadsheetFile(file);
+            if (rows.length === 0) {
+                alert("A planilha está vazia ou em formato inválido.");
+                return;
+            }
+
+            const itemById = new Map<string, any>(
+                (quotation.items || []).map((item: any) => [String(item.id), item])
+            );
+            const itemIdByName = new Map<string, string>(
+                (quotation.items || []).map((item: any) => [normalizeCsvKey(item.descricao || ""), String(item.id)])
+            );
+
+            const importedResponses: { [key: string]: { preco: string, disponibilidade: string } } = {};
+            let importedItemsCount = 0;
+            let firstConfigRow: Record<string, string> | null = null;
+
+            for (const row of rows) {
+                const rawItemId = getCsvRowValue(row, ["cotacao_item_id", "item_id", "id_item", "id"]);
+                const rawMaterialName = getCsvRowValue(row, ["material", "descricao", "item"]);
+                const itemId = rawItemId || itemIdByName.get(normalizeCsvKey(rawMaterialName)) || "";
+                const item = itemById.get(String(itemId));
+
+                if (!firstConfigRow) {
+                    const hasConfigValues = Boolean(
+                        getCsvRowValue(row, ["forma_pagamento", "pagamento"]) ||
+                        getCsvRowValue(row, ["validade", "validade_proposta"]) ||
+                        getCsvRowValue(row, ["prazo_entrega_dias", "prazo_entrega"]) ||
+                        getCsvRowValue(row, ["valor_frete", "frete"]) ||
+                        getCsvRowValue(row, ["valor_impostos", "impostos"]) ||
+                        getCsvRowValue(row, ["observacoes", "obs"])
+                    );
+                    if (hasConfigValues) {
+                        firstConfigRow = row;
+                    }
+                }
+
+                if (!item) {
+                    continue;
+                }
+
+                const current = responses[item.id] || { preco: "", disponibilidade: "" };
+                const rawPrice = getCsvRowValue(row, ["preco_unitario", "preco", "valor_unitario"]);
+                const parsedPrice = parseFlexibleNumber(rawPrice);
+                const rawDisponibilidade = getCsvRowValue(row, ["disponibilidade", "status"]);
+                const parsedDisponibilidade = parseDisponibilidade(rawDisponibilidade);
+
+                const nextPrice = parsedPrice === null ? current.preco : String(Math.max(0, parsedPrice));
+                const nextDisponibilidade = parsedDisponibilidade || current.disponibilidade || "disponivel";
+
+                importedResponses[item.id] = {
+                    preco: nextPrice,
+                    disponibilidade: nextDisponibilidade,
+                };
+                importedItemsCount++;
+            }
+
+            if (importedItemsCount === 0) {
+                alert("Nenhuma linha válida de item foi encontrada para esta cotação.");
+                return;
+            }
+
+            setResponses((prev) => ({ ...prev, ...importedResponses }));
+
+            if (firstConfigRow) {
+                const nextPayment = normalizePaymentMethod(getCsvRowValue(firstConfigRow, ["forma_pagamento", "pagamento"]));
+                const nextValidity = normalizeValidity(getCsvRowValue(firstConfigRow, ["validade", "validade_proposta"]));
+                const nextDelivery = parseFlexibleNumber(getCsvRowValue(firstConfigRow, ["prazo_entrega_dias", "prazo_entrega"]));
+                const nextFreight = parseFlexibleNumber(getCsvRowValue(firstConfigRow, ["valor_frete", "frete"]));
+                const nextTaxes = parseFlexibleNumber(getCsvRowValue(firstConfigRow, ["valor_impostos", "impostos"]));
+                const nextObs = getCsvRowValue(firstConfigRow, ["observacoes", "obs"]);
+
+                if (nextPayment) setPaymentMethod(nextPayment);
+                if (nextValidity) setValidity(nextValidity);
+                if (nextDelivery !== null) setDeliveryDays(String(Math.max(0, Math.trunc(nextDelivery))));
+                if (nextFreight !== null) setFreightValue(String(Math.max(0, nextFreight)));
+                if (nextTaxes !== null) setTaxValue(String(Math.max(0, nextTaxes)));
+                if (nextObs) setObservations(nextObs);
+            }
+
+            alert(`Importação concluída: ${importedItemsCount} item(ns) atualizado(s).`);
+        } catch (error: any) {
+            console.error("Erro ao importar CSV da cotação:", error);
+            alert(error.message || "Erro ao importar planilha.");
+        } finally {
+            setImportingCsv(false);
+        }
     };
 
     const handleSendProposal = async () => {
@@ -203,9 +422,36 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                             : 'Insira sua proposta comercial para os materiais solicitados'}
                     </p>
                 </div>
-                <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-700">
-                    Voltar
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={handleDownloadCsv}
+                        disabled={exportingCsv || importingCsv}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 border border-slate-200 rounded-md hover:bg-slate-200 disabled:opacity-60"
+                    >
+                        <ArrowDownTrayIcon className="h-4 w-4" />
+                        {exportingCsv ? "Gerando..." : "Baixar CSV"}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleImportCsvClick}
+                        disabled={importingCsv || exportingCsv}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-60"
+                    >
+                        <ArrowUpTrayIcon className="h-4 w-4" />
+                        {importingCsv ? "Importando..." : "Importar CSV/XLSX"}
+                    </button>
+                    <input
+                        ref={csvInputRef}
+                        type="file"
+                        accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                        className="hidden"
+                        onChange={handleImportCsvFile}
+                    />
+                    <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-700">
+                        Voltar
+                    </button>
+                </div>
             </div>
 
             <div className="bg-white border border-gray-200 rounded-lg p-6">

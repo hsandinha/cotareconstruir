@@ -1,15 +1,23 @@
 "use client";
 
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { sendEmail } from "../../../app/actions/email";
 import {
+    buildCsv,
+    downloadCsvFile,
+    getCsvRowValue,
+    normalizeCsvKey,
+    parseSpreadsheetFile,
+    parseFlexibleNumber
+} from "@/lib/csvSpreadsheet";
+import {
     Package, Plus, Trash2, ShoppingCart, Building2, Send, Search, Check,
     AlertCircle, Loader2, ChevronRight, Sparkles, ArrowRight, X, Tag,
     FileText, Scale, MessageSquare, Boxes, CheckCircle2, ChevronDown,
-    Calendar, Clock, Layers, Zap, Filter
+    Calendar, Clock, Layers, Zap, Filter, Download, Upload
 } from "lucide-react";
 
 // Helper para obter headers com token (com fallback para localStorage)
@@ -143,6 +151,8 @@ export function ClientSolicitationSection() {
     const [showAddForm, setShowAddForm] = useState(false);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
     const [searchDropdownRect, setSearchDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+    const [uploadingList, setUploadingList] = useState(false);
+    const [downloadingTemplate, setDownloadingTemplate] = useState(false);
 
     // Formulário de item manual
     const [form, setForm] = useState({
@@ -157,6 +167,7 @@ export function ClientSolicitationSection() {
     const unidades = ["unid", "kg", "m", "m²", "m³", "L", "pç", "sc", "cx", "tn"];
     const searchInputWrapperRef = useRef<HTMLDivElement | null>(null);
     const searchDropdownRef = useRef<HTMLDivElement | null>(null);
+    const uploadListInputRef = useRef<HTMLInputElement | null>(null);
     const remoteSearchCacheRef = useRef<Map<string, RemoteSearchCacheEntry>>(new Map());
     const REMOTE_SEARCH_PAGE_SIZE = 80;
     const MAX_REMOTE_SEARCH_CACHE_TERMS = 30;
@@ -601,6 +612,188 @@ export function ClientSolicitationSection() {
         searchTerm.trim().length > 0 &&
         (filteredMaterials.length > 0 || isSearchingRemote || isLoadingMoreRemote);
 
+    const handleDownloadClientTemplate = async () => {
+        setDownloadingTemplate(true);
+        try {
+            const templateRows = [
+                {
+                    material: "Cimento CP II 50kg",
+                    quantidade: 120,
+                    unidade: "sc",
+                    grupo: "Cimento e Concreto",
+                    fornecedor: "",
+                    observacao: "Entrega em até 3 dias",
+                    material_id: "",
+                },
+                {
+                    material: "Areia Média Lavada",
+                    quantidade: 20,
+                    unidade: "m³",
+                    grupo: "Areia e Brita",
+                    fornecedor: "",
+                    observacao: "",
+                    material_id: "",
+                },
+                {
+                    material: "Tubo PVC 100mm",
+                    quantidade: 80,
+                    unidade: "m",
+                    grupo: "Hidráulica",
+                    fornecedor: "Tigre",
+                    observacao: "",
+                    material_id: "",
+                },
+            ];
+
+            const csv = buildCsv(templateRows, [
+                "material",
+                "quantidade",
+                "unidade",
+                "grupo",
+                "fornecedor",
+                "observacao",
+                "material_id",
+            ]);
+
+            downloadCsvFile("modelo_lista_materiais_cliente.csv", csv);
+        } catch (error) {
+            console.error("Erro ao gerar modelo de lista:", error);
+            alert("Erro ao gerar arquivo modelo.");
+        } finally {
+            setDownloadingTemplate(false);
+        }
+    };
+
+    const openUploadClientListDialog = () => {
+        uploadListInputRef.current?.click();
+    };
+
+    const handleUploadClientList = async (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+
+        setUploadingList(true);
+        try {
+            const parsedRows = await parseSpreadsheetFile(file);
+            if (parsedRows.length === 0) {
+                alert("A lista está vazia ou inválida.");
+                return;
+            }
+
+            const materialById = new Map<string, Material>();
+            const materialByNormalizedName = new Map<string, Material>();
+            materiais.forEach((material) => {
+                materialById.set(String(material.id), material);
+                materialByNormalizedName.set(normalizeCsvKey(material.nome), material);
+            });
+
+            const groupNameById = new Map<string, string>();
+            grupos.forEach((group) => {
+                groupNameById.set(group.id, group.nome);
+            });
+
+            const canonicalGroupByNormalized = new Map<string, string>();
+            availableGroups.forEach((groupName) => {
+                canonicalGroupByNormalized.set(normalizeGroupName(groupName), groupName);
+            });
+
+            let nextItemId = Math.max(
+                Date.now(),
+                ...items.map((item) => Number(item.id) || 0)
+            );
+            const importedItems: CartItem[] = [];
+            let ignoredRows = 0;
+
+            for (const row of parsedRows) {
+                const rawMaterialId = getCsvRowValue(row, ["material_id", "id_material", "id"]);
+                const rawMaterialName = getCsvRowValue(row, ["material", "material_nome", "descricao", "item", "nome"]);
+                const rawGroupName = getCsvRowValue(row, ["grupo", "categoria", "grupo_insumo"]);
+                const rawQuantity = getCsvRowValue(row, ["quantidade", "qtd", "qtde", "volume"]);
+                const rawUnit = getCsvRowValue(row, ["unidade", "unid", "und"]);
+                const rawObservacao = getCsvRowValue(row, ["observacao", "observacoes", "obs"]);
+                const rawFornecedor = getCsvRowValue(row, ["fornecedor", "fabricante", "marca"]);
+
+                let matchedMaterial: Material | null = null;
+                if (rawMaterialId) {
+                    matchedMaterial = materialById.get(rawMaterialId.trim()) || null;
+                }
+
+                if (!matchedMaterial && rawMaterialName) {
+                    matchedMaterial = materialByNormalizedName.get(normalizeCsvKey(rawMaterialName)) || null;
+                }
+
+                if (!matchedMaterial && rawMaterialName) {
+                    const normalizedName = normalizeText(rawMaterialName);
+                    let bestMatch: { material: Material; score: number } | null = null;
+
+                    for (const material of materiais) {
+                        const score = scoreMaterialMatch(material.nome, normalizedName);
+                        if (score < 760) continue;
+
+                        if (!bestMatch || score > bestMatch.score) {
+                            bestMatch = { material, score };
+                        }
+                    }
+
+                    matchedMaterial = bestMatch?.material || null;
+                }
+
+                let categoryName = canonicalGroupByNormalized.get(normalizeGroupName(rawGroupName)) || "";
+                if (!categoryName && matchedMaterial) {
+                    const materialGroupName = (matchedMaterial.gruposInsumoIds || [])
+                        .map((groupId) => groupNameById.get(groupId) || "")
+                        .find(Boolean) || "";
+
+                    categoryName = canonicalGroupByNormalized.get(normalizeGroupName(materialGroupName)) || materialGroupName;
+                }
+
+                const description = String(rawMaterialName || matchedMaterial?.nome || "").trim();
+                if (!description || !categoryName) {
+                    ignoredRows++;
+                    continue;
+                }
+
+                const parsedQty = parseFlexibleNumber(rawQuantity);
+                const quantity = Math.max(1, Math.round(parsedQty ?? 1));
+                const unit = String(rawUnit || matchedMaterial?.unidade || "unid").trim() || "unid";
+
+                nextItemId += 1;
+                importedItems.push({
+                    id: nextItemId,
+                    descricao: description,
+                    categoria: categoryName,
+                    quantidade: quantity,
+                    unidade: unit,
+                    fornecedor: rawFornecedor || "",
+                    observacao: rawObservacao || "",
+                    materialId: matchedMaterial?.id || undefined,
+                });
+            }
+
+            if (importedItems.length === 0) {
+                alert("Nenhuma linha válida foi encontrada. Verifique se a planilha possui material e grupo válidos.");
+                return;
+            }
+
+            const replaceExisting = items.length > 0
+                ? window.confirm("Já existem itens no carrinho. Clique OK para substituir, ou Cancelar para adicionar junto.")
+                : true;
+
+            setItems((prev) => replaceExisting ? importedItems : [...prev, ...importedItems]);
+
+            alert(
+                `Lista importada com sucesso: ${importedItems.length} item(ns) adicionados` +
+                (ignoredRows > 0 ? `, ${ignoredRows} linha(s) ignorada(s).` : ".")
+            );
+        } catch (error: any) {
+            console.error("Erro ao importar lista de materiais:", error);
+            alert(error?.message || "Erro ao importar lista.");
+        } finally {
+            setUploadingList(false);
+        }
+    };
+
     useEffect(() => {
         if (!showExternalSearchDropdown) {
             setSearchDropdownRect(null);
@@ -1019,7 +1212,35 @@ export function ClientSolicitationSection() {
                                     Busca Rápida
                                 </button>
                             </div>
+                            <div className="ml-auto flex flex-wrap gap-2">
+                                <button
+                                    onClick={handleDownloadClientTemplate}
+                                    disabled={downloadingTemplate || uploadingList}
+                                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                                >
+                                    <Download className="w-4 h-4" />
+                                    {downloadingTemplate ? "Gerando modelo..." : "Baixar arquivo modelo"}
+                                </button>
+                                <button
+                                    onClick={openUploadClientListDialog}
+                                    disabled={uploadingList || downloadingTemplate}
+                                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                                >
+                                    <Upload className="w-4 h-4" />
+                                    {uploadingList ? "Importando lista..." : "Carregar lista (CSV/XLSX)"}
+                                </button>
+                                <input
+                                    ref={uploadListInputRef}
+                                    type="file"
+                                    accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                                    className="hidden"
+                                    onChange={handleUploadClientList}
+                                />
+                            </div>
                         </div>
+                        <p className="mt-3 text-xs text-slate-500">
+                            Formatos suportados: CSV e XLSX. Campos recomendados no modelo: <span className="font-medium">material, quantidade, unidade, grupo</span>.
+                        </p>
 
                         {/* Info sobre fases disponíveis */}
                         {quotationMode === "phases" && (

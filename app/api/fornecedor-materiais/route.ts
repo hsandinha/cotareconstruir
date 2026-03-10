@@ -86,6 +86,86 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: true, data });
         }
 
+        if (action === 'bulk_upsert') {
+            const rawItems = Array.isArray(body.items) ? body.items : [];
+            if (rawItems.length === 0) {
+                return NextResponse.json({ error: 'items é obrigatório' }, { status: 400 });
+            }
+
+            if (rawItems.length > 3000) {
+                return NextResponse.json({ error: 'Limite de 3000 linhas por importação' }, { status: 400 });
+            }
+
+            const dedupedByMaterial = new Map<string, {
+                fornecedor_id: string;
+                material_id: string;
+                preco: number;
+                estoque: number;
+                ativo: boolean;
+                updated_at: string;
+            }>();
+            const nowIso = new Date().toISOString();
+
+            for (const raw of rawItems) {
+                const currentMaterialId = typeof raw?.material_id === 'string' ? raw.material_id.trim() : '';
+                if (!currentMaterialId) continue;
+
+                const precoValue = Number(raw?.preco);
+                const estoqueValue = Number(raw?.estoque);
+                const ativoValue = typeof raw?.ativo === 'boolean' ? raw.ativo : true;
+
+                dedupedByMaterial.set(currentMaterialId, {
+                    fornecedor_id,
+                    material_id: currentMaterialId,
+                    preco: Number.isFinite(precoValue) && precoValue >= 0 ? precoValue : 0,
+                    estoque: Number.isFinite(estoqueValue) && estoqueValue >= 0 ? Math.trunc(estoqueValue) : 0,
+                    ativo: ativoValue,
+                    updated_at: nowIso,
+                });
+            }
+
+            const rows = Array.from(dedupedByMaterial.values());
+            if (rows.length === 0) {
+                return NextResponse.json({ error: 'Nenhuma linha válida para importar' }, { status: 400 });
+            }
+
+            const materialIds = rows.map((row) => row.material_id);
+            const { data: existingMaterials, error: existingMaterialsError } = await supabaseAdmin
+                .from('materiais')
+                .select('id')
+                .in('id', materialIds);
+
+            if (existingMaterialsError) {
+                console.error('Erro ao validar materiais da importação:', existingMaterialsError);
+                return NextResponse.json({ error: existingMaterialsError.message }, { status: 500 });
+            }
+
+            const existingIds = new Set((existingMaterials || []).map((item: any) => item.id));
+            const validRows = rows.filter((row) => existingIds.has(row.material_id));
+            const skippedRows = rows.length - validRows.length;
+
+            if (validRows.length === 0) {
+                return NextResponse.json({ error: 'Nenhum material válido encontrado na planilha' }, { status: 400 });
+            }
+
+            const { data, error } = await supabaseAdmin
+                .from('fornecedor_materiais')
+                .upsert(validRows, { onConflict: 'fornecedor_id,material_id' })
+                .select();
+
+            if (error) {
+                console.error('Erro ao importar fornecedor_materiais:', error);
+                return NextResponse.json({ error: error.message }, { status: 500 });
+            }
+
+            return NextResponse.json({
+                success: true,
+                updated_count: data?.length || validRows.length,
+                skipped_count: skippedRows,
+                data: data || [],
+            });
+        }
+
         if (action === 'toggle_ativo') {
             // Check if record exists
             const { data: existing } = await supabaseAdmin
