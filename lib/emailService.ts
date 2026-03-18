@@ -110,15 +110,13 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
     const logoUrl = `${baseUrl}/logo.png`;
     const temporaryPassword = options.temporaryPassword || '123456';
     const recipientEmail = options.recipientEmail;
+    const subject = 'Convite Prioritário: Atualize Seu Perfil na comprareconstruir.com e Impulsione Seus Negócios';
 
     const credentialsHtml = `
         <div style="margin:10px 0 16px 0;padding:14px;border-radius:10px;background-color:#f8fafc;border:1px solid #e2e8f0;font-size:14px;line-height:22px;">
-            <p style="margin:0 0 8px 0;font-weight:700;">Credenciais de acesso:</p>
+            <p style="margin:0 0 8px 0;font-weight:700;">Suas credenciais para o primeiro acesso são:</p>
             <p style="margin:0;"><strong>Usuário:</strong> ${escapeHtml(recipientEmail)}</p>
             <p style="margin:0;"><strong>Senha temporária:</strong> ${escapeHtml(temporaryPassword)}</p>
-            <p style="margin:8px 0 0 0;color:#475569;font-size:12px;line-height:18px;">
-                No primeiro acesso, será obrigatório trocar a senha.
-            </p>
         </div>
     `;
 
@@ -128,7 +126,7 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
         <head>
             <meta charSet="UTF-8" />
             <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <title>Recadastramento de Fornecedores</title>
+            <title>${subject}</title>
         </head>
         <body style="margin:0;padding:0;background-color:#f3f4f6;">
             <div style="width:100%;padding:24px 12px;">
@@ -140,44 +138,59 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
                         </p>
                     </div>
                     <div style="padding:0 28px 28px 28px;color:#111827;font-family:Arial,sans-serif;">
-                        <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;"><strong>Prezados parceiros fornecedores,</strong></p>
+                        <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;"><strong>Prezado(a) Parceiro(a) Fornecedor(a),</strong></p>
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
-                            A Comprar e Construir resolveu transformar sua experiência de 38 anos de atendimento a milhares de clientes em uma Plataforma de compras de materiais para construção civil.
+                            Aqui é Leonardo Nogueira, diretor comercial da Cotar e Construir.
                         </p>
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
-                            O nosso objetivo é agilizar o processo de compras e estender a um número maior de empresas construtoras, engenheiros e arquitetos autônomos e consumidores finais que buscam empresas especializadas no fornecimento dos diversos materiais e equipamentos da construção civil.
+                            Com base em nossa sólida experiência de 38 anos no atendimento a milhares de clientes, a Cotar e Construir tem o prazer de apresentar a evolução de nossos serviços: a comprareconstruir.com, nossa plataforma especializada em suprimentos para a construção civil. Esta iniciativa visa otimizar o processo de compras e expandir o alcance de empresas construtoras, engenheiros, arquitetos autônomos e consumidores finais que buscam fornecedores qualificados.
                         </p>
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
-                            Dessa forma, estamos recadastrando todos os fornecedores que fazem parte do nosso banco de dados, já que foram nossos parceiros ao longo desses anos, nada mais justo prestigiá-los, nesta nova fase da empresa.
+                            <strong>Uma Plataforma Que Prioriza o Seu Negócio (e é Gratuita):</strong>
+                        </p>
+                        <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
+                            Ao contrário de plataformas genéricas, a comprareconstruir.com foi concebida para ser uma ferramenta estratégica, não apenas um portal de compras. Nosso foco é conectar você a um mercado que valoriza a qualidade da especificação, o compromisso com a entrega e, em seguida, o preço e as condições comerciais mais vantajosas. Queremos garantir que sua empresa esteja na vanguarda, diferenciando-se pela excelência. É importante ressaltar que o acesso e a participação na plataforma não terão custos para você.
+                        </p>
+                        <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
+                            Para assegurar a continuidade dessa parceria e garantir sua posição privilegiada nesta nova fase, estamos convidando nossos fornecedores mais valiosos a atualizarem seus dados. É nosso compromisso prestar-lhe o devido prestígio por sua trajetória conosco.
+                        </p>
+                        <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
+                            <strong>Seu Acesso e os Próximos Passos:</strong>
                         </p>
                         <p style="margin:0 0 12px 0;font-size:14px;line-height:22px;">
-                            Para acessar o sistema e realizar o recadastramento, utilize o link abaixo:
+                            Para acessar o sistema e realizar a atualização de seu perfil, utilize o link seguro abaixo:
                         </p>
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
                             <a href="https://comprareconstruir.com/login" style="color:#2563eb;text-decoration:underline;font-weight:700;">https://comprareconstruir.com/login</a>
                         </p>
                         ${credentialsHtml}
-                        <p style="margin:16px 0 14px 0;font-size:13px;line-height:20px;font-weight:700;text-transform:uppercase;">
-                            IMPORTANTE: NO PERFIL DO SEU CADASTRO SERÁ NECESSÁRIO APENAS CONFIRMAR CADA GRUPO DE MATERIAIS, CONFORME EXEMPLO TOUR.
-                        </p>
-                        <p style="margin:0 0 14px 0;font-size:13px;line-height:20px;font-weight:700;text-transform:uppercase;">
-                            ESTE CADASTRO DE MATERIAIS FICARÁ NO NOSSO BANCO DE DADOS PARA DIRECIONAR AS CONSULTAS DOS NOSSOS CLIENTES ATRAVÉS DA PLATAFORMA COMPRAR E CONSTRUIR PARA OS FORNECEDORES ESPECIALIZADOS QUE COMERCIALIZAM ESSES MATERIAIS. GERANDO ASSIM, MAIS OPORTUNIDADE DE VENDAS DE TODA A LINHA DE MATERIAIS.
+                        <p style="margin:16px 0 14px 0;font-size:14px;line-height:22px;font-weight:700;">
+                            Atenção aos Detalhes Essenciais:
                         </p>
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
-                            Caso haja alguma dúvida não hesite em nos contatar, estaremos à disposição para atendê-los.
+                            <strong>1. Troca de Senha:</strong> No primeiro acesso, será obrigatória a alteração de sua senha temporária.
                         </p>
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
-                            Desde já agradeço a atenção de todos.
+                            <strong>2. Confirmação de Grupos de Materiais:</strong> No perfil do seu cadastro, solicitamos que confirme cada Grupo de Materiais ou Serviços que sua empresa comercializa. Esta etapa é crucial para que possamos direcionar consultas altamente qualificadas, maximizando suas chances de venda e otimizando seu tempo.
+                        </p>
+                        <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
+                            <strong>3. Conecte seu WhatsApp Profissional:</strong> É fundamental que você cadastre seu número de WhatsApp profissional na plataforma. Este será o canal exclusivo para receber notificações instantâneas de novas consultas e ordens de compra, garantindo agilidade e maximizando suas oportunidades de negócio em tempo real.
+                        </p>
+                        <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
+                            Estamos confiantes de que a comprareconstruir.com será um divisor de águas no setor, e queremos que sua empresa esteja na vanguarda dessa transformação.
+                        </p>
+                        <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
+                            Nossa equipe está à disposição para qualquer dúvida ou suporte durante este processo.
+                        </p>
+                        <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
+                            Estou pessoalmente empenhado nesta jornada e à disposição para caminharmos juntos.
                         </p>
                         <div style="margin-top:18px;font-size:14px;line-height:22px;">
-                            <p style="margin:0 0 10px 0;">Att.</p>
-                            <p style="margin:0;">Leonardo Lopes Nogueira.</p>
+                            <p style="margin:0 0 10px 0;">Atenciosamente,</p>
+                            <p style="margin:0;">Leonardo Nogueira</p>
                             <p style="margin:0;">Diretor Comercial</p>
-                            <p style="margin:0;">(31) 99219-4237</p>
+                            <p style="margin:0;">Cotar e Construir</p>
                         </div>
-                        <p style="margin:18px 0 0 0;font-size:14px;line-height:22px;font-weight:700;">
-                            Favor confirmar o recebimento deste e-mail!
-                        </p>
                     </div>
                 </div>
             </div>
@@ -186,48 +199,62 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
     `;
 
     return {
-        subject: 'Recadastramento de Fornecedores - Comprar & Construir',
+        subject,
         html,
         text: [
-            'Prezados parceiros fornecedores,',
+            'Prezado(a) Parceiro(a) Fornecedor(a),',
             '',
-            'A Comprar e Construir resolveu transformar sua experiência de 34 anos de atendimento a',
-            'milhares de clientes em uma Plataforma de compras de materiais para construção civil.',
+            'Aqui é Leonardo Nogueira, diretor comercial da Cotar e Construir.',
             '',
-            'O nosso objetivo é agilizar o processo de compras e estender a um número maior de empresas',
-            'construtoras, engenheiros e arquitetos autônomos e consumidores finais que buscam',
-            'empresas especializadas no fornecimento dos diversos materiais e equipamentos da',
-            'construção civil.',
+            'Com base em nossa sólida experiência de 38 anos no atendimento a milhares de clientes,',
+            'a Cotar e Construir tem o prazer de apresentar a evolução de nossos serviços:',
+            'a comprareconstruir.com, nossa plataforma especializada em suprimentos para a',
+            'construção civil. Esta iniciativa visa otimizar o processo de compras e expandir o alcance de',
+            'empresas construtoras, engenheiros, arquitetos autônomos e consumidores finais que',
+            'buscam fornecedores qualificados.',
             '',
-            'Dessa forma, estamos recadastrando todos os fornecedores que fazem parte do nosso banco',
-            'de dados, já que foram nossos parceiros ao longo desses anos, nada mais justo prestigiá-los,',
-            'nesta nova fase da empresa.',
+            'Uma Plataforma Que Prioriza o Seu Negócio (e é Gratuita):',
+            'Ao contrário de plataformas genéricas, a comprareconstruir.com foi concebida para ser',
+            'uma ferramenta estratégica, não apenas um portal de compras. Nosso foco é conectar',
+            'você a um mercado que valoriza a qualidade da especificação, o compromisso com a',
+            'entrega e, em seguida, o preço e as condições comerciais mais vantajosas. Queremos',
+            'garantir que sua empresa esteja na vanguarda, diferenciando-se pela excelência. É',
+            'importante ressaltar que o acesso e a participação na plataforma não terão custos',
+            'para você.',
             '',
-            'Para acessar o sistema e realizar o recadastramento, utilize o link abaixo:',
+            'Para assegurar a continuidade dessa parceria e garantir sua posição privilegiada nesta',
+            'nova fase, estamos convidando nossos fornecedores mais valiosos a atualizarem seus',
+            'dados. É nosso compromisso prestar-lhe o devido prestígio por sua trajetória conosco.',
+            '',
+            'Seu Acesso e os Próximos Passos:',
+            'Para acessar o sistema e realizar a atualização de seu perfil, utilize o link seguro abaixo:',
             'https://comprareconstruir.com/login',
             '',
-            'Credenciais de acesso:',
+            'Suas credenciais para o primeiro acesso são:',
             `Usuário: ${recipientEmail}`,
             `Senha temporária: ${temporaryPassword}`,
-            'No primeiro acesso, será obrigatório trocar a senha.',
             '',
-            'IMPORTANTE: NO CADASTRO DE MATERIAIS SERÁ NECESSÁRIO APENAS INSERIR A DESCRIÇÃO',
-            'PRINCIPAL DE CADA GRUPO DE MATERIAIS, CONFORME EXEMPLO NO FORMULÁRIO.',
-            'ESTE CADASTRO DE MATERIAIS FICARÁ NO NOSSO BANCO DE DADOS PARA DIRECIONAR AS',
-            'CONSULTAS DOS NOSSOS CLIENTES ATRAVÉS DE UM LINK QUE SERÁ ENVIADO PELO E-MAIL',
-            'DA Comprar E CONSTRUIR PARA OS FORNECEDORES ESPECIALIZADOS QUE COMERCIALIZAM',
-            'ESSES MATERIAIS. GERANDO ASSIM, MAIS OPORTUNIDADE DE VENDAS DE TODA A LINHA DE',
-            'MATERIAIS.',
+            'Atenção aos Detalhes Essenciais:',
+            '1. Troca de Senha: No primeiro acesso, será obrigatória a alteração de sua senha',
+            'temporária.',
+            '2. Confirmação de Grupos de Materiais: No perfil do seu cadastro, solicitamos que',
+            'confirme cada Grupo de Materiais ou Serviços que sua empresa comercializa. Esta etapa é',
+            'crucial para que possamos direcionar consultas altamente qualificadas, maximizando suas',
+            'chances de venda e otimizando seu tempo.',
+            '3. Conecte seu WhatsApp Profissional: É fundamental que você cadastre seu número de',
+            'WhatsApp profissional na plataforma. Este será o canal exclusivo para receber',
+            'notificações instantâneas de novas consultas e ordens de compra, garantindo agilidade e',
+            'maximizando suas oportunidades de negócio em tempo real.',
             '',
-            'Caso haja alguma dúvida não hesite em nos contatar, estaremos à disposição para atendê-los.',
-            'Desde já agradeço a atenção de todos.',
+            'Estamos confiantes de que a comprareconstruir.com será um divisor de águas no setor, e',
+            'queremos que sua empresa esteja na vanguarda dessa transformação.',
+            'Nossa equipe está à disposição para qualquer dúvida ou suporte durante este processo.',
+            'Estou pessoalmente empenhado nesta jornada e à disposição para caminharmos juntos.',
             '',
-            'Att.',
-            'Leonardo Lopes Nogueira.',
+            'Atenciosamente,',
+            'Leonardo Nogueira',
             'Diretor Comercial',
-            '(31) 99219-4237',
-            '',
-            'Favor confirmar o recebimento deste e-mail!',
+            'Cotar e Construir',
         ].join('\n'),
     };
 }

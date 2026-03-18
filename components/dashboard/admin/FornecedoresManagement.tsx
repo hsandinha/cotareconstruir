@@ -187,6 +187,7 @@ export default function FornecedoresManagement() {
     const [selectedFornecedorGrupos, setSelectedFornecedorGrupos] = useState<Fornecedor | null>(null);
     const [selectedFornecedorForAccount, setSelectedFornecedorForAccount] = useState<Fornecedor | null>(null);
     const [creatingAccount, setCreatingAccount] = useState(false);
+    const [resendingAccessEmailFornecedorId, setResendingAccessEmailFornecedorId] = useState<string | null>(null);
     const { showToast } = useToast();
     const [formData, setFormData] = useState<Partial<Fornecedor>>({});
     const [grupoSearchQuery, setGrupoSearchQuery] = useState('');
@@ -858,9 +859,10 @@ export default function FornecedoresManagement() {
 
     const handleResetPassword = async (fornecedor: Fornecedor) => {
         if (!fornecedor.userId) return;
-        if (!confirm(`Resetar senha de ${fornecedor.razaoSocial} para 123456?`)) return;
+        if (!confirm(`Reenviar o e-mail de acesso para ${fornecedor.razaoSocial}? A senha será resetada para 123456.`)) return;
 
         try {
+            setResendingAccessEmailFornecedorId(fornecedor.id);
             const headers = await getAuthHeaders();
             const res = await fetch('/api/admin/accounts', {
                 method: 'PUT',
@@ -873,9 +875,11 @@ export default function FornecedoresManagement() {
                 throw new Error(err.error || 'Erro ao resetar senha');
             }
 
-            showToast('success', 'Senha resetada! Credenciais enviadas por email.');
+            showToast('success', 'E-mail reenviado com sucesso. A senha temporária foi redefinida para 123456.');
         } catch (error: any) {
             showToast('error', error.message || 'Erro ao resetar senha');
+        } finally {
+            setResendingAccessEmailFornecedorId(null);
         }
     };
 
@@ -1052,10 +1056,11 @@ export default function FornecedoresManagement() {
                                                     <UserCheck className="w-4 h-4 text-green-600" />
                                                     <button
                                                         onClick={() => handleResetPassword(fornecedor)}
+                                                        disabled={resendingAccessEmailFornecedorId === fornecedor.id}
                                                         className="text-xs text-blue-600 hover:underline"
-                                                        title="Resetar senha"
+                                                        title="Reenviar e-mail de acesso"
                                                     >
-                                                        <RefreshCw className="w-3 h-3" />
+                                                        <RefreshCw className={`w-3 h-3 ${resendingAccessEmailFornecedorId === fornecedor.id ? 'animate-spin' : ''}`} />
                                                     </button>
                                                 </div>
                                             </div>
@@ -1096,6 +1101,20 @@ export default function FornecedoresManagement() {
                                             >
                                                 <Eye className="w-4 h-4" />
                                             </button>
+                                            {fornecedor.hasUserAccount && (
+                                                <button
+                                                    onClick={() => handleResetPassword(fornecedor)}
+                                                    disabled={resendingAccessEmailFornecedorId === fornecedor.id}
+                                                    className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                                    title="Reenviar e-mail de acesso"
+                                                >
+                                                    {resendingAccessEmailFornecedorId === fornecedor.id ? (
+                                                        <RefreshCw className="w-4 h-4 animate-spin" />
+                                                    ) : (
+                                                        <Mail className="w-4 h-4" />
+                                                    )}
+                                                </button>
+                                            )}
                                             <button
                                                 onClick={() => openModal(fornecedor)}
                                                 className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
