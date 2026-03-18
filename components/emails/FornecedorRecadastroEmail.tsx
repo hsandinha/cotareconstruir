@@ -3,10 +3,12 @@ import React from "react";
 export type FornecedorRecadastroEmailProps = {
     logoUrl?: string;
     recipientEmail?: string;
-    temporaryPassword?: string;
+    temporaryPassword?: string | null;
 };
 
 export function FornecedorRecadastroEmail({ logoUrl, recipientEmail, temporaryPassword }: FornecedorRecadastroEmailProps) {
+    const hasTemporaryPassword = Boolean(temporaryPassword?.trim());
+
     return (
         <html lang="pt-BR">
             <head>
@@ -107,16 +109,22 @@ export function FornecedorRecadastroEmail({ logoUrl, recipientEmail, temporaryPa
                                     }}
                                 >
                                     <p style={{ margin: "0 0 8px 0", fontWeight: 700 }}>
-                                        Suas credenciais para o primeiro acesso são:
+                                        {hasTemporaryPassword ? 'Suas credenciais para o primeiro acesso são:' : 'Seu acesso à plataforma:'}
                                     </p>
                                     {recipientEmail && (
                                         <p style={{ margin: 0 }}>
                                             <strong>Usuário:</strong> {recipientEmail}
                                         </p>
                                     )}
-                                    {temporaryPassword && (
+                                    {hasTemporaryPassword && (
                                         <p style={{ margin: 0 }}>
                                             <strong>Senha temporária:</strong> {temporaryPassword}
+                                        </p>
+                                    )}
+                                    {!hasTemporaryPassword && (
+                                        <p style={{ margin: "8px 0 0 0", color: "#475569", fontSize: 12, lineHeight: "18px" }}>
+                                            Se você já definiu sua senha, utilize sua senha atual. Caso não se recorde dela,
+                                            solicite a redefinição de senha.
                                         </p>
                                     )}
                                 </div>
@@ -127,8 +135,17 @@ export function FornecedorRecadastroEmail({ logoUrl, recipientEmail, temporaryPa
                             </p>
 
                             <p style={{ margin: "0 0 14px 0", fontSize: 14, lineHeight: "22px" }}>
-                                <strong>1. Troca de Senha:</strong> No primeiro acesso, será obrigatória a alteração de sua senha
-                                temporária.
+                                {hasTemporaryPassword ? (
+                                    <>
+                                        <strong>1. Troca de Senha:</strong> No primeiro acesso, será obrigatória a alteração de
+                                        sua senha temporária.
+                                    </>
+                                ) : (
+                                    <>
+                                        <strong>1. Acesso à Conta:</strong> Utilize seu e-mail cadastrado e sua senha atual para
+                                        entrar na plataforma. Caso necessário, solicite uma redefinição de senha.
+                                    </>
+                                )}
                             </p>
 
                             <p style={{ margin: "0 0 14px 0", fontSize: 14, lineHeight: "22px" }}>
@@ -173,6 +190,8 @@ export function FornecedorRecadastroEmail({ logoUrl, recipientEmail, temporaryPa
 }
 
 export function getFornecedorRecadastroEmailText() {
+    const hasTemporaryPassword = true;
+
     return [
         "Prezado(a) Parceiro(a) Fornecedor(a),",
         "",
@@ -202,13 +221,16 @@ export function getFornecedorRecadastroEmailText() {
         "Para acessar o sistema e realizar a atualização de seu perfil, utilize o link seguro abaixo:",
         "https://comprareconstruir.com/login",
         "",
-        "Suas credenciais para o primeiro acesso são:",
+        hasTemporaryPassword ? "Suas credenciais para o primeiro acesso são:" : "Seu acesso à plataforma:",
         "Usuário: {{email}}",
-        "Senha temporária: {{senha}}",
+        ...(hasTemporaryPassword
+            ? ["Senha temporária: {{senha}}"]
+            : ["Se você já definiu sua senha, utilize sua senha atual.", "Caso não se recorde dela, solicite a redefinição de senha."]),
         "",
         "Atenção aos Detalhes Essenciais:",
-        "1. Troca de Senha: No primeiro acesso, será obrigatória a alteração de sua senha",
-        "temporária.",
+        ...(hasTemporaryPassword
+            ? ["1. Troca de Senha: No primeiro acesso, será obrigatória a alteração de sua senha", "temporária."]
+            : ["1. Acesso à Conta: Utilize seu e-mail cadastrado e sua senha atual para entrar na", "plataforma. Caso necessário, solicite uma redefinição de senha."]),
         "2. Confirmação de Grupos de Materiais: No perfil do seu cadastro, solicitamos que",
         "confirme cada Grupo de Materiais ou Serviços que sua empresa comercializa. Esta etapa é",
         "crucial para que possamos direcionar consultas altamente qualificadas, maximizando suas",

@@ -72,6 +72,8 @@ interface Fornecedor {
     userId?: string;
     fornecedorUserId?: string | null;
     hasUserAccount?: boolean;
+    hasActiveUserAccount?: boolean;
+    userAccountStatus?: string | null;
     linkedFornecedoresCount?: number;
     mustChangePassword?: boolean;
     lastLoginAt?: string | null;
@@ -187,6 +189,7 @@ export default function FornecedoresManagement() {
     const [selectedFornecedorGrupos, setSelectedFornecedorGrupos] = useState<Fornecedor | null>(null);
     const [selectedFornecedorForAccount, setSelectedFornecedorForAccount] = useState<Fornecedor | null>(null);
     const [creatingAccount, setCreatingAccount] = useState(false);
+    const [resettingPasswordFornecedorId, setResettingPasswordFornecedorId] = useState<string | null>(null);
     const [resendingAccessEmailFornecedorId, setResendingAccessEmailFornecedorId] = useState<string | null>(null);
     const { showToast } = useToast();
     const [formData, setFormData] = useState<Partial<Fornecedor>>({});
@@ -362,7 +365,7 @@ export default function FornecedoresManagement() {
             }));
 
             // Criar mapa de usuário por id para enriquecer vínculos N:N
-            const userById = new Map<string, { userId: string; mustChangePassword: boolean; lastLoginAt: string | null }>();
+            const userById = new Map<string, { userId: string; status: string | null; mustChangePassword: boolean; lastLoginAt: string | null }>();
             const userByEmail = new Map<string, { userId: string; isFornecedor: boolean; lastLoginAt: string | null }>();
             const supplierIdsByUserId = new Map<string, Set<string>>();
             const addLinkedSupplier = (userId?: string | null, fornecedorId?: string | null) => {
@@ -375,6 +378,7 @@ export default function FornecedoresManagement() {
                 if (user?.id) {
                     userById.set(user.id, {
                         userId: user.id,
+                        status: user.status || null,
                         mustChangePassword: Boolean(user.must_change_password),
                         lastLoginAt: user.last_login_at || null,
                     });
@@ -395,11 +399,12 @@ export default function FornecedoresManagement() {
             });
 
             // Criar mapa de fornecedorId -> dados de acesso (legado + N:N)
-            const fornecedorUserMap = new Map<string, { userId: string; mustChangePassword: boolean; lastLoginAt: string | null }>();
+            const fornecedorUserMap = new Map<string, { userId: string; status: string | null; mustChangePassword: boolean; lastLoginAt: string | null }>();
             (usersRaw || []).forEach((user: any) => {
                 if (user.fornecedor_id) {
                     fornecedorUserMap.set(user.fornecedor_id, {
                         userId: user.id,
+                        status: user.status || null,
                         mustChangePassword: Boolean(user.must_change_password),
                         lastLoginAt: user.last_login_at || null,
                     });
@@ -417,6 +422,7 @@ export default function FornecedoresManagement() {
                 } else {
                     fornecedorUserMap.set(fornecedorId, {
                         userId,
+                        status: null,
                         mustChangePassword: false,
                         lastLoginAt: null,
                     });
@@ -427,6 +433,15 @@ export default function FornecedoresManagement() {
             const fornecedoresComFlag = fornecedoresData.map(f => ({
                 ...f,
                 hasUserAccount: fornecedorUserMap.has(f.id),
+                hasActiveUserAccount: Boolean(
+                    fornecedorUserMap.has(f.id)
+                    && (
+                        fornecedorUserMap.get(f.id)?.status === 'active'
+                        || Boolean(fornecedorUserMap.get(f.id)?.lastLoginAt)
+                        || fornecedorUserMap.get(f.id)?.mustChangePassword === false
+                    )
+                ),
+                userAccountStatus: fornecedorUserMap.get(f.id)?.status || null,
                 userId: fornecedorUserMap.get(f.id)?.userId,
                 linkedFornecedoresCount: (() => {
                     const linkedUserId = fornecedorUserMap.get(f.id)?.userId;
@@ -859,10 +874,10 @@ export default function FornecedoresManagement() {
 
     const handleResetPassword = async (fornecedor: Fornecedor) => {
         if (!fornecedor.userId) return;
-        if (!confirm(`Reenviar o e-mail de acesso para ${fornecedor.razaoSocial}? A senha será resetada para 123456.`)) return;
+        if (!confirm(`Resetar a senha de ${fornecedor.razaoSocial} para 123456 e reenviar as credenciais?`)) return;
 
         try {
-            setResendingAccessEmailFornecedorId(fornecedor.id);
+            setResettingPasswordFornecedorId(fornecedor.id);
             const headers = await getAuthHeaders();
             const res = await fetch('/api/admin/accounts', {
                 method: 'PUT',
@@ -875,9 +890,39 @@ export default function FornecedoresManagement() {
                 throw new Error(err.error || 'Erro ao resetar senha');
             }
 
-            showToast('success', 'E-mail reenviado com sucesso. A senha temporária foi redefinida para 123456.');
+            showToast('success', 'Senha resetada para 123456 e credenciais reenviadas com sucesso.');
         } catch (error: any) {
             showToast('error', error.message || 'Erro ao resetar senha');
+        } finally {
+            setResettingPasswordFornecedorId(null);
+        }
+    };
+
+    const handleResendAccessEmail = async (fornecedor: Fornecedor) => {
+        if (!fornecedor.userId) return;
+        if (!confirm(`Reenviar o e-mail de acesso para ${fornecedor.razaoSocial} sem alterar a senha?`)) return;
+
+        try {
+            setResendingAccessEmailFornecedorId(fornecedor.id);
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/admin/accounts', {
+                method: 'PATCH',
+                headers,
+                body: JSON.stringify({ userId: fornecedor.userId })
+            });
+
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Erro ao reenviar email');
+            }
+
+            if (payload.includedTemporaryPassword) {
+                showToast('success', 'E-mail reenviado com a senha temporária atual, sem reset adicional.');
+            } else {
+                showToast('success', 'E-mail reenviado com sucesso, sem alterar a senha atual.');
+            }
+        } catch (error: any) {
+            showToast('error', error.message || 'Erro ao reenviar email');
         } finally {
             setResendingAccessEmailFornecedorId(null);
         }
@@ -1056,11 +1101,11 @@ export default function FornecedoresManagement() {
                                                     <UserCheck className="w-4 h-4 text-green-600" />
                                                     <button
                                                         onClick={() => handleResetPassword(fornecedor)}
-                                                        disabled={resendingAccessEmailFornecedorId === fornecedor.id}
-                                                        className="text-xs text-blue-600 hover:underline"
-                                                        title="Reenviar e-mail de acesso"
+                                                        disabled={resettingPasswordFornecedorId === fornecedor.id || resendingAccessEmailFornecedorId === fornecedor.id}
+                                                        className="text-xs text-blue-600 hover:underline disabled:opacity-60 disabled:cursor-not-allowed"
+                                                        title="Resetar senha"
                                                     >
-                                                        <RefreshCw className={`w-3 h-3 ${resendingAccessEmailFornecedorId === fornecedor.id ? 'animate-spin' : ''}`} />
+                                                        <RefreshCw className={`w-3 h-3 ${resettingPasswordFornecedorId === fornecedor.id ? 'animate-spin' : ''}`} />
                                                     </button>
                                                 </div>
                                             </div>
@@ -1101,10 +1146,10 @@ export default function FornecedoresManagement() {
                                             >
                                                 <Eye className="w-4 h-4" />
                                             </button>
-                                            {fornecedor.hasUserAccount && (
+                                            {fornecedor.hasActiveUserAccount && (
                                                 <button
-                                                    onClick={() => handleResetPassword(fornecedor)}
-                                                    disabled={resendingAccessEmailFornecedorId === fornecedor.id}
+                                                    onClick={() => handleResendAccessEmail(fornecedor)}
+                                                    disabled={resendingAccessEmailFornecedorId === fornecedor.id || resettingPasswordFornecedorId === fornecedor.id}
                                                     className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                                                     title="Reenviar e-mail de acesso"
                                                 >

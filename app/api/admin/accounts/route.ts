@@ -2,6 +2,7 @@
  * API Route: Admin - Gerenciar Contas de Acesso de Fornecedores
  * POST - Criar conta de acesso (requer admin)
  * PUT  - Resetar senha (requer admin)
+ * PATCH - Reenviar email de acesso sem resetar senha (requer admin)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -38,6 +39,49 @@ async function verifyAdmin(request: NextRequest) {
     }
 
     return { user, supabase };
+}
+
+async function sendSupplierAccessEmailForUser(
+    supabase: any,
+    userId: string,
+    options?: { passwordMode?: 'always' | 'auto' | 'never' }
+) {
+    const passwordMode = options?.passwordMode || 'auto';
+    const defaultPassword = '123456';
+
+    const { data: userRow, error: userError } = await supabase
+        .from('users')
+        .select('email, role, must_change_password')
+        .eq('id', userId)
+        .single();
+
+    if (userError) throw userError;
+    if (!userRow?.email) {
+        throw new Error('Usuário sem email cadastrado');
+    }
+    if (userRow.role !== 'fornecedor') {
+        throw new Error('O reenvio de email está disponível apenas para fornecedores');
+    }
+
+    const shouldIncludeTemporaryPassword = passwordMode === 'always'
+        || (passwordMode === 'auto' && Boolean(userRow.must_change_password));
+
+    const template = getFornecedorRecadastroEmailTemplate({
+        recipientEmail: userRow.email,
+        temporaryPassword: shouldIncludeTemporaryPassword ? defaultPassword : null,
+    });
+
+    await sendEmail({
+        to: userRow.email,
+        subject: template.subject,
+        html: template.html,
+        text: template.text,
+    });
+
+    return {
+        email: userRow.email,
+        includedTemporaryPassword: shouldIncludeTemporaryPassword,
+    };
 }
 
 // POST - Criar conta de acesso para fornecedor
@@ -229,24 +273,7 @@ export async function PUT(request: NextRequest) {
 
         // 3. Enviar email de recadastramento + credenciais (best effort)
         try {
-            const { data: userRow } = await supabase
-                .from('users')
-                .select('email, role')
-                .eq('id', userId)
-                .single();
-
-            if (userRow?.email && userRow?.role === 'fornecedor') {
-                const template = getFornecedorRecadastroEmailTemplate({
-                    recipientEmail: userRow.email,
-                    temporaryPassword: defaultPassword,
-                });
-                await sendEmail({
-                    to: userRow.email,
-                    subject: template.subject,
-                    html: template.html,
-                    text: template.text,
-                });
-            }
+            await sendSupplierAccessEmailForUser(supabase, userId, { passwordMode: 'always' });
         } catch {
             // ignore
         }
@@ -258,5 +285,32 @@ export async function PUT(request: NextRequest) {
     } catch (error: any) {
         console.error('Erro ao resetar senha:', error);
         return NextResponse.json({ error: error.message || 'Erro ao resetar senha' }, { status: 500 });
+    }
+}
+
+// PATCH - Reenviar email sem resetar senha
+export async function PATCH(request: NextRequest) {
+    try {
+        const auth = await verifyAdmin(request);
+        if (!auth) {
+            return NextResponse.json({ error: 'Acesso negado' }, { status: 401 });
+        }
+        const { supabase } = auth;
+
+        const { userId } = await request.json();
+
+        if (!userId) {
+            return NextResponse.json({ error: 'userId não fornecido' }, { status: 400 });
+        }
+
+        const result = await sendSupplierAccessEmailForUser(supabase, userId, { passwordMode: 'auto' });
+
+        return NextResponse.json({
+            success: true,
+            includedTemporaryPassword: result.includedTemporaryPassword,
+        });
+    } catch (error: any) {
+        console.error('Erro ao reenviar email de acesso:', error);
+        return NextResponse.json({ error: error.message || 'Erro ao reenviar email de acesso' }, { status: 500 });
     }
 }

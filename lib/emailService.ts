@@ -105,18 +105,23 @@ export async function sendEmail(options: EmailOptions): Promise<SendEmailResult>
     }
 }
 
-export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: string; temporaryPassword?: string }): { subject: string; html: string; text: string } {
+export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: string; temporaryPassword?: string | null }): { subject: string; html: string; text: string } {
     const baseUrl = getEmailAssetsBaseUrl();
     const logoUrl = `${baseUrl}/logo.png`;
-    const temporaryPassword = options.temporaryPassword || '123456';
     const recipientEmail = options.recipientEmail;
     const subject = 'Convite Prioritário: Atualize Seu Perfil na comprareconstruir.com e Impulsione Seus Negócios';
+    const temporaryPassword = typeof options.temporaryPassword === 'string' && options.temporaryPassword.trim()
+        ? options.temporaryPassword.trim()
+        : null;
+    const hasTemporaryPassword = Boolean(temporaryPassword);
 
     const credentialsHtml = `
         <div style="margin:10px 0 16px 0;padding:14px;border-radius:10px;background-color:#f8fafc;border:1px solid #e2e8f0;font-size:14px;line-height:22px;">
-            <p style="margin:0 0 8px 0;font-weight:700;">Suas credenciais para o primeiro acesso são:</p>
+            <p style="margin:0 0 8px 0;font-weight:700;">${hasTemporaryPassword ? 'Suas credenciais para o primeiro acesso são:' : 'Seu acesso à plataforma:'}</p>
             <p style="margin:0;"><strong>Usuário:</strong> ${escapeHtml(recipientEmail)}</p>
-            <p style="margin:0;"><strong>Senha temporária:</strong> ${escapeHtml(temporaryPassword)}</p>
+            ${hasTemporaryPassword
+            ? `<p style="margin:0;"><strong>Senha temporária:</strong> ${escapeHtml(temporaryPassword || '')}</p>`
+            : `<p style="margin:8px 0 0 0;color:#475569;font-size:12px;line-height:18px;">Se você já definiu sua senha, utilize sua senha atual. Caso não se recorde dela, solicite a redefinição de senha.</p>`}
         </div>
     `;
 
@@ -168,7 +173,9 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
                             Atenção aos Detalhes Essenciais:
                         </p>
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
-                            <strong>1. Troca de Senha:</strong> No primeiro acesso, será obrigatória a alteração de sua senha temporária.
+                            ${hasTemporaryPassword
+            ? '<strong>1. Troca de Senha:</strong> No primeiro acesso, será obrigatória a alteração de sua senha temporária.'
+            : '<strong>1. Acesso à Conta:</strong> Utilize seu e-mail cadastrado e sua senha atual para entrar na plataforma. Caso necessário, solicite uma redefinição de senha.'}
                         </p>
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
                             <strong>2. Confirmação de Grupos de Materiais:</strong> No perfil do seu cadastro, solicitamos que confirme cada Grupo de Materiais ou Serviços que sua empresa comercializa. Esta etapa é crucial para que possamos direcionar consultas altamente qualificadas, maximizando suas chances de venda e otimizando seu tempo.
@@ -230,13 +237,16 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
             'Para acessar o sistema e realizar a atualização de seu perfil, utilize o link seguro abaixo:',
             'https://comprareconstruir.com/login',
             '',
-            'Suas credenciais para o primeiro acesso são:',
+            hasTemporaryPassword ? 'Suas credenciais para o primeiro acesso são:' : 'Seu acesso à plataforma:',
             `Usuário: ${recipientEmail}`,
-            `Senha temporária: ${temporaryPassword}`,
+            ...(hasTemporaryPassword
+                ? [`Senha temporária: ${temporaryPassword}`]
+                : ['Se você já definiu sua senha, utilize sua senha atual.', 'Caso não se recorde dela, solicite a redefinição de senha.']),
             '',
             'Atenção aos Detalhes Essenciais:',
-            '1. Troca de Senha: No primeiro acesso, será obrigatória a alteração de sua senha',
-            'temporária.',
+            ...(hasTemporaryPassword
+                ? ['1. Troca de Senha: No primeiro acesso, será obrigatória a alteração de sua senha', 'temporária.']
+                : ['1. Acesso à Conta: Utilize seu e-mail cadastrado e sua senha atual para entrar na', 'plataforma. Caso necessário, solicite uma redefinição de senha.']),
             '2. Confirmação de Grupos de Materiais: No perfil do seu cadastro, solicitamos que',
             'confirme cada Grupo de Materiais ou Serviços que sua empresa comercializa. Esta etapa é',
             'crucial para que possamos direcionar consultas altamente qualificadas, maximizando suas',
