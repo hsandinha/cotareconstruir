@@ -122,10 +122,15 @@ export function FornecedorRecadastroEmail({ logoUrl, recipientEmail, temporaryPa
                                         </p>
                                     )}
                                     {!hasTemporaryPassword && (
-                                        <p style={{ margin: "8px 0 0 0", color: "#475569", fontSize: 12, lineHeight: "18px" }}>
-                                            Se você já definiu sua senha, utilize sua senha atual. Caso não se recorde dela,
-                                            solicite a redefinição de senha.
-                                        </p>
+                                        <>
+                                            <p style={{ margin: 0 }}>
+                                                <strong>Senha:</strong> ja cadastrada no sistema
+                                            </p>
+                                            <p style={{ margin: "8px 0 0 0", color: "#475569", fontSize: 12, lineHeight: "18px" }}>
+                                                Use sua senha atual para acessar. Caso nao se recorde dela, solicite a
+                                                redefinicao de senha.
+                                            </p>
+                                        </>
                                     )}
                                 </div>
                             )}
@@ -142,8 +147,9 @@ export function FornecedorRecadastroEmail({ logoUrl, recipientEmail, temporaryPa
                                     </>
                                 ) : (
                                     <>
-                                        <strong>1. Acesso à Conta:</strong> Utilize seu e-mail cadastrado e sua senha atual para
-                                        entrar na plataforma. Caso necessário, solicite uma redefinição de senha.
+                                        <strong>1. Acesso à Conta:</strong> Utilize seu e-mail cadastrado e a senha ja
+                                        cadastrada no sistema para entrar na plataforma. Caso necessario, solicite uma
+                                        redefinicao de senha.
                                     </>
                                 )}
                             </p>
@@ -225,12 +231,12 @@ export function getFornecedorRecadastroEmailText() {
         "Usuário: {{email}}",
         ...(hasTemporaryPassword
             ? ["Senha temporária: {{senha}}"]
-            : ["Se você já definiu sua senha, utilize sua senha atual.", "Caso não se recorde dela, solicite a redefinição de senha."]),
+            : ["Senha: ja cadastrada no sistema", "Use sua senha atual para acessar. Caso nao se recorde dela, solicite a redefinicao de senha."]),
         "",
         "Atenção aos Detalhes Essenciais:",
         ...(hasTemporaryPassword
             ? ["1. Troca de Senha: No primeiro acesso, será obrigatória a alteração de sua senha", "temporária."]
-            : ["1. Acesso à Conta: Utilize seu e-mail cadastrado e sua senha atual para entrar na", "plataforma. Caso necessário, solicite uma redefinição de senha."]),
+            : ["1. Acesso à Conta: Utilize seu e-mail cadastrado e a senha ja cadastrada no sistema para entrar na", "plataforma. Caso necessario, solicite uma redefinicao de senha."]),
         "2. Confirmação de Grupos de Materiais: No perfil do seu cadastro, solicitamos que",
         "confirme cada Grupo de Materiais ou Serviços que sua empresa comercializa. Esta etapa é",
         "crucial para que possamos direcionar consultas altamente qualificadas, maximizando suas",

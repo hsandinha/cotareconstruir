@@ -916,11 +916,7 @@ export default function FornecedoresManagement() {
                 throw new Error(payload.error || 'Erro ao reenviar email');
             }
 
-            if (payload.includedTemporaryPassword) {
-                showToast('success', 'E-mail reenviado com a senha temporária atual, sem reset adicional.');
-            } else {
-                showToast('success', 'E-mail reenviado com sucesso, sem alterar a senha atual.');
-            }
+            showToast('success', 'E-mail reenviado com sucesso, sem alterar a senha atual.');
         } catch (error: any) {
             showToast('error', error.message || 'Erro ao reenviar email');
         } finally {

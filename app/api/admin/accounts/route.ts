@@ -303,7 +303,7 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: 'userId não fornecido' }, { status: 400 });
         }
 
-        const result = await sendSupplierAccessEmailForUser(supabase, userId, { passwordMode: 'auto' });
+        const result = await sendSupplierAccessEmailForUser(supabase, userId, { passwordMode: 'never' });
 
         return NextResponse.json({
             success: true,
