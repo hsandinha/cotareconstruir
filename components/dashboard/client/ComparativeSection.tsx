@@ -1,12 +1,15 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { ArrowDownOnSquareIcon, ChatBubbleLeftRightIcon, StarIcon } from "@heroicons/react/24/outline";
+
 import { ChatInterface } from "../../ChatInterface";
 import { ReviewModal } from "../../ReviewModal";
 import { getQuotationStatusBadge } from "./quotationStatus";
 import { supabase } from "@/lib/supabaseAuth";
 import { authFetch } from "@/lib/authHeaders";
+import { Download, MessageSquare, Star, ShieldAlert } from "lucide-react";
+import { useToast } from "@/components/ToastProvider";
+import { ReportModal } from "../../ReportModal";
 
 interface ClientComparativeSectionProps {
     orderId?: string;
@@ -14,6 +17,7 @@ interface ClientComparativeSectionProps {
 }
 
 export function ClientComparativeSection({ orderId, status }: ClientComparativeSectionProps) {
+    const { showToast } = useToast();
     const [quotation, setQuotation] = useState<any>(null);
     const [allProposals, setAllProposals] = useState<any[]>([]);
     const [proposals, setProposals] = useState<any[]>([]);
@@ -47,6 +51,11 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         discountPercent: number;
     } | null>(null);
     const [reviewModal, setReviewModal] = useState<{
+        isOpen: boolean;
+        supplierId: string;
+        supplierName: string;
+    } | null>(null);
+    const [reportModal, setReportModal] = useState<{
         isOpen: boolean;
         supplierId: string;
         supplierName: string;
@@ -371,7 +380,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
             <div className="space-y-6">
                 <div className="bg-green-50 border border-green-200 rounded-lg p-6 text-center">
                     <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
-                        <ArrowDownOnSquareIcon className="w-8 h-8 text-green-600" />
+                        <Download className="w-8 h-8 text-green-600" />
                     </div>
                     <h2 className="text-2xl font-bold text-green-800 mb-2">Pedido Finalizado!</h2>
                     <p className="text-green-700 max-w-2xl mx-auto">
@@ -434,6 +443,13 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                         {expectedDeliveryLabel && (
                                             <p className="text-xs text-gray-500 mt-1">Previsão de entrega: {expectedDeliveryLabel}</p>
                                         )}
+                                        <button
+                                            onClick={() => setReportModal({ isOpen: true, supplierId: order.supplierId, supplierName: order.supplierName })}
+                                            className="mt-2 inline-flex items-center text-xs text-rose-500 hover:text-rose-700 font-medium"
+                                        >
+                                            <ShieldAlert className="w-3 h-3 mr-1" />
+                                            Reportar Problema
+                                        </button>
                                     </div>
                                     <div className="text-right space-y-2">
                                         <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${statusMeta.color}`}>
@@ -513,7 +529,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 {/* Status banner */}
                 <div className="p-6 text-center bg-white rounded-lg border border-gray-200">
                     <div className="mx-auto w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
-                        <ChatBubbleLeftRightIcon className="w-8 h-8 text-yellow-600" />
+                        <MessageSquare className="w-8 h-8 text-yellow-600" />
                     </div>
                     <h3 className="text-lg font-medium text-gray-900">Aguardando Propostas</h3>
                     <p className="text-gray-500 mt-2 max-w-md mx-auto">
@@ -767,7 +783,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
     function handleGenerateOC() {
         if (Object.keys(selectedSuppliers).length === 0) {
-            alert("Selecione pelo menos um fornecedor para os itens.");
+            showToast("error", "Selecione pelo menos um fornecedor para os itens.");
             return;
         }
         setView("oc");
@@ -844,12 +860,12 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 throw new Error(err.error || 'Erro ao finalizar pedido');
             }
 
-            alert("Pedidos gerados com sucesso!");
+            showToast("success", "Pedidos gerados com sucesso!");
             window.location.reload();
 
         } catch (error) {
             console.error("Error finalizing order:", error);
-            alert("Erro ao finalizar pedido. Tente novamente.");
+            showToast("error", "Erro ao finalizar pedido. Tente novamente.");
         } finally {
             setFinalizingOrder(false);
         }
@@ -893,7 +909,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                         onClick={() => setReviewModal({ isOpen: true, supplierId: order.supplierId, supplierName: order.supplierName })}
                                         className="mt-2 text-xs font-medium text-indigo-600 hover:text-indigo-800 flex items-center justify-end gap-1 ml-auto"
                                     >
-                                        <StarIcon className="h-4 w-4" /> Avaliar Fornecedor
+                                        <Star className="h-4 w-4" /> Avaliar Fornecedor
                                     </button>
                                 </div>
                             </div>
@@ -925,7 +941,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
                             <div className="flex justify-end">
                                 <button className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
-                                    <ArrowDownOnSquareIcon className="h-4 w-4" />
+                                    <Download className="h-4 w-4" />
                                     Exportar PDF
                                 </button>
                             </div>
@@ -1008,7 +1024,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                             onClick={() => setReviewModal({ isOpen: true, supplierId, supplierName: supplierLabel })}
                                             className="mt-2 text-xs font-medium text-indigo-600 hover:text-indigo-800 flex items-center justify-end gap-1"
                                         >
-                                            <StarIcon className="h-4 w-4" /> Avaliar Fornecedor
+                                            <Star className="h-4 w-4" /> Avaliar Fornecedor
                                         </button>
                                     )}
                                 </div>
@@ -1041,7 +1057,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
                             <div className="flex justify-end">
                                 <button className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
-                                    <ArrowDownOnSquareIcon className="h-4 w-4" />
+                                    <Download className="h-4 w-4" />
                                     Exportar PDF
                                 </button>
                             </div>
@@ -1174,7 +1190,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                             }}
                                             className="text-xs font-normal text-blue-600 hover:text-blue-800 flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-full"
                                         >
-                                            <ChatBubbleLeftRightIcon className="h-3 w-3" />
+                                            <MessageSquare className="h-3 w-3" />
                                             Chat
                                         </button>
                                     </div>
@@ -1387,6 +1403,16 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     supplierId={reviewModal.supplierId}
                     supplierName={reviewModal.supplierName}
                     orderId={orderId}
+                />
+            )}
+
+            {reportModal && (
+                <ReportModal
+                    isOpen={reportModal.isOpen}
+                    onClose={() => setReportModal(null)}
+                    targetType="fornecedor"
+                    targetId={reportModal.supplierId}
+                    contextName={reportModal.supplierName}
                 />
             )}
         </div>

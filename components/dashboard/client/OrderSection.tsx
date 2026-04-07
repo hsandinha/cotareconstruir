@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { ArrowRightIcon, CalendarIcon, MapPinIcon, DocumentTextIcon } from "@heroicons/react/24/outline";
+
 import { ClientComparativeSection } from "./ComparativeSection";
 import { getQuotationStatusBadge } from "./quotationStatus";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { authFetch } from "@/lib/authHeaders";
+import { ArrowRight, Calendar, MapPin, FileText } from "lucide-react";
 
 export function ClientOrderSection() {
     const { user, initialized } = useAuth();
@@ -156,7 +157,7 @@ export function ClientOrderSection() {
                     onClick={() => setSelectedOrder(null)}
                     className="flex items-center text-sm text-gray-600 hover:text-blue-600 transition-colors"
                 >
-                    <ArrowRightIcon className="h-4 w-4 mr-1 rotate-180" />
+                    <ArrowRight className="h-4 w-4 mr-1 rotate-180" />
                     Voltar para Meus Pedidos
                 </button>
 
@@ -216,15 +217,15 @@ export function ClientOrderSection() {
 
                                     <div className="flex items-center gap-6 text-sm text-gray-600">
                                         <div className="flex items-center gap-1.5">
-                                            <MapPinIcon className="h-4 w-4" />
+                                            <MapPin className="h-4 w-4" />
                                             {worksMap[order.workId] || "Obra não identificada"}
                                         </div>
                                         <div className="flex items-center gap-1.5">
-                                            <CalendarIcon className="h-4 w-4" />
+                                            <Calendar className="h-4 w-4" />
                                             {order.date}
                                         </div>
                                         <div className="flex items-center gap-1.5">
-                                            <DocumentTextIcon className="h-4 w-4" />
+                                            <FileText className="h-4 w-4" />
                                             {order.items} itens
                                         </div>
                                         {order.propostas_count > 0 && (
@@ -247,7 +248,7 @@ export function ClientOrderSection() {
                                     <p className="text-lg font-bold text-gray-900">{order.totalEstimado}</p>
                                     <div className="mt-4 flex justify-end">
                                         <span className="text-sm font-medium text-blue-600 group-hover:translate-x-1 transition-transform flex items-center gap-1">
-                                            Ver Detalhes <ArrowRightIcon className="h-4 w-4" />
+                                            Ver Detalhes <ArrowRight className="h-4 w-4" />
                                         </span>
                                     </div>
                                 </div>

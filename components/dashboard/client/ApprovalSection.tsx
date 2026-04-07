@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircleIcon } from "@heroicons/react/24/outline";
+import { CheckCircle } from "lucide-react";
+
 
 export function ClientApprovalSection() {
     const [managerStatus, setManagerStatus] = useState<"pendente" | "aprovado">(
@@ -32,7 +33,7 @@ export function ClientApprovalSection() {
                             : "bg-yellow-50 text-yellow-700"}
                     `}
                     >
-                        <CheckCircleIcon className="h-4 w-4" />
+                        <CheckCircle className="h-4 w-4" />
                         {managerStatus === "aprovado" ? "Aprovado" : "Pendente"}
                     </span>
                 </div>

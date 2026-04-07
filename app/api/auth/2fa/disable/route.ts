@@ -21,9 +21,21 @@ async function handler(request: NextRequest) {
             throw new Error('Server configuration error');
         }
 
-        // TODO: Verificar senha antes de desativar
-        // const isValidPassword = await verifyPassword(userId, password);
-        // if (!isValidPassword) throw new AuthenticationError('Invalid password');
+        // Buscar e-mail do usuário para testar auth
+        const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId);
+        if (userError || !userData?.user?.email) {
+            throw new AuthenticationError('User not found');
+        }
+
+        // Tentar autenticar para verificar a senha (aqui usamos o supabase client normal, ou admin client)
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+            email: userData.user.email,
+            password: password,
+        });
+
+        if (signInError) {
+            throw new AuthenticationError('Invalid password. Permissão negada.');
+        }
 
         // Desativar 2FA
         const { error } = await supabaseAdmin

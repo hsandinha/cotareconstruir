@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
+
 import { SupplierQuotationInboxSection } from "./QuotationInboxSection";
 import { SupplierSalesSection } from "./SalesSection";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
 export function SupplierSalesAndQuotationsSection() {
     const [showQuotations, setShowQuotations] = useState(true);
@@ -29,9 +30,9 @@ export function SupplierSalesAndQuotationsSection() {
                         </div>
                     </div>
                     {showQuotations ? (
-                        <ChevronUpIcon className="h-5 w-5 text-gray-500" />
+                        <ChevronUp className="h-5 w-5 text-gray-500" />
                     ) : (
-                        <ChevronDownIcon className="h-5 w-5 text-gray-500" />
+                        <ChevronDown className="h-5 w-5 text-gray-500" />
                     )}
                 </button>
 
@@ -60,9 +61,9 @@ export function SupplierSalesAndQuotationsSection() {
                         </div>
                     </div>
                     {showOrders ? (
-                        <ChevronUpIcon className="h-5 w-5 text-gray-500" />
+                        <ChevronUp className="h-5 w-5 text-gray-500" />
                     ) : (
-                        <ChevronDownIcon className="h-5 w-5 text-gray-500" />
+                        <ChevronDown className="h-5 w-5 text-gray-500" />
                     )}
                 </button>
 

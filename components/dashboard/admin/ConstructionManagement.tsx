@@ -53,6 +53,7 @@ import {
     getFasesByGrupoInsumoId
 } from '@/lib/constructionServices';
 import { supabase } from '@/lib/supabase';
+import { useToast } from "@/components/ToastProvider";
 
 // --- Types ---
 
@@ -210,6 +211,7 @@ const TreeItem = ({
 // --- Main Component ---
 
 export default function ConstructionManagement() {
+    const { showToast } = useToast();
     // --- State ---
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [searchQuery, setSearchQuery] = useState('');
@@ -461,7 +463,7 @@ export default function ConstructionManagement() {
             setEditingItem(null);
         } catch (error) {
             console.error('Erro ao salvar:', error);
-            alert('Erro ao salvar. Tente novamente.');
+            showToast("error", 'Erro ao salvar. Tente novamente.');
         }
     };
 
@@ -487,7 +489,7 @@ export default function ConstructionManagement() {
             }
         } catch (error) {
             console.error('Erro ao deletar:', error);
-            alert('Erro ao deletar. Tente novamente.');
+            showToast("error", 'Erro ao deletar. Tente novamente.');
         }
     };
 

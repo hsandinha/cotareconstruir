@@ -59,10 +59,8 @@ export default function ChangePasswordPage() {
             return;
         }
 
-        if (currentPassword !== '123456') {
-            setError('Senha atual incorreta');
-            return;
-        }
+        // Server-side verification happens via signInWithPassword below
+        // No client-side password check needed
 
         const validation = validatePassword(newPassword);
         if (!validation.valid) {
@@ -75,8 +73,8 @@ export default function ChangePasswordPage() {
             return;
         }
 
-        if (newPassword === '123456') {
-            setError('A nova senha não pode ser igual à senha padrão');
+        if (newPassword === currentPassword) {
+            setError('A nova senha não pode ser igual à senha atual');
             return;
         }
 
@@ -146,9 +144,9 @@ export default function ChangePasswordPage() {
     const passwordStrength = validatePassword(newPassword);
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
             <div className="max-w-md w-full">
-                <div className="bg-white rounded-2xl shadow-xl p-8">
+                <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-8">
                     {/* Header */}
                     <div className="text-center mb-8">
                         <div className="inline-flex items-center justify-center w-16 h-16 bg-amber-100 rounded-full mb-4">
@@ -165,7 +163,7 @@ export default function ChangePasswordPage() {
                         {/* Senha Atual */}
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-2">
-                                Senha Atual (123456)
+                                Senha Atual
                             </label>
                             <div className="relative">
                                 <input

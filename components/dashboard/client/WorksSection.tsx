@@ -4,6 +4,8 @@ import { useState, useEffect, type FormEvent } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { formatCepBr } from "../../../lib/utils";
+import { useConfirmModal } from "../../ConfirmModal";
+import { useToast } from "@/components/ToastProvider";
 import {
     Building2, MapPin, Calendar, Clock, Plus, Pencil, Trash2, ChevronDown, ChevronUp,
     CheckCircle2, Circle, AlertCircle, Loader2, Save, X, Search, Eye, EyeOff
@@ -61,7 +63,9 @@ type Fase = {
 };
 
 export function ClientWorksSection() {
+    const { showToast } = useToast();
     const { user, initialized } = useAuth();
+    const { confirm: confirmModal } = useConfirmModal();
 
     // Estados principais
     const [obras, setObras] = useState<Obra[]>([]);
@@ -209,7 +213,7 @@ export function ClientWorksSection() {
                 estado: data.state || "",
             }));
         } catch {
-            alert("CEP não encontrado.");
+            showToast("error", "CEP não encontrado.");
         } finally {
             setLoadingCep(false);
         }
@@ -259,7 +263,7 @@ export function ClientWorksSection() {
             await loadData();
         } catch (error) {
             console.error("Erro ao salvar obra:", error);
-            alert("Erro ao salvar obra.");
+            showToast("error", "Erro ao salvar obra.");
         } finally {
             setSavingObra(false);
         }
@@ -300,7 +304,7 @@ export function ClientWorksSection() {
             await loadData();
         } catch (error) {
             console.error("Erro ao adicionar etapa:", error);
-            alert("Erro ao adicionar etapa.");
+            showToast("error", "Erro ao adicionar etapa.");
         } finally {
             setSavingEtapa(false);
         }
@@ -328,7 +332,13 @@ export function ClientWorksSection() {
 
     // Deletar obra
     const handleDeleteObra = async (obraId: string) => {
-        if (!confirm("Tem certeza que deseja excluir esta obra e todas as suas etapas?")) return;
+        const ok = await confirmModal({
+            title: "Excluir Obra",
+            message: "Tem certeza que deseja excluir esta obra e todas as suas etapas? Esta ação não pode ser desfeita.",
+            confirmLabel: "Excluir Obra",
+            variant: "danger",
+        });
+        if (!ok) return;
 
         try {
             const { error } = await supabase.from('obras').delete().eq('id', obraId);
@@ -336,13 +346,19 @@ export function ClientWorksSection() {
             await loadData();
         } catch (error) {
             console.error("Erro ao excluir obra:", error);
-            alert("Erro ao excluir obra.");
+            showToast("error", "Erro ao excluir obra.");
         }
     };
 
     // Deletar etapa
     const handleDeleteEtapa = async (etapaId: string) => {
-        if (!confirm("Excluir esta etapa?")) return;
+        const ok = await confirmModal({
+            title: "Excluir Etapa",
+            message: "Tem certeza que deseja excluir esta etapa do cronograma?",
+            confirmLabel: "Excluir",
+            variant: "danger",
+        });
+        if (!ok) return;
 
         try {
             const { error } = await supabase.from('obra_etapas').delete().eq('id', etapaId);

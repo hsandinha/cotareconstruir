@@ -4,7 +4,9 @@ import { useState, useEffect, useRef, type ChangeEvent } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "../../../lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
-import { ArrowDownTrayIcon, ArrowUpTrayIcon } from "@heroicons/react/24/outline";
+
+import { Download, Upload } from "lucide-react";
+import { useToast } from "@/components/ToastProvider";
 import {
     buildCsv,
     downloadCsvFile,
@@ -26,6 +28,7 @@ interface SupplierQuotationResponseSectionProps {
 }
 
 export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'create', onUpdate, fornecedorId }: SupplierQuotationResponseSectionProps) {
+    const { showToast } = useToast();
     const { user, profile, session } = useAuth();
     const [responses, setResponses] = useState<{ [key: string]: { preco: string, disponibilidade: string } }>({});
     const [paymentMethod, setPaymentMethod] = useState("");
@@ -143,7 +146,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
 
     const handleDownloadCsv = async () => {
         if (!quotation?.items || quotation.items.length === 0) {
-            alert("Não há itens para exportar.");
+            showToast("error", "Não há itens para exportar.");
             return;
         }
 
@@ -186,7 +189,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
             downloadCsvFile(`resposta_${cotacaoRef}.csv`, csv);
         } catch (error) {
             console.error("Erro ao gerar CSV da cotação:", error);
-            alert("Erro ao gerar planilha. Tente novamente.");
+            showToast("error", "Erro ao gerar planilha. Tente novamente.");
         } finally {
             setExportingCsv(false);
         }
@@ -206,7 +209,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
         try {
             const rows = await parseSpreadsheetFile(file);
             if (rows.length === 0) {
-                alert("A planilha está vazia ou em formato inválido.");
+                showToast("error", "A planilha está vazia ou em formato inválido.");
                 return;
             }
 
@@ -262,7 +265,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
             }
 
             if (importedItemsCount === 0) {
-                alert("Nenhuma linha válida de item foi encontrada para esta cotação.");
+                showToast("error", "Nenhuma linha válida de item foi encontrada para esta cotação.");
                 return;
             }
 
@@ -284,10 +287,10 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 if (nextObs) setObservations(nextObs);
             }
 
-            alert(`Importação concluída: ${importedItemsCount} item(ns) atualizado(s).`);
+            showToast("success", `Importação concluída: ${importedItemsCount} item(ns) atualizado(s).`);
         } catch (error: any) {
             console.error("Erro ao importar CSV da cotação:", error);
-            alert(error.message || "Erro ao importar planilha.");
+            showToast("error", error.message || "Erro ao importar planilha.");
         } finally {
             setImportingCsv(false);
         }
@@ -295,7 +298,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
 
     const handleSendProposal = async () => {
         if (!user) {
-            alert("Usuário não autenticado.");
+            showToast("error", "Usuário não autenticado.");
             return;
         }
         setLoading(true);
@@ -377,7 +380,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 throw new Error(err.error || 'Erro ao enviar proposta');
             }
 
-            alert(mode === 'update' ? "Proposta atualizada com sucesso!" : "Proposta enviada com sucesso!");
+            showToast("success", mode === 'update' ? "Proposta atualizada com sucesso!" : "Proposta enviada com sucesso!");
 
             // Se for update e houver callback de atualização, chamar primeiro
             if (mode === 'update' && onUpdate) {
@@ -388,7 +391,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
             onBack();
         } catch (error) {
             console.error("Erro ao enviar proposta:", error);
-            alert("Erro ao enviar proposta. Tente novamente.");
+            showToast("error", "Erro ao enviar proposta. Tente novamente.");
         } finally {
             setLoading(false);
         }
@@ -429,7 +432,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                         disabled={exportingCsv || importingCsv}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 border border-slate-200 rounded-md hover:bg-slate-200 disabled:opacity-60"
                     >
-                        <ArrowDownTrayIcon className="h-4 w-4" />
+                        <Download className="h-4 w-4" />
                         {exportingCsv ? "Gerando..." : "Baixar CSV"}
                     </button>
                     <button
@@ -438,7 +441,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                         disabled={importingCsv || exportingCsv}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-60"
                     >
-                        <ArrowUpTrayIcon className="h-4 w-4" />
+                        <Upload className="h-4 w-4" />
                         {importingCsv ? "Importando..." : "Importar CSV/XLSX"}
                     </button>
                     <input

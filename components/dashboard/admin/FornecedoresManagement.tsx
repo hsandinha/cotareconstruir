@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseAuth';
 import { Search, Edit2, Trash2, X, Save, Package, CreditCard, Tags, UserPlus, UserCheck, RefreshCw, Mail, Plus, Eye, MapPin, Phone, Building2, FileText, Globe, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useToast } from '@/components/ToastProvider';
+import { useConfirmModal } from '@/components/ConfirmModal';
 
 // Helper para obter headers com token (com fallback para localStorage)
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -192,6 +193,7 @@ export default function FornecedoresManagement() {
     const [resettingPasswordFornecedorId, setResettingPasswordFornecedorId] = useState<string | null>(null);
     const [resendingAccessEmailFornecedorId, setResendingAccessEmailFornecedorId] = useState<string | null>(null);
     const { showToast } = useToast();
+    const { confirm: confirmModal } = useConfirmModal();
     const [formData, setFormData] = useState<Partial<Fornecedor>>({});
     const [grupoSearchQuery, setGrupoSearchQuery] = useState('');
     const [saving, setSaving] = useState(false);
@@ -671,7 +673,13 @@ export default function FornecedoresManagement() {
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm('Deseja realmente excluir este fornecedor?')) return;
+        const ok = await confirmModal({
+            title: "Excluir Fornecedor",
+            message: "Deseja realmente excluir este fornecedor? Esta ação não pode ser desfeita.",
+            confirmLabel: "Excluir",
+            variant: "danger",
+        });
+        if (!ok) return;
 
         try {
             const headers = await getAuthHeaders();
@@ -874,7 +882,13 @@ export default function FornecedoresManagement() {
 
     const handleResetPassword = async (fornecedor: Fornecedor) => {
         if (!fornecedor.userId) return;
-        if (!confirm(`Resetar a senha de ${fornecedor.razaoSocial} para 123456 e reenviar as credenciais?`)) return;
+        const ok = await confirmModal({
+            title: "Resetar Senha",
+            message: `Resetar a senha de ${fornecedor.razaoSocial}? Uma nova senha temporária será gerada e as credenciais reenviadas por email.`,
+            confirmLabel: "Resetar Senha",
+            variant: "warning",
+        });
+        if (!ok) return;
 
         try {
             setResettingPasswordFornecedorId(fornecedor.id);
@@ -890,7 +904,7 @@ export default function FornecedoresManagement() {
                 throw new Error(err.error || 'Erro ao resetar senha');
             }
 
-            showToast('success', 'Senha resetada para 123456 e credenciais reenviadas com sucesso.');
+            showToast('success', 'Senha resetada e credenciais reenviadas com sucesso.');
         } catch (error: any) {
             showToast('error', error.message || 'Erro ao resetar senha');
         } finally {
@@ -900,7 +914,13 @@ export default function FornecedoresManagement() {
 
     const handleResendAccessEmail = async (fornecedor: Fornecedor) => {
         if (!fornecedor.userId) return;
-        if (!confirm(`Reenviar o e-mail de acesso para ${fornecedor.razaoSocial} sem alterar a senha?`)) return;
+        const ok = await confirmModal({
+            title: "Reenviar Email de Acesso",
+            message: `Reenviar o e-mail de acesso para ${fornecedor.razaoSocial} sem alterar a senha?`,
+            confirmLabel: "Reenviar",
+            variant: "info",
+        });
+        if (!ok) return;
 
         try {
             setResendingAccessEmailFornecedorId(fornecedor.id);
@@ -980,11 +1000,11 @@ export default function FornecedoresManagement() {
     };
 
     const renderSortableHeader = (label: string, key: FornecedorSortKey) => (
-        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">
+        <th className="px-2 py-2.5 text-left text-[10px] font-semibold text-slate-600 uppercase whitespace-nowrap">
             <button
                 type="button"
                 onClick={() => handleSort(key)}
-                className="group inline-flex items-center gap-1.5 hover:text-slate-900 transition-colors"
+                className="group inline-flex items-center gap-1 hover:text-slate-900 transition-colors"
             >
                 <span>{label}</span>
                 {getSortIcon(key)}
@@ -1050,7 +1070,7 @@ export default function FornecedoresManagement() {
             {/* Table */}
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 <div className="overflow-x-auto">
-                    <table className="w-full">
+                    <table className="w-full text-[13px]">
                         <thead className="bg-slate-50 border-b border-slate-200">
                             <tr>
                                 {renderSortableHeader('Razão Social', 'razaoSocial')}
@@ -1061,44 +1081,44 @@ export default function FornecedoresManagement() {
                                 {renderSortableHeader('Último login', 'ultimoLogin')}
                                 {renderSortableHeader('Cartão', 'cartao')}
                                 {renderSortableHeader('Status', 'status')}
-                                <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Ações</th>
+                                <th className="px-2 py-2.5 text-right text-[10px] font-semibold text-slate-600 uppercase whitespace-nowrap">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {filteredFornecedores.map((fornecedor) => (
                                 <tr key={fornecedor.id} className="hover:bg-slate-50 transition-colors">
-                                    <td className="px-4 py-3">
-                                        <div className="flex items-center gap-2 cursor-pointer group" onClick={() => openDetailModal(fornecedor)}>
-                                            <Package className="w-4 h-4 text-purple-600" />
-                                            <div>
-                                                <div className="font-medium text-slate-900 group-hover:text-purple-700 transition-colors">{fornecedor.razaoSocial}</div>
-                                                <div className="text-xs text-slate-500">{fornecedor.email}</div>
+                                    <td className="px-2 py-2">
+                                        <div className="flex items-center gap-1.5 cursor-pointer group" onClick={() => openDetailModal(fornecedor)}>
+                                            <Package className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
+                                            <div className="min-w-0">
+                                                <div className="font-medium text-slate-900 text-[12px] group-hover:text-purple-700 transition-colors truncate max-w-[200px]">{fornecedor.razaoSocial}</div>
+                                                <div className="text-[11px] text-slate-500 truncate max-w-[200px]">{fornecedor.email}</div>
                                             </div>
                                         </div>
                                     </td>
-                                    <td className="px-4 py-3">
+                                    <td className="px-2 py-2">
                                         <button
                                             onClick={() => openGruposModal(fornecedor)}
-                                            className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 transition-colors"
+                                            className="flex items-center gap-1.5 px-2 py-1 bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 transition-colors"
                                         >
-                                            <Tags className="w-4 h-4" />
-                                            <span className="font-semibold">{fornecedor.grupoInsumoIds?.length || 0}</span>
+                                            <Tags className="w-3.5 h-3.5" />
+                                            <span className="font-semibold text-[12px]">{fornecedor.grupoInsumoIds?.length || 0}</span>
                                         </button>
                                     </td>
-                                    <td className="px-4 py-3">
-                                        <div className="text-sm text-slate-900">{fornecedor.contato}</div>
-                                        <div className="text-xs text-slate-500">{fornecedor.whatsapp}</div>
+                                    <td className="px-2 py-2">
+                                        <div className="text-[12px] text-slate-900">{fornecedor.contato}</div>
+                                        <div className="text-[11px] text-slate-500">{fornecedor.whatsapp}</div>
                                     </td>
-                                    <td className="px-4 py-3 text-sm text-slate-600">{fornecedor.cidade} - {fornecedor.estado}</td>
-                                    <td className="px-4 py-3">
+                                    <td className="px-2 py-2 text-[12px] text-slate-600 whitespace-nowrap">{fornecedor.cidade} - {fornecedor.estado}</td>
+                                    <td className="px-2 py-2">
                                         {fornecedor.hasUserAccount ? (
                                             <div>
-                                                <div className="flex items-center gap-2">
-                                                    <UserCheck className="w-4 h-4 text-green-600" />
+                                                <div className="flex items-center gap-1.5">
+                                                    <UserCheck className="w-3.5 h-3.5 text-green-600" />
                                                     <button
                                                         onClick={() => handleResetPassword(fornecedor)}
                                                         disabled={resettingPasswordFornecedorId === fornecedor.id || resendingAccessEmailFornecedorId === fornecedor.id}
-                                                        className="text-xs text-blue-600 hover:underline disabled:opacity-60 disabled:cursor-not-allowed"
+                                                        className="text-[11px] text-blue-600 hover:underline disabled:opacity-60 disabled:cursor-not-allowed"
                                                         title="Resetar senha"
                                                     >
                                                         <RefreshCw className={`w-3 h-3 ${resettingPasswordFornecedorId === fornecedor.id ? 'animate-spin' : ''}`} />
@@ -1108,67 +1128,67 @@ export default function FornecedoresManagement() {
                                         ) : (
                                             <button
                                                 onClick={() => openCreateAccountModal(fornecedor)}
-                                                className="flex items-center gap-1 text-xs text-slate-600 hover:text-blue-600"
+                                                className="flex items-center gap-1 text-[11px] text-slate-600 hover:text-blue-600"
                                             >
-                                                <UserPlus className="w-4 h-4" />
-                                                <span>Criar conta</span>
+                                                <UserPlus className="w-3.5 h-3.5" />
+                                                <span>Criar</span>
                                             </button>
                                         )}
                                     </td>
-                                    <td className="px-4 py-3">
+                                    <td className="px-2 py-2">
                                         {!fornecedor.hasUserAccount ? (
                                             <span className="text-[11px] text-slate-400">—</span>
                                         ) : (
-                                            <span className="text-[11px] text-slate-600">
+                                            <span className="text-[11px] text-slate-600 whitespace-nowrap">
                                                 {fornecedor.lastLoginAt ? formatDate(fornecedor.lastLoginAt) : 'Nunca'}
                                             </span>
                                         )}
                                     </td>
-                                    <td className="px-4 py-3">
-                                        {fornecedor.cartaoCredito && <CreditCard className="w-4 h-4 text-green-600" />}
+                                    <td className="px-2 py-2">
+                                        {fornecedor.cartaoCredito && <CreditCard className="w-3.5 h-3.5 text-green-600" />}
                                     </td>
-                                    <td className="px-4 py-3">
-                                        <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${fornecedor.ativo ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-600'
+                                    <td className="px-2 py-2">
+                                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold ${fornecedor.ativo ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-600'
                                             }`}>
                                             {fornecedor.ativo ? 'Ativo' : 'Inativo'}
                                         </span>
                                     </td>
-                                    <td className="px-4 py-3">
-                                        <div className="flex items-center justify-end gap-1">
+                                    <td className="px-2 py-2">
+                                        <div className="flex items-center justify-end gap-0.5">
                                             <button
                                                 onClick={() => openDetailModal(fornecedor)}
-                                                className="p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700 rounded-lg transition-colors"
+                                                className="p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 rounded-lg transition-colors"
                                                 title="Ver detalhes"
                                             >
-                                                <Eye className="w-4 h-4" />
+                                                <Eye className="w-3.5 h-3.5" />
                                             </button>
                                             {fornecedor.hasActiveUserAccount && (
                                                 <button
                                                     onClick={() => handleResendAccessEmail(fornecedor)}
                                                     disabled={resendingAccessEmailFornecedorId === fornecedor.id || resettingPasswordFornecedorId === fornecedor.id}
-                                                    className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                                    className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                                                     title="Reenviar e-mail de acesso"
                                                 >
                                                     {resendingAccessEmailFornecedorId === fornecedor.id ? (
-                                                        <RefreshCw className="w-4 h-4 animate-spin" />
+                                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                                                     ) : (
-                                                        <Mail className="w-4 h-4" />
+                                                        <Mail className="w-3.5 h-3.5" />
                                                     )}
                                                 </button>
                                             )}
                                             <button
                                                 onClick={() => openModal(fornecedor)}
-                                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                                                 title="Editar"
                                             >
-                                                <Edit2 className="w-4 h-4" />
+                                                <Edit2 className="w-3.5 h-3.5" />
                                             </button>
                                             <button
                                                 onClick={() => handleDelete(fornecedor.id)}
-                                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                                 title="Excluir"
                                             >
-                                                <Trash2 className="w-4 h-4" />
+                                                <Trash2 className="w-3.5 h-3.5" />
                                             </button>
                                         </div>
                                     </td>

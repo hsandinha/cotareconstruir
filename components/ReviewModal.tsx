@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { addReview } from "../lib/services";
 import { useAuth } from '@/lib/useAuth';
+import { useToast } from "@/components/ToastProvider";
 
 interface ReviewModalProps {
     isOpen: boolean;
@@ -13,6 +14,7 @@ interface ReviewModalProps {
 }
 
 export function ReviewModal({ isOpen, onClose, supplierId, supplierName, orderId }: ReviewModalProps) {
+    const { showToast } = useToast();
     const [rating, setRating] = useState(5);
     const [comment, setComment] = useState("");
     const [loading, setLoading] = useState(false);
@@ -27,10 +29,10 @@ export function ReviewModal({ isOpen, onClose, supplierId, supplierName, orderId
         setLoading(true);
         try {
             await addReview(user.id, supplierId, rating, comment, orderId);
-            alert("Avaliação enviada com sucesso!");
+            showToast("success", "Avaliação enviada com sucesso!");
             onClose();
         } catch (error) {
-            alert("Erro ao enviar avaliação.");
+            showToast("error", "Erro ao enviar avaliação.");
         } finally {
             setLoading(false);
         }

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Search, Plus, Edit2, Trash2, X, Save, Building2, UserPlus, UserCheck, RefreshCw, Mail, Briefcase, Layers, ChevronDown, ChevronRight, MapPin, Calendar } from 'lucide-react';
 import { useToast } from '@/components/ToastProvider';
+import { useConfirmModal } from '@/components/ConfirmModal';
 
 // Helper para obter headers com token
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -79,6 +80,7 @@ export default function ClientesManagement() {
     const [obrasByClienteId, setObrasByClienteId] = useState<Record<string, Obra[]>>({});
     const [creatingAccount, setCreatingAccount] = useState(false);
     const { showToast } = useToast();
+    const { confirm: confirmModal } = useConfirmModal();
     const [formData, setFormData] = useState<Partial<Cliente>>({
         nome: '',
         email: '',
@@ -337,7 +339,13 @@ export default function ClientesManagement() {
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm('Deseja realmente excluir este cliente?')) return;
+        const ok = await confirmModal({
+            title: "Excluir Cliente",
+            message: "Deseja realmente excluir este cliente? Esta ação não pode ser desfeita.",
+            confirmLabel: "Excluir",
+            variant: "danger",
+        });
+        if (!ok) return;
 
         try {
             const { error } = await supabase
@@ -448,7 +456,13 @@ export default function ClientesManagement() {
 
     const handleResetPassword = async (cliente: Cliente) => {
         if (!cliente.userId) return;
-        if (!confirm(`Resetar senha de ${cliente.nome} para 123456?`)) return;
+        const ok = await confirmModal({
+            title: "Resetar Senha",
+            message: `Deseja resetar a senha de ${cliente.nome}? Uma nova senha temporária será gerada e enviada por email.`,
+            confirmLabel: "Resetar Senha",
+            variant: "warning",
+        });
+        if (!ok) return;
 
         try {
             const headers = await getAuthHeaders();
@@ -813,7 +827,8 @@ export default function ClientesManagement() {
                                                 <p className="text-xs text-blue-700 mt-1">
                                                     Cria automaticamente um login para o cliente acessar o sistema.
                                                     <br />
-                                                    Senha padrão: <strong>123456</strong> (será solicitado trocar no primeiro acesso)
+                                                    Uma senha temporária segura será gerada e enviada por email.
+                                                    <br />O cliente será solicitado a trocar no primeiro acesso.
                                                 </p>
                                             </div>
                                         </div>

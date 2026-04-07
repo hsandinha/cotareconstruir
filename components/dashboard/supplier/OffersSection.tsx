@@ -1,20 +1,15 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import {
-    MegaphoneIcon,
-    PauseIcon,
-    PlayIcon,
-    TrashIcon,
-    XMarkIcon,
-    PlusCircleIcon,
-    TagIcon
-} from "@heroicons/react/24/outline";
-import { CheckCircleIcon } from "@heroicons/react/24/solid";
+
+
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
 import { useSupplierAccessContext } from "./SupplierAccessContext";
+import { useConfirmModal } from "@/components/ConfirmModal";
+import { MegaphoneIcon, PauseIcon, PlayIcon, TrashIcon, X, PlusCircleIcon, TagIcon, CheckCircle } from "lucide-react";
+import { useToast } from "@/components/ToastProvider";
 
 // Helper para obter headers com token de autenticação
 
@@ -49,8 +44,10 @@ interface FornecedorMaterial {
 }
 
 export function SupplierOffersSection() {
+    const { showToast } = useToast();
     const { user, profile, session, initialized } = useAuth();
     const { activeSupplierId, requiresSelection } = useSupplierAccessContext();
+    const { confirm: confirmModal } = useConfirmModal();
     const [ofertas, setOfertas] = useState<Oferta[]>([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -186,12 +183,18 @@ export function SupplierOffersSection() {
             ));
         } catch (error) {
             console.error("Erro ao atualizar oferta:", error);
-            alert("Erro ao atualizar status da oferta.");
+            showToast("error", "Erro ao atualizar status da oferta.");
         }
     };
 
     const deleteOferta = async (id: string) => {
-        if (!confirm('Tem certeza que deseja excluir esta oferta?')) return;
+        const ok = await confirmModal({
+            title: "Excluir Oferta",
+            message: "Tem certeza que deseja excluir esta oferta? Esta ação não pode ser desfeita.",
+            confirmLabel: "Excluir",
+            variant: "danger",
+        });
+        if (!ok) return;
 
         try {
             const { error } = await supabase
@@ -205,7 +208,7 @@ export function SupplierOffersSection() {
             setOfertas(prev => prev.filter(o => o.id !== id));
         } catch (error) {
             console.error("Erro ao excluir oferta:", error);
-            alert("Erro ao excluir oferta.");
+            showToast("error", "Erro ao excluir oferta.");
         }
     };
 
@@ -215,7 +218,7 @@ export function SupplierOffersSection() {
 
         const val = parseFloat(valorOferta);
         if (isNaN(val) || val <= 0) {
-            alert("Valor da oferta inválido");
+            showToast("error", "Valor da oferta inválido");
             return;
         }
 
@@ -232,7 +235,7 @@ export function SupplierOffersSection() {
         }
 
         if (precoFinal <= 0) {
-            alert("O desconto não pode tornar o preço menor ou igual a zero.");
+            showToast("error", "O desconto não pode tornar o preço menor ou igual a zero.");
             return;
         }
 
@@ -274,7 +277,7 @@ export function SupplierOffersSection() {
             setDataFim("");
         } catch (error) {
             console.error("Erro ao criar oferta:", error);
-            alert("Erro ao criar oferta. Verifique os dados e tente novamente.");
+            showToast("error", "Erro ao criar oferta. Verifique os dados e tente novamente.");
         } finally {
             setSavingOffer(false);
         }
@@ -338,7 +341,7 @@ export function SupplierOffersSection() {
                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-green-100 rounded-lg">
-                            <CheckCircleIcon className="h-5 w-5 text-green-600" />
+                            <CheckCircle className="h-5 w-5 text-green-600" />
                         </div>
                         <div>
                             <p className="text-sm text-gray-500 font-medium">Ativas</p>
@@ -484,7 +487,7 @@ export function SupplierOffersSection() {
                                     onClick={() => setIsModalOpen(false)}
                                     className="p-2 hover:bg-gray-100 rounded-full transition-colors"
                                 >
-                                    <XMarkIcon className="h-5 w-5 text-gray-500" />
+                                    <X className="h-5 w-5 text-gray-500" />
                                 </button>
                             </div>
                             <p className="text-sm text-gray-500 mt-1">

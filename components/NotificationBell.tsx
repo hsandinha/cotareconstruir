@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { BellIcon } from "@heroicons/react/24/outline";
+
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { Bell } from "lucide-react";
 
 export interface Notification {
     id: string;
@@ -149,7 +150,7 @@ export function NotificationBell({ initialNotifications }: NotificationBellProps
                 className="relative p-2 text-gray-400 hover:text-gray-500 focus:outline-none"
             >
                 <span className="sr-only">Ver notificações</span>
-                <BellIcon className="h-6 w-6" aria-hidden="true" />
+                <Bell className="h-6 w-6" aria-hidden="true" />
                 {unreadCount > 0 && (
                     <span className="absolute top-1.5 right-1.5 block h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
                 )}

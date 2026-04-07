@@ -1,12 +1,15 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { XMarkIcon, PaperAirplaneIcon, ExclamationTriangleIcon, MinusIcon, PlusIcon, ArrowLeftIcon, ChatBubbleLeftRightIcon } from "@heroicons/react/24/outline";
+
 import { supabase } from "../lib/supabaseAuth";
 import { useAuth } from "../lib/useAuth";
 import { createReport } from "../lib/services";
 import { analyzeChatMessage } from "../lib/chatModeration";
 import { authFetch } from "../lib/authHeaders";
+import { useConfirmModal } from "./ConfirmModal";
+import { useToast } from "./ToastProvider";
+import { X, Send, AlertTriangle, Minus, Plus, ArrowLeft, MessageSquare } from "lucide-react";
 
 interface Message {
     id: string;
@@ -44,6 +47,8 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
     const [blockedWarning, setBlockedWarning] = useState<string | null>(null);
     const [isMinimized, setIsMinimized] = useState(false);
     const { user: currentUser } = useAuth();
+    const { confirm: confirmModal } = useConfirmModal();
+    const { showToast } = useToast();
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const prevInitialRoomRef = useRef(initialRoomId);
 
@@ -153,13 +158,20 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
 
     const handleReport = async () => {
         if (!currentUser || !recipientId) return;
-        const reason = prompt("Por favor, descreva o motivo da denúncia:");
-        if (reason) {
+        const reason = await confirmModal({
+            title: "Denunciar Usuário",
+            message: "Descreva o motivo da denúncia para que nossa equipe possa analisar.",
+            confirmLabel: "Enviar Denúncia",
+            variant: "warning",
+            promptLabel: "Motivo da denúncia",
+            promptPlaceholder: "Ex: Comportamento inadequado, spam, conteúdo ofensivo...",
+        });
+        if (reason && typeof reason === 'string') {
             try {
                 await createReport(currentUser.id, recipientId, "chat", "Comportamento no Chat", reason);
-                alert("Denúncia enviada. Nossa equipe irá analisar.");
+                showToast("success", "Denúncia enviada. Nossa equipe irá analisar.");
             } catch (error) {
-                alert("Erro ao enviar denúncia.");
+                showToast("error", "Erro ao enviar denúncia.");
             }
         }
     };
@@ -203,11 +215,11 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
         document.addEventListener('visibilitychange', handleWakeUpRefresh);
         window.addEventListener('focus', handleWakeUpRefresh);
 
-        // Polling fallback every 3s via API (uses supabaseAdmin, always works)
+        // Polling fallback every 30s (Realtime handles instant delivery; this is just recovery)
         const poller = setInterval(() => {
             if (!canPollNow() || !selectedRoomId) return;
             fetchMessages(selectedRoomId);
-        }, 3000);
+        }, 30000);
 
         return () => {
             document.removeEventListener('visibilitychange', handleWakeUpRefresh);
@@ -314,7 +326,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
                             className="text-slate-400 hover:text-white shrink-0"
                             title="Voltar para conversas"
                         >
-                            <ArrowLeftIcon className="h-5 w-5" />
+                            <ArrowLeft className="h-5 w-5" />
                         </button>
                     )}
                     <div className="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">
@@ -332,17 +344,17 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
                         className="text-slate-400 hover:text-white"
                         title={isMinimized ? "Expandir" : "Minimizar"}
                     >
-                        {isMinimized ? <PlusIcon className="h-5 w-5" /> : <MinusIcon className="h-5 w-5" />}
+                        {isMinimized ? <Plus className="h-5 w-5" /> : <Minus className="h-5 w-5" />}
                     </button>
                     <button
                         onClick={handleReport}
                         className="text-slate-400 hover:text-red-400"
                         title="Denunciar"
                     >
-                        <ExclamationTriangleIcon className="h-5 w-5" />
+                        <AlertTriangle className="h-5 w-5" />
                     </button>
                     <button onClick={onClose} className="text-slate-400 hover:text-white">
-                        <XMarkIcon className="h-5 w-5" />
+                        <X className="h-5 w-5" />
                     </button>
                 </div>
             </div>
@@ -368,7 +380,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
                                             className="w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors border-b border-slate-100 last:border-b-0"
                                         >
                                             <div className="flex items-center gap-3">
-                                                <ChatBubbleLeftRightIcon className="h-5 w-5 text-blue-500 shrink-0" />
+                                                <MessageSquare className="h-5 w-5 text-blue-500 shrink-0" />
                                                 <div className="min-w-0 flex-1">
                                                     <p className="text-sm font-medium text-slate-800 truncate">{room.title}</p>
                                                     {room.lastMessage && (
@@ -451,7 +463,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
                                         disabled={!newMessage.trim() || sending || !selectedRoomId}
                                         className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        <PaperAirplaneIcon className="h-5 w-5" />
+                                        <Send className="h-5 w-5" />
                                     </button>
                                 </div>
                             </div>

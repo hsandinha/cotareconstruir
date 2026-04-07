@@ -4,6 +4,7 @@ import { config } from "@fortawesome/fontawesome-svg-core";
 import "@fortawesome/fontawesome-svg-core/styles.css";
 import "./globals.css";
 import { ToastProvider } from "@/components/ToastProvider";
+import { ConfirmModalProvider } from "@/components/ConfirmModal";
 
 config.autoAddCss = false;
 
@@ -28,7 +29,9 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className={inter.variable}>
       <body className="antialiased">
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider>
+          <ConfirmModalProvider>{children}</ConfirmModalProvider>
+        </ToastProvider>
       </body>
     </html>
   );

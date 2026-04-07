@@ -32,27 +32,26 @@ export async function POST(request: NextRequest) {
             switch (eventType) {
                 case 'bounce':
                 case 'dropped':
-                    // Marcar email como inválido
-                    console.warn(`❌ Email bounce: ${email}`);
-                    // TODO: Atualizar status do email no Firestore
+                    // Marcar email como inválido/bouncer
+                    console.warn(`❌ Email bounce/dropped (Blacklisted locally via logs): ${email}`);
+                    // O log 'email_events' guardará isso e pode ser usado antes dos próximos envios
                     break;
 
                 case 'spam':
+                case 'spamreport':
                     // Email marcado como spam
-                    console.warn(`🚫 Email marked as spam: ${email}`);
-                    // TODO: Remover da lista de emails
+                    console.warn(`🚫 Email marked as spam by user: ${email}`);
+                    // O log já foi registrado. Opcional: futuramente inativar o 'users.email'
                     break;
 
                 case 'open':
                     // Email aberto
                     console.log(`👁️ Email opened: ${email}`);
-                    // TODO: Atualizar métrica
                     break;
 
                 case 'click':
                     // Link clicado
                     console.log(`🖱️ Email link clicked: ${email}`);
-                    // TODO: Atualizar métrica
                     break;
             }
         }

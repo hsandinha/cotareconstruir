@@ -1,16 +1,13 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import {
-    MagnifyingGlassIcon,
-    CheckIcon,
-    XMarkIcon,
-    TagIcon,
-} from "@heroicons/react/24/outline";
+
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
 import { useSupplierAccessContext } from "./SupplierAccessContext";
+import { Search, CheckIcon, X, TagIcon } from "lucide-react";
+import { useToast } from "@/components/ToastProvider";
 
 // Helper para obter headers com token de autenticação
 
@@ -33,6 +30,7 @@ interface ProdutoConfigurado {
 }
 
 export function SupplierMyProductsSection() {
+    const { showToast } = useToast();
     const { user, session, initialized } = useAuth();
     const { activeSupplierId, requiresSelection } = useSupplierAccessContext();
     const [searchTerm, setSearchTerm] = useState("");
@@ -211,7 +209,7 @@ export function SupplierMyProductsSection() {
                 }
 
                 if (precoFinal <= 0) {
-                    alert("O desconto não pode tornar o preço menor ou igual a zero.");
+                    showToast("error", "O desconto não pode tornar o preço menor ou igual a zero.");
                     setSaving(false);
                     return;
                 }
@@ -299,7 +297,7 @@ export function SupplierMyProductsSection() {
             cancelEditing();
         } catch (error) {
             console.error("Erro ao salvar oferta:", error);
-            alert("Erro ao salvar oferta. Verifique os dados e tente novamente.");
+            showToast("error", "Erro ao salvar oferta. Verifique os dados e tente novamente.");
         } finally {
             setSaving(false);
         }
@@ -343,7 +341,7 @@ export function SupplierMyProductsSection() {
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
                 />
-                <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" />
+                <Search className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" />
             </div>
 
             {/* Info */}
@@ -536,7 +534,7 @@ export function SupplierMyProductsSection() {
                                                             className="p-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50"
                                                             title="Cancelar"
                                                         >
-                                                            <XMarkIcon className="h-4 w-4" />
+                                                            <X className="h-4 w-4" />
                                                         </button>
                                                     </div>
                                                 ) : (

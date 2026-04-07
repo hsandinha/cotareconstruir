@@ -1,13 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import {
-    MagnifyingGlassIcon,
-    PlusIcon,
-    PencilSquareIcon,
-    TrashIcon,
-} from "@heroicons/react/24/outline";
+
 import { supabase } from '@/lib/supabaseAuth';
+import { Search, Plus, Edit as PencilSquareIcon, Trash as TrashIcon } from "lucide-react";
+import { useToast } from "@/components/ToastProvider";
 
 // Helper para obter headers com token (com fallback para localStorage)
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -44,6 +41,7 @@ interface Manufacturer {
 }
 
 export function ManufacturersSection() {
+    const { showToast } = useToast();
     const [searchTerm, setSearchTerm] = useState("");
     const [showAddForm, setShowAddForm] = useState(false);
     const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
@@ -112,7 +110,7 @@ export function ManufacturersSection() {
 
     const handleAddManufacturer = async () => {
         if (!formData.name) {
-            alert("Nome do fabricante é obrigatório.");
+            showToast("error", "Nome do fabricante é obrigatório.");
             return;
         }
 
@@ -141,10 +139,10 @@ export function ManufacturersSection() {
             });
             setShowAddForm(false);
             await fetchManufacturers();
-            alert("Fabricante adicionado com sucesso!");
+            showToast("success", "Fabricante adicionado com sucesso!");
         } catch (error: any) {
             console.error("Error adding manufacturer:", error);
-            alert(error?.message || "Erro ao adicionar fabricante.");
+            showToast("error", error?.message || "Erro ao adicionar fabricante.");
         }
     };
 
@@ -162,7 +160,7 @@ export function ManufacturersSection() {
                 await fetchManufacturers();
             } catch (error: any) {
                 console.error("Error deleting manufacturer:", error);
-                alert(error?.message || "Erro ao excluir fabricante.");
+                showToast("error", error?.message || "Erro ao excluir fabricante.");
             }
         }
     };
@@ -186,7 +184,7 @@ export function ManufacturersSection() {
                 <div className="flex gap-2 w-full sm:w-auto">
                     <div className="relative flex-1 sm:flex-initial">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
+                            <Search className="h-5 w-5 text-gray-400" />
                         </div>
                         <input
                             type="text"
@@ -202,7 +200,7 @@ export function ManufacturersSection() {
                     >
                         {showAddForm ? "Cancelar" : (
                             <>
-                                <PlusIcon className="h-5 w-5 mr-2" />
+                                <Plus className="h-5 w-5 mr-2" />
                                 Novo Fabricante
                             </>
                         )}

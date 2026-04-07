@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { PlusIcon, MagnifyingGlassIcon, ShoppingCartIcon, WrenchScrewdriverIcon, ChevronRightIcon, ChevronDownIcon } from "@heroicons/react/24/outline";
+
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/useAuth";
+import { Plus, Search, ShoppingCart, Wrench, ChevronRight, ChevronDown } from "lucide-react";
+import { useToast } from "@/components/ToastProvider";
 
 // Interfaces for Supabase data
 interface Fase {
@@ -45,6 +47,7 @@ interface CartItem {
 }
 
 export function ClientExploreSection() {
+    const { showToast } = useToast();
     const { user } = useAuth();
     const [currentView, setCurrentView] = useState<"search" | "analysis" | "success">("search");
     const [searchTerm, setSearchTerm] = useState("");
@@ -414,15 +417,15 @@ export function ClientExploreSection() {
 
     const handleSendQuotation = async () => {
         if (!selectedWork) {
-            alert("Por favor, selecione uma obra para vincular à cotação.");
+            showToast("error", "Por favor, selecione uma obra para vincular à cotação.");
             return;
         }
         if (cart.length === 0) {
-            alert("Adicione itens ao carrinho antes de enviar.");
+            showToast("error", "Adicione itens ao carrinho antes de enviar.");
             return;
         }
         if (!user?.id) {
-            alert("Usuário não autenticado.");
+            showToast("error", "Usuário não autenticado.");
             return;
         }
 
@@ -466,7 +469,7 @@ export function ClientExploreSection() {
             setSelectedWork("");
         } catch (error) {
             console.error("Erro ao enviar cotação:", error);
-            alert("Erro ao enviar cotação. Tente novamente.");
+            showToast("error", "Erro ao enviar cotação. Tente novamente.");
         }
     };
 
@@ -550,7 +553,7 @@ export function ClientExploreSection() {
                                     <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm relative">
                                         <div className="flex items-center justify-between mb-4">
                                             <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                                                <MagnifyingGlassIcon className="h-5 w-5 text-blue-600" />
+                                                <Search className="h-5 w-5 text-blue-600" />
                                                 O que você precisa comprar?
                                             </h3>
                                             <button
@@ -570,7 +573,7 @@ export function ClientExploreSection() {
                                                     className="w-full px-4 py-4 pl-12 border border-slate-200 rounded-xl text-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
                                                     placeholder="Digite o nome do material (ex: Cimento, Areia)..."
                                                 />
-                                                <MagnifyingGlassIcon className="h-6 w-6 text-slate-400 absolute left-4 top-4" />
+                                                <Search className="h-6 w-6 text-slate-400 absolute left-4 top-4" />
 
                                                 {/* Sugestões Dropdown */}
                                                 {filteredMaterialSuggestions.length > 0 && (
@@ -679,9 +682,9 @@ export function ClientExploreSection() {
                                                             >
                                                                 <div className="flex items-center gap-2">
                                                                     {isFaseExpanded ? (
-                                                                        <ChevronDownIcon className="h-4 w-4 text-blue-600" />
+                                                                        <ChevronDown className="h-4 w-4 text-blue-600" />
                                                                     ) : (
-                                                                        <ChevronRightIcon className="h-4 w-4 text-blue-600" />
+                                                                        <ChevronRight className="h-4 w-4 text-blue-600" />
                                                                     )}
                                                                     <span className="font-bold text-blue-900">
                                                                         {fase.cronologia}. {fase.nome}
@@ -710,9 +713,9 @@ export function ClientExploreSection() {
                                                                                 >
                                                                                     <div className="flex items-center gap-2">
                                                                                         {isServicoExpanded ? (
-                                                                                            <ChevronDownIcon className="h-4 w-4 text-indigo-600" />
+                                                                                            <ChevronDown className="h-4 w-4 text-indigo-600" />
                                                                                         ) : (
-                                                                                            <ChevronRightIcon className="h-4 w-4 text-indigo-600" />
+                                                                                            <ChevronRight className="h-4 w-4 text-indigo-600" />
                                                                                         )}
                                                                                         <span className="font-semibold text-indigo-900 text-sm">
                                                                                             {servico.nome}
@@ -741,9 +744,9 @@ export function ClientExploreSection() {
                                                                                                     >
                                                                                                         <div className="flex items-center gap-2">
                                                                                                             {isGrupoExpanded ? (
-                                                                                                                <ChevronDownIcon className="h-4 w-4 text-violet-600" />
+                                                                                                                <ChevronDown className="h-4 w-4 text-violet-600" />
                                                                                                             ) : (
-                                                                                                                <ChevronRightIcon className="h-4 w-4 text-violet-600" />
+                                                                                                                <ChevronRight className="h-4 w-4 text-violet-600" />
                                                                                                             )}
                                                                                                             <span className="font-medium text-violet-900 text-sm">
                                                                                                                 {grupo.nome}
@@ -816,7 +819,7 @@ export function ClientExploreSection() {
                                 {/* Lista do Carrinho */}
                                 <div className="space-y-4">
                                     <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                                        <ShoppingCartIcon className="h-5 w-5 text-blue-600" />
+                                        <ShoppingCart className="h-5 w-5 text-blue-600" />
                                         Itens no Carrinho ({cart.length})
                                     </h3>
 
@@ -908,7 +911,7 @@ export function ClientExploreSection() {
 
                                 <div className="bg-white rounded-2xl border border-slate-200 p-6">
                                     <div className="flex items-start gap-3">
-                                        <WrenchScrewdriverIcon className="h-6 w-6 text-orange-500 mt-1" />
+                                        <Wrench className="h-6 w-6 text-orange-500 mt-1" />
                                         <div>
                                             <h4 className="font-semibold text-slate-900 text-sm">Dica do Especialista</h4>
                                             <p className="text-xs text-slate-500 mt-1">
@@ -994,7 +997,7 @@ export function ClientExploreSection() {
                     <div className="bg-white rounded-xl border border-slate-200 p-6">
                         <div className="flex items-center">
                             <div className="p-2 bg-blue-100 rounded-lg">
-                                <ShoppingCartIcon className="w-6 h-6 text-blue-600" />
+                                <ShoppingCart className="w-6 h-6 text-blue-600" />
                             </div>
                             <div className="ml-4">
                                 <p className="text-sm font-medium text-slate-700">Total de Itens</p>
@@ -1006,7 +1009,7 @@ export function ClientExploreSection() {
                     <div className="bg-white rounded-xl border border-slate-200 p-6">
                         <div className="flex items-center">
                             <div className="p-2 bg-green-100 rounded-lg">
-                                <WrenchScrewdriverIcon className="w-6 h-6 text-green-600" />
+                                <Wrench className="w-6 h-6 text-green-600" />
                             </div>
                             <div className="ml-4">
                                 <p className="text-sm font-medium text-slate-700">Grupos Técnicos</p>

@@ -19,6 +19,7 @@ import {
     type WhatsAppStatusUpdate,
 } from '@/lib/whatsappService';
 import { logAuditEvent, AuditAction, extractRequestMetadata } from '@/lib/auditLog';
+import { supabase } from '@/lib/supabaseAuth';
 
 // ============================================================
 // GET - Verificação do Webhook (Meta envia um challenge)
@@ -104,19 +105,23 @@ async function handleIncomingMessage(message: WhatsAppIncomingMessage) {
     // Marcar como lida automaticamente
     await markAsRead(message.messageId);
 
-    // TODO: Implementar lógica de processamento
-    // Exemplos:
-    // - Responder automaticamente com menu
-    // - Buscar pedido pelo número
-    // - Encaminhar para o chat do sistema
-    // - Notificar admin sobre mensagem recebida
+    // Gravar no banco de dados para controle omnichannel e painel
+    await supabase.from('whatsapp_logs').insert({
+        message_id: message.messageId,
+        from_number: message.from,
+        sender_name: message.name,
+        type: message.type,
+        text_content: message.text,
+        timestamp: new Date(Number(message.timestamp) * 1000).toISOString(),
+        direction: 'incoming',
+    });
 
     if (message.type === 'text' && message.text) {
-        // Exemplo: buscar pedido se a mensagem contiver um número
+        // Exemplo de rastreamento nativo de cotações/pedidos
         const pedidoMatch = message.text.match(/\b(1\d{4})\b/);
         if (pedidoMatch) {
             console.log(`🔍 Possível consulta de pedido: #${pedidoMatch[1]}`);
-            // TODO: Buscar pedido e responder com status
+            // Logica futura: Bot responde automático usando o ID
         }
     }
 }
@@ -127,10 +132,18 @@ async function handleIncomingMessage(message: WhatsAppIncomingMessage) {
 async function handleStatusUpdate(status: WhatsAppStatusUpdate) {
     if (status.status === 'failed') {
         console.error(`❌ WhatsApp falhou para ${status.recipientId}:`, status.errors);
-        // TODO: Registrar falha no banco, tentar canal alternativo (email)
     } else {
         console.log(`📊 WhatsApp status: ${status.messageId} → ${status.status}`);
     }
 
-    // TODO: Atualizar status da notificação no banco de dados
+    // Registra a evolução / falha no banco de dados
+    await supabase.from('whatsapp_logs').insert({
+        message_id: status.messageId,
+        from_number: status.recipientId,
+        type: 'status_update',
+        status_value: status.status,
+        timestamp: new Date(Number(status.timestamp) * 1000).toISOString(),
+        direction: 'outgoing_status',
+        raw_errors: status.errors ? JSON.stringify(status.errors) : null
+    });
 }

@@ -13,6 +13,7 @@ import {
     parseSpreadsheetFile,
     parseFlexibleNumber
 } from "@/lib/csvSpreadsheet";
+import { useToast } from "@/components/ToastProvider";
 import {
     Package, Plus, Trash2, ShoppingCart, Building2, Send, Search, Check,
     AlertCircle, Loader2, ChevronRight, Sparkles, ArrowRight, X, Tag,
@@ -116,6 +117,7 @@ interface RemoteSearchCacheEntry {
 }
 
 export function ClientSolicitationSection() {
+    const { showToast } = useToast();
     const { user, initialized } = useAuth();
 
     // Estados principais
@@ -658,7 +660,7 @@ export function ClientSolicitationSection() {
             downloadCsvFile("modelo_lista_materiais_cliente.csv", csv);
         } catch (error) {
             console.error("Erro ao gerar modelo de lista:", error);
-            alert("Erro ao gerar arquivo modelo.");
+            showToast("error", "Erro ao gerar arquivo modelo.");
         } finally {
             setDownloadingTemplate(false);
         }
@@ -677,7 +679,7 @@ export function ClientSolicitationSection() {
         try {
             const parsedRows = await parseSpreadsheetFile(file);
             if (parsedRows.length === 0) {
-                alert("A lista está vazia ou inválida.");
+                showToast("error", "A lista está vazia ou inválida.");
                 return;
             }
 
@@ -772,7 +774,7 @@ export function ClientSolicitationSection() {
             }
 
             if (importedItems.length === 0) {
-                alert("Nenhuma linha válida foi encontrada. Verifique se a planilha possui material e grupo válidos.");
+                showToast("error", "Nenhuma linha válida foi encontrada. Verifique se a planilha possui material e grupo válidos.");
                 return;
             }
 
@@ -788,7 +790,7 @@ export function ClientSolicitationSection() {
             );
         } catch (error: any) {
             console.error("Erro ao importar lista de materiais:", error);
-            alert(error?.message || "Erro ao importar lista.");
+            showToast("error", error?.message || "Erro ao importar lista.");
         } finally {
             setUploadingList(false);
         }
@@ -872,7 +874,7 @@ export function ClientSolicitationSection() {
     const addMaterialFromSearch = (material: Material) => {
         const grupo = grupos.find(g => material.gruposInsumoIds.includes(g.id));
         if (!grupo?.nome) {
-            alert("Este material não possui grupo de insumo válido e não pode ser adicionado.");
+            showToast("success", "Este material não possui grupo de insumo válido e não pode ser adicionado.");
             return;
         }
         setItems(prev => [...prev, {
@@ -893,7 +895,7 @@ export function ClientSolicitationSection() {
 
         const allowedGroups = new Set(availableGroups.map(g => normalizeGroupName(g)));
         if (!allowedGroups.has(normalizeGroupName(form.categoria))) {
-            alert("Selecione um grupo de insumo válido para adicionar o item.");
+            showToast("error", "Selecione um grupo de insumo válido para adicionar o item.");
             return;
         }
 
@@ -931,7 +933,7 @@ export function ClientSolicitationSection() {
         const allowedGroups = new Set(availableGroups.map(g => normalizeGroupName(g)));
         const invalidItems = items.filter(item => !allowedGroups.has(normalizeGroupName(item.categoria)));
         if (invalidItems.length > 0) {
-            alert("Existem itens sem grupo de insumo válido. Corrija antes de enviar.");
+            showToast("error", "Existem itens sem grupo de insumo válido. Corrija antes de enviar.");
             setStep(2);
             return;
         }
@@ -1002,7 +1004,7 @@ export function ClientSolicitationSection() {
         } catch (error: any) {
             console.error("Erro ao criar cotação:", error);
             const errorMsg = error?.message || "Erro ao criar cotação. Tente novamente.";
-            alert(errorMsg);
+            showToast("error", errorMsg);
         } finally {
             setLoading(false);
         }

@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { submitDocument } from "../../../lib/services";
 import { useAuth } from "../../../lib/useAuth";
+import { useToast } from "@/components/ToastProvider";
 
 export function SupplierVerificationSection() {
+    const { showToast } = useToast();
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [docType, setDocType] = useState("cnpj");
@@ -17,10 +19,10 @@ export function SupplierVerificationSection() {
         setLoading(true);
         try {
             await submitDocument(user.id, docType, fileUrl);
-            alert("Documento enviado para análise!");
+            showToast("error", "Documento enviado para análise!");
             setFileUrl("");
         } catch (error) {
-            alert("Erro ao enviar documento.");
+            showToast("error", "Erro ao enviar documento.");
         } finally {
             setLoading(false);
         }

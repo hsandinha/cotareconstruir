@@ -7,8 +7,7 @@ import { SupplierMaterialsSection } from "../../../components/dashboard/supplier
 import { SupplierMyProductsSection } from "../../../components/dashboard/supplier/MyProductsSection";
 import { SupplierSalesAndQuotationsSection } from "../../../components/dashboard/supplier/SalesAndQuotationsSection";
 import { SupplierAccessProvider, useSupplierAccessContext } from "@/components/dashboard/supplier/SupplierAccessContext";
-import { NotificationBell } from "../../../components/NotificationBell";
-import { ProfileSwitcher } from "../../../components/ProfileSwitcher";
+import { DashboardHeader } from "../../../components/DashboardHeader";
 import PendingProfileModal from "../../../components/PendingProfileModal";
 import { useAuth } from "@/lib/useAuth";
 import { supabase } from "@/lib/supabaseAuth";
@@ -188,55 +187,39 @@ function FornecedorDashboardContent() {
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-900">
-            {/* Main Header */}
-            <div className="relative z-[60] bg-white/90 backdrop-blur border-b border-slate-200/80 shadow-sm">
-                <div className="section-shell">
-                    <div className="flex items-center justify-between h-16">
-                        <div className="flex items-center">
-                            <div className="mr-2 flex items-center justify-center rounded-lg bg-white">
-                                <Image src="/logo.png" alt="Comprar & Construir" width={60} height={60} priority />
-                            </div>
-                            <span className="text-lg font-semibold text-gray-900">Comprar</span>
-                            <span className="text-lg font-light text-gray-600 ml-1">& Construir</span>
-                        </div>
-                        <div className="flex items-center space-x-4">
-                            {(suppliers.length > 0) && (
-                                <div className="hidden md:flex items-center">
-                                    <div className="rounded-xl border border-slate-200 bg-white px-2 py-1 shadow-sm">
-                                        <label className="sr-only" htmlFor="supplier-company-switcher">Empresa ativa</label>
-                                        <select
-                                            id="supplier-company-switcher"
-                                            value={activeSupplierId || ""}
-                                            onChange={(e) => setActiveSupplierId(e.target.value || null)}
-                                            className="max-w-[280px] bg-transparent px-2 py-1 text-sm font-medium text-slate-700 focus:outline-none"
-                                        >
-                                            <option value="" disabled={suppliers.length > 1}>Selecionar empresa</option>
-                                            {suppliers.map((supplier) => (
-                                                <option key={supplier.id} value={supplier.id}>
-                                                    {(supplier.nome_fantasia || supplier.razao_social || "Fornecedor")}
-                                                    {supplier.isPrimary ? " (principal)" : ""}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-                            )}
-                            <NotificationBell />
-                            <ProfileSwitcher
-                                currentRole="fornecedor"
-                                availableRoles={userRoles}
-                                userName={userName}
-                                userInitial={userInitial}
-                            />
+            <DashboardHeader
+                currentRole="fornecedor"
+                availableRoles={userRoles}
+                userName={userName}
+                userInitial={userInitial}
+            >
+                {(suppliers.length > 0) && (
+                    <div className="hidden md:flex items-center">
+                        <div className="rounded-xl border border-slate-200 bg-white px-2 py-1 shadow-sm">
+                            <label className="sr-only" htmlFor="supplier-company-switcher">Empresa ativa</label>
+                            <select
+                                id="supplier-company-switcher"
+                                value={activeSupplierId || ""}
+                                onChange={(e) => setActiveSupplierId(e.target.value || null)}
+                                className="max-w-[280px] bg-transparent px-2 py-1 text-sm font-medium text-slate-700 focus:outline-none"
+                            >
+                                <option value="" disabled={suppliers.length > 1}>Selecionar empresa</option>
+                                {suppliers.map((supplier) => (
+                                    <option key={supplier.id} value={supplier.id}>
+                                        {(supplier.nome_fantasia || supplier.razao_social || "Fornecedor")}
+                                        {supplier.isPrimary ? " (principal)" : ""}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                     </div>
-                </div>
-            </div>
+                )}
+            </DashboardHeader>
 
             {/* Tabs Header */}
             <div className="bg-white border-b border-slate-200/80">
                 <div className="section-shell">
-                    <nav className="flex space-x-6 overflow-x-auto">
+                    <nav className="flex space-x-6 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
                         {tabs.map((item) => (
                             <button
                                 key={item.id}
@@ -317,7 +300,7 @@ function FornecedorDashboardContent() {
 
                 {/* Main Content Area */}
                 <div className="card-elevated">
-                    <div className="p-6">
+                    <div className="p-6" key={tab} style={{ animation: 'fadeIn 0.2s ease-out' }}>
                         {renderTabContent()}
                     </div>
                 </div>
@@ -407,7 +390,53 @@ function FornecedorDashboardContent() {
 
 export default function FornecedorDashboard() {
     return (
-        <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+        <Suspense fallback={
+            <div className="min-h-screen bg-slate-50">
+                <div className="bg-white/90 border-b border-slate-200/80 shadow-sm">
+                    <div className="section-shell">
+                        <div className="flex items-center justify-between h-16">
+                            <div className="flex items-center gap-3">
+                                <div className="w-[60px] h-[60px] rounded-lg bg-slate-200 animate-pulse" />
+                                <div className="h-5 w-36 rounded bg-slate-200 animate-pulse" />
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="h-9 w-9 rounded-full bg-slate-200 animate-pulse" />
+                                <div className="h-9 w-9 rounded-full bg-slate-200 animate-pulse" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white border-b border-slate-200/80">
+                    <div className="section-shell">
+                        <div className="flex gap-6 py-3">
+                            {[1,2,3,4].map(i => <div key={i} className="h-4 w-28 rounded bg-slate-200 animate-pulse" />)}
+                        </div>
+                    </div>
+                </div>
+                <div className="section-shell py-10">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                        {[1,2,3,4].map(i => (
+                            <div key={i} className="card-elevated p-6">
+                                <div className="flex items-center">
+                                    <div className="w-10 h-10 rounded-lg bg-slate-200 animate-pulse" />
+                                    <div className="ml-4 space-y-2">
+                                        <div className="h-3 w-24 rounded bg-slate-200 animate-pulse" />
+                                        <div className="h-6 w-10 rounded bg-slate-200 animate-pulse" />
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="card-elevated p-6">
+                        <div className="space-y-4">
+                            <div className="h-6 w-48 rounded bg-slate-200 animate-pulse" />
+                            <div className="h-4 w-full rounded bg-slate-100 animate-pulse" />
+                            <div className="h-4 w-3/4 rounded bg-slate-100 animate-pulse" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }>
             <SupplierAccessProvider>
                 <FornecedorDashboardContent />
             </SupplierAccessProvider>

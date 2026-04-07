@@ -1,24 +1,14 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, type ChangeEvent } from "react";
-import {
-    MagnifyingGlassIcon,
-    CheckIcon,
-    XMarkIcon,
-    PlusCircleIcon,
-    ArrowUpIcon,
-    ArrowDownIcon,
-    ArrowDownTrayIcon,
-    ArrowUpTrayIcon,
-    ExclamationTriangleIcon,
-    PaperAirplaneIcon,
-    Squares2X2Icon
-} from "@heroicons/react/24/outline";
-import { CheckCircleIcon, ClockIcon } from "@heroicons/react/24/solid";
+
+
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
 import { useSupplierAccessContext } from "./SupplierAccessContext";
+import { Search, Check as CheckIcon, X, PlusCircle as PlusCircleIcon, ArrowUp as ArrowUpIcon, ArrowDown as ArrowDownIcon, Download, Upload, AlertTriangle, Send, Grid2X2 as Squares2X2Icon, CheckCircle, Clock } from "lucide-react";
+import { useToast } from "@/components/ToastProvider";
 import {
     buildCsv,
     downloadCsvFile,
@@ -55,6 +45,7 @@ interface GrupoInsumo {
 }
 
 export function SupplierMaterialsSection() {
+    const { showToast } = useToast();
     const { user, profile, session, initialized } = useAuth();
     const { activeSupplierId, requiresSelection } = useSupplierAccessContext();
     const [searchTerm, setSearchTerm] = useState("");
@@ -388,7 +379,7 @@ export function SupplierMaterialsSection() {
             cancelEditing();
         } catch (error) {
             console.error("Erro ao salvar:", error);
-            alert("Erro ao salvar. Tente novamente.");
+            showToast("error", "Erro ao salvar. Tente novamente.");
         }
     };
 
@@ -430,13 +421,13 @@ export function SupplierMaterialsSection() {
             });
         } catch (error) {
             console.error('Erro ao alterar status:', error);
-            alert('Erro ao alterar status. Tente novamente.');
+            showToast("error", 'Erro ao alterar status. Tente novamente.');
         }
     };
 
     const handleRequestMaterial = async () => {
         if (!requestMaterialName.trim()) {
-            alert("Digite o nome do material");
+            showToast("error", "Digite o nome do material");
             return;
         }
 
@@ -462,14 +453,14 @@ export function SupplierMaterialsSection() {
                 throw new Error(json.error || 'Erro ao enviar solicitação');
             }
 
-            alert("Solicitação enviada com sucesso! O administrador irá analisar.");
+            showToast("success", "Solicitação enviada com sucesso! O administrador irá analisar.");
             setShowRequestModal(false);
             setRequestMaterialName("");
             setRequestMaterialDesc("");
             setRequestGrupo("");
         } catch (error) {
             console.error("Erro ao enviar solicitação:", error);
-            alert("Erro ao enviar solicitação. Tente novamente.");
+            showToast("error", "Erro ao enviar solicitação. Tente novamente.");
         } finally {
             setSendingRequest(false);
         }
@@ -481,7 +472,7 @@ export function SupplierMaterialsSection() {
 
     const handleDownloadSpreadsheet = async () => {
         if (materiaisDisponiveis.length === 0) {
-            alert("Nenhum material disponível para exportar.");
+            showToast("error", "Nenhum material disponível para exportar.");
             return;
         }
 
@@ -514,7 +505,7 @@ export function SupplierMaterialsSection() {
             downloadCsvFile(`materiais_fornecedor_${today}.csv`, csv);
         } catch (error) {
             console.error("Erro ao gerar planilha de materiais:", error);
-            alert("Erro ao gerar planilha. Tente novamente.");
+            showToast("error", "Erro ao gerar planilha. Tente novamente.");
         } finally {
             setExportingSpreadsheet(false);
         }
@@ -530,7 +521,7 @@ export function SupplierMaterialsSection() {
 
         if (!file) return;
         if (!fornecedorId) {
-            alert("Fornecedor não selecionado.");
+            showToast("error", "Fornecedor não selecionado.");
             return;
         }
 
@@ -538,7 +529,7 @@ export function SupplierMaterialsSection() {
         try {
             const rows = await parseSpreadsheetFile(file);
             if (rows.length === 0) {
-                alert("A planilha está vazia ou em formato inválido.");
+                showToast("error", "A planilha está vazia ou em formato inválido.");
                 return;
             }
 
@@ -580,7 +571,7 @@ export function SupplierMaterialsSection() {
 
             const updates = Array.from(updatesByMaterialId.values());
             if (updates.length === 0) {
-                alert("Nenhuma linha válida foi encontrada para importação.");
+                showToast("error", "Nenhuma linha válida foi encontrada para importação.");
                 return;
             }
 
@@ -623,7 +614,7 @@ export function SupplierMaterialsSection() {
             );
         } catch (error: any) {
             console.error("Erro ao importar planilha de materiais:", error);
-            alert(error.message || "Erro ao importar planilha.");
+            showToast("error", error.message || "Erro ao importar planilha.");
         } finally {
             setImportingSpreadsheet(false);
         }
@@ -642,7 +633,7 @@ export function SupplierMaterialsSection() {
         return (
             <div className="p-8">
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
-                    <ExclamationTriangleIcon className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+                    <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
                     <h3 className="text-lg font-semibold text-amber-800 mb-2">Cadastro Pendente</h3>
                     <p className="text-amber-700">
                         Sua empresa ainda não foi associada a nenhum grupo de insumos.
@@ -669,7 +660,7 @@ export function SupplierMaterialsSection() {
                         disabled={exportingSpreadsheet || importingSpreadsheet || loadingMateriais}
                         className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                        <ArrowDownTrayIcon className="h-4 w-4" />
+                        <Download className="h-4 w-4" />
                         {exportingSpreadsheet ? "Gerando..." : "Baixar Lista (CSV)"}
                     </button>
                     <button
@@ -677,7 +668,7 @@ export function SupplierMaterialsSection() {
                         disabled={importingSpreadsheet || exportingSpreadsheet}
                         className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                        <ArrowUpTrayIcon className="h-4 w-4" />
+                        <Upload className="h-4 w-4" />
                         {importingSpreadsheet ? "Importando..." : "Importar Lista (CSV/XLSX)"}
                     </button>
                     <input
@@ -713,7 +704,7 @@ export function SupplierMaterialsSection() {
                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-green-100 rounded-lg">
-                            <CheckCircleIcon className="h-5 w-5 text-green-600" />
+                            <CheckCircle className="h-5 w-5 text-green-600" />
                         </div>
                         <div>
                             <p className="text-sm text-gray-500 font-medium">Ativos</p>
@@ -724,7 +715,7 @@ export function SupplierMaterialsSection() {
                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-amber-100 rounded-lg">
-                            <ClockIcon className="h-5 w-5 text-amber-600" />
+                            <Clock className="h-5 w-5 text-amber-600" />
                         </div>
                         <div>
                             <p className="text-sm text-gray-500 font-medium">Pendentes</p>
@@ -735,7 +726,7 @@ export function SupplierMaterialsSection() {
                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-red-100 rounded-lg">
-                            <XMarkIcon className="h-5 w-5 text-red-600" />
+                            <X className="h-5 w-5 text-red-600" />
                         </div>
                         <div>
                             <p className="text-sm text-gray-500 font-medium">Inativos</p>
@@ -757,7 +748,7 @@ export function SupplierMaterialsSection() {
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
                         />
-                        <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" />
+                        <Search className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" />
                     </div>
 
                     {/* Filter by Grupo */}
@@ -924,17 +915,17 @@ export function SupplierMaterialsSection() {
                                             <td className="px-6 py-4">
                                                 {isInativo ? (
                                                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                                        <XMarkIcon className="h-3.5 w-3.5" />
+                                                        <X className="h-3.5 w-3.5" />
                                                         Inativo
                                                     </span>
                                                 ) : isAtivo ? (
                                                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                                        <CheckCircleIcon className="h-3.5 w-3.5" />
+                                                        <CheckCircle className="h-3.5 w-3.5" />
                                                         Ativo
                                                     </span>
                                                 ) : (
                                                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                                                        <ClockIcon className="h-3.5 w-3.5" />
+                                                        <Clock className="h-3.5 w-3.5" />
                                                         Pendente
                                                     </span>
                                                 )}
@@ -954,7 +945,7 @@ export function SupplierMaterialsSection() {
                                                             className="p-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
                                                             title="Cancelar"
                                                         >
-                                                            <XMarkIcon className="h-4 w-4" />
+                                                            <X className="h-4 w-4" />
                                                         </button>
                                                     </div>
                                                 ) : (
@@ -1007,7 +998,7 @@ export function SupplierMaterialsSection() {
                                     onClick={() => setShowRequestModal(false)}
                                     className="p-2 hover:bg-gray-100 rounded-full transition-colors"
                                 >
-                                    <XMarkIcon className="h-5 w-5 text-gray-500" />
+                                    <X className="h-5 w-5 text-gray-500" />
                                 </button>
                             </div>
                             <p className="text-sm text-gray-500 mt-1">
@@ -1071,7 +1062,7 @@ export function SupplierMaterialsSection() {
                                 disabled={sendingRequest || !requestMaterialName.trim()}
                                 className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                <PaperAirplaneIcon className="h-4 w-4" />
+                                <Send className="h-4 w-4" />
                                 {sendingRequest ? 'Enviando...' : 'Enviar Solicitação'}
                             </button>
                         </div>
