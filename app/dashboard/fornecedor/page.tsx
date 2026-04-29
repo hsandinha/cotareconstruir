@@ -285,7 +285,8 @@ function FornecedorDashboardContent() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50 text-slate-900" data-tour="supplier-header">
+        <div className="min-h-screen bg-slate-50 text-slate-900">
+            <div data-tour="supplier-header">
             <DashboardHeader
                 currentRole="fornecedor"
                 availableRoles={userRoles}
@@ -314,6 +315,7 @@ function FornecedorDashboardContent() {
                     </div>
                 )}
             </DashboardHeader>
+            </div>
 
             {/* Tabs Header */}
             <div className="bg-white border-b border-slate-200/80" data-tour="supplier-tabs">

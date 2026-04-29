@@ -36,7 +36,12 @@ export function SupplierTour({ open, steps, onClose, onChangeTab, storageKey }: 
 
     // Reset when reopening
     useEffect(() => {
-        if (open) setIndex(0);
+        if (open) {
+            setIndex(0);
+            if (typeof window !== "undefined") {
+                window.scrollTo({ top: 0, behavior: "smooth" });
+            }
+        }
     }, [open]);
 
     // Switch tabs if step requires it
@@ -59,6 +64,14 @@ export function SupplierTour({ open, steps, onClose, onChangeTab, storageKey }: 
             return;
         }
         const r = el.getBoundingClientRect();
+
+        // If the element is taller than the viewport (e.g. an entire page wrapper),
+        // fall back to a centered modal instead of trying to highlight all of it.
+        if (r.height > window.innerHeight * 0.9 || r.width > window.innerWidth * 1.1) {
+            setRect(null);
+            return;
+        }
+
         setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
 
         // scroll into view if needed
@@ -71,8 +84,13 @@ export function SupplierTour({ open, steps, onClose, onChangeTab, storageKey }: 
     useLayoutEffect(() => {
         if (!open) return;
         // small delay to allow tab switch render
-        const t = window.setTimeout(computeRect, 80);
-        return () => window.clearTimeout(t);
+        const t = window.setTimeout(computeRect, 120);
+        // recompute again after smooth scroll settles
+        const t2 = window.setTimeout(computeRect, 500);
+        return () => {
+            window.clearTimeout(t);
+            window.clearTimeout(t2);
+        };
     }, [open, index, computeRect]);
 
     useEffect(() => {
@@ -173,27 +191,33 @@ export function SupplierTour({ open, steps, onClose, onChangeTab, storageKey }: 
 
     const isCentered = !rect || current.placement === "center" || !current.selector;
 
+    const OVERLAY_CLASS = "absolute bg-slate-950/85";
+
     return (
         <div className="fixed inset-0 z-[100]" aria-modal="true" role="dialog">
-            {/* Overlay using a clip-path cutout for the spotlight */}
+            {/* Overlay using 4 rectangles around the spotlight cutout */}
             {rect ? (
                 <>
                     {/* Top */}
-                    <div className="absolute bg-slate-900/65 backdrop-blur-[1px]" style={{ top: 0, left: 0, right: 0, height: Math.max(0, rect.top - PADDING) }} />
+                    <div className={OVERLAY_CLASS} style={{ top: 0, left: 0, right: 0, height: Math.max(0, rect.top - PADDING) }} />
                     {/* Bottom */}
-                    <div className="absolute bg-slate-900/65 backdrop-blur-[1px]" style={{ top: rect.top + rect.height + PADDING, left: 0, right: 0, bottom: 0 }} />
+                    <div className={OVERLAY_CLASS} style={{ top: rect.top + rect.height + PADDING, left: 0, right: 0, bottom: 0 }} />
                     {/* Left */}
-                    <div className="absolute bg-slate-900/65 backdrop-blur-[1px]" style={{ top: Math.max(0, rect.top - PADDING), left: 0, width: Math.max(0, rect.left - PADDING), height: rect.height + PADDING * 2 }} />
+                    <div className={OVERLAY_CLASS} style={{ top: Math.max(0, rect.top - PADDING), left: 0, width: Math.max(0, rect.left - PADDING), height: rect.height + PADDING * 2 }} />
                     {/* Right */}
-                    <div className="absolute bg-slate-900/65 backdrop-blur-[1px]" style={{ top: Math.max(0, rect.top - PADDING), left: rect.left + rect.width + PADDING, right: 0, height: rect.height + PADDING * 2 }} />
-                    {/* Highlight border */}
+                    <div className={OVERLAY_CLASS} style={{ top: Math.max(0, rect.top - PADDING), left: rect.left + rect.width + PADDING, right: 0, height: rect.height + PADDING * 2 }} />
+                    {/* Bright halo around the spotlight to make it pop */}
                     <div
-                        className="absolute rounded-xl ring-2 ring-emerald-400 shadow-[0_0_0_4px_rgba(16,185,129,0.25)] pointer-events-none transition-all duration-200"
-                        style={spotlightStyle}
+                        className="absolute rounded-xl pointer-events-none transition-all duration-200"
+                        style={{
+                            ...spotlightStyle,
+                            boxShadow:
+                                "0 0 0 3px rgba(16,185,129,0.95), 0 0 0 9px rgba(16,185,129,0.35), 0 0 60px 20px rgba(255,255,255,0.18)",
+                        }}
                     />
                 </>
             ) : (
-                <div className="absolute inset-0 bg-slate-900/65 backdrop-blur-[1px]" />
+                <div className="absolute inset-0 bg-slate-950/85" />
             )}
 
             {/* Tooltip */}
