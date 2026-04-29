@@ -14,6 +14,7 @@ import { supabase } from "@/lib/supabaseAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChatNotificationListener } from "@/components/ChatNotificationListener";
+import { SupplierTour, type SupplierTourStep } from "@/components/SupplierTour";
 
 export type SupplierTabId =
     | "perfil"
@@ -39,6 +40,7 @@ function FornecedorDashboardContent() {
     const [userEmail, setUserEmail] = useState("");
     const [userId, setUserId] = useState("");
     const [showPendingProfileModal, setShowPendingProfileModal] = useState(false);
+    const [tourOpen, setTourOpen] = useState(false);
     const [stats, setStats] = useState({
         activeConsultations: 0,
         sentProposals: 0,
@@ -125,6 +127,103 @@ function FornecedorDashboardContent() {
         }
     }, [searchParams]);
 
+    // Abrir tour automaticamente no primeiro acesso (ou via ?tour=1)
+    useEffect(() => {
+        if (!initialized || !user) return;
+        if (typeof window === 'undefined') return;
+        const forceTour = searchParams?.get('tour') === '1';
+        try {
+            const seen = localStorage.getItem('supplierTourSeen');
+            if (forceTour || !seen) {
+                const t = window.setTimeout(() => setTourOpen(true), 600);
+                return () => window.clearTimeout(t);
+            }
+        } catch { }
+    }, [initialized, user, searchParams]);
+
+    const tourSteps: SupplierTourStep[] = [
+        {
+            title: 'Bem-vindo ao seu painel de Fornecedor',
+            description: 'Vamos fazer um tour rápido para mostrar onde ficam suas cotações, propostas, materiais e pedidos. Use as setas do teclado ou os botões abaixo para navegar.',
+            placement: 'center',
+        },
+        {
+            selector: '[data-tour="supplier-header"]',
+            title: 'Cabeçalho do painel',
+            description: 'Aqui você vê seu nome, alterna entre perfis (caso tenha mais de um) e acessa notificações e configurações da conta.',
+            placement: 'bottom',
+        },
+        {
+            selector: '[data-tour="supplier-company-switcher"]',
+            title: 'Seletor de empresa (multi-CNPJ)',
+            description: 'Se seu login estiver vinculado a mais de uma empresa, troque aqui o CNPJ ativo. Todos os dados do painel passam a refletir a empresa selecionada.',
+            placement: 'bottom',
+        },
+        {
+            selector: '[data-tour="supplier-tabs"]',
+            title: 'Abas de navegação',
+            description: 'Use estas abas para navegar entre as áreas principais: Cadastro & Perfil, Cadastro de Materiais, Minhas Ofertas e Pedidos.',
+            placement: 'bottom',
+        },
+        {
+            selector: '[data-tour="stat-active"]',
+            title: 'Consultas Ativas',
+            description: 'Mostra quantas cotações abertas estão disponíveis para você responder. Quanto mais rápido responder, maior a chance de ganhar o pedido.',
+            placement: 'bottom',
+        },
+        {
+            selector: '[data-tour="stat-proposals"]',
+            title: 'Propostas Enviadas',
+            description: 'Total de propostas que você já enviou em resposta às cotações. Acompanhe o status de cada uma na aba Pedidos.',
+            placement: 'bottom',
+        },
+        {
+            selector: '[data-tour="stat-materials"]',
+            title: 'Materiais Cadastrados',
+            description: 'Quantos materiais você possui cadastrados em seu catálogo. Apenas cotações compatíveis com esses materiais aparecerão para você.',
+            placement: 'bottom',
+        },
+        {
+            selector: '[data-tour="stat-approvals"]',
+            title: 'Aprovações',
+            description: 'Pedidos confirmados ou já entregues. É o seu indicador de fechamentos e vendas concluídas.',
+            placement: 'bottom',
+        },
+        {
+            requireTab: 'perfil',
+            selector: '[data-tour="tab-perfil"]',
+            title: 'Cadastro & Perfil',
+            description: 'Mantenha seus dados de cadastro, contatos, endereço, dados bancários e informações da empresa sempre atualizados. Um perfil completo aumenta sua credibilidade junto aos clientes.',
+            placement: 'bottom',
+        },
+        {
+            requireTab: 'materiais',
+            selector: '[data-tour="tab-materiais"]',
+            title: 'Cadastro de Materiais',
+            description: 'Cadastre os materiais e serviços que você fornece. Esse catálogo é usado para casar suas ofertas com as cotações dos clientes automaticamente.',
+            placement: 'bottom',
+        },
+        {
+            requireTab: 'ofertas',
+            selector: '[data-tour="tab-ofertas"]',
+            title: 'Minhas Ofertas',
+            description: 'Visualize suas ofertas ativas, preços vigentes e condições comerciais. É aqui que você gerencia o que está disponível para os clientes solicitarem.',
+            placement: 'bottom',
+        },
+        {
+            requireTab: 'vendas-cotacoes',
+            selector: '[data-tour="tab-pedidos"]',
+            title: 'Pedidos & Cotações',
+            description: 'Aqui chegam as cotações dos clientes. Você pode responder com propostas, negociar via chat e acompanhar pedidos confirmados até a entrega.',
+            placement: 'bottom',
+        },
+        {
+            title: 'Pronto para começar!',
+            description: 'Você pode reabrir este tour a qualquer momento clicando no botão "Tour guiado" no topo do painel. Bons negócios!',
+            placement: 'center',
+        },
+    ];
+
     useEffect(() => {
         if (!initialized) return;
 
@@ -186,7 +285,7 @@ function FornecedorDashboardContent() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50 text-slate-900">
+        <div className="min-h-screen bg-slate-50 text-slate-900" data-tour="supplier-header">
             <DashboardHeader
                 currentRole="fornecedor"
                 availableRoles={userRoles}
@@ -194,7 +293,7 @@ function FornecedorDashboardContent() {
                 userInitial={userInitial}
             >
                 {(suppliers.length > 0) && (
-                    <div className="hidden md:flex items-center">
+                    <div className="hidden md:flex items-center" data-tour="supplier-company-switcher">
                         <div className="rounded-xl border border-slate-200 bg-white px-2 py-1 shadow-sm">
                             <label className="sr-only" htmlFor="supplier-company-switcher">Empresa ativa</label>
                             <select
@@ -217,12 +316,13 @@ function FornecedorDashboardContent() {
             </DashboardHeader>
 
             {/* Tabs Header */}
-            <div className="bg-white border-b border-slate-200/80">
-                <div className="section-shell">
-                    <nav className="flex space-x-6 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="bg-white border-b border-slate-200/80" data-tour="supplier-tabs">
+                <div className="section-shell flex items-center justify-between gap-4">
+                    <nav className="flex space-x-6 overflow-x-auto scrollbar-hide flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
                         {tabs.map((item) => (
                             <button
                                 key={item.id}
+                                data-tour={`tab-${item.id === 'vendas-cotacoes' ? 'pedidos' : item.id}`}
                                 onClick={() => setTab(item.id)}
                                 className={`tab-button ${tab === item.id
                                     ? 'border-green-600 text-green-700'
@@ -233,6 +333,17 @@ function FornecedorDashboardContent() {
                             </button>
                         ))}
                     </nav>
+                    <button
+                        type="button"
+                        onClick={() => setTourOpen(true)}
+                        className="hidden md:inline-flex shrink-0 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition"
+                        aria-label="Iniciar tour guiado"
+                    >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 22a10 10 0 100-20 10 10 0 000 20z" />
+                        </svg>
+                        Tour guiado
+                    </button>
                 </div>
             </div>
 
@@ -241,7 +352,7 @@ function FornecedorDashboardContent() {
 
                 {/* Stats Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div className="card-elevated p-6">
+                    <div className="card-elevated p-6" data-tour="stat-active">
                         <div className="flex items-center">
                             <div className="p-2 bg-green-100 rounded-lg">
                                 <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -255,7 +366,7 @@ function FornecedorDashboardContent() {
                         </div>
                     </div>
 
-                    <div className="card-elevated p-6">
+                    <div className="card-elevated p-6" data-tour="stat-proposals">
                         <div className="flex items-center">
                             <div className="p-2 bg-blue-100 rounded-lg">
                                 <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -269,7 +380,7 @@ function FornecedorDashboardContent() {
                         </div>
                     </div>
 
-                    <div className="card-elevated p-6">
+                    <div className="card-elevated p-6" data-tour="stat-materials">
                         <div className="flex items-center">
                             <div className="p-2 bg-purple-100 rounded-lg">
                                 <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -283,7 +394,7 @@ function FornecedorDashboardContent() {
                         </div>
                     </div>
 
-                    <div className="card-elevated p-6">
+                    <div className="card-elevated p-6" data-tour="stat-approvals">
                         <div className="flex items-center">
                             <div className="p-2 bg-orange-100 rounded-lg">
                                 <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -384,6 +495,14 @@ function FornecedorDashboardContent() {
             )}
 
             <ChatNotificationListener />
+
+            <SupplierTour
+                open={tourOpen}
+                steps={tourSteps}
+                onClose={() => setTourOpen(false)}
+                onChangeTab={(t) => setTab(t as SupplierTabId)}
+                storageKey="supplierTourSeen"
+            />
         </div>
     );
 }
@@ -409,13 +528,13 @@ export default function FornecedorDashboard() {
                 <div className="bg-white border-b border-slate-200/80">
                     <div className="section-shell">
                         <div className="flex gap-6 py-3">
-                            {[1,2,3,4].map(i => <div key={i} className="h-4 w-28 rounded bg-slate-200 animate-pulse" />)}
+                            {[1, 2, 3, 4].map(i => <div key={i} className="h-4 w-28 rounded bg-slate-200 animate-pulse" />)}
                         </div>
                     </div>
                 </div>
                 <div className="section-shell py-10">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                        {[1,2,3,4].map(i => (
+                        {[1, 2, 3, 4].map(i => (
                             <div key={i} className="card-elevated p-6">
                                 <div className="flex items-center">
                                     <div className="w-10 h-10 rounded-lg bg-slate-200 animate-pulse" />
