@@ -647,14 +647,14 @@ export function SupplierMaterialsSection() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4" data-tour="materiais-header">
                 <div>
                     <h3 className="text-xl font-bold text-gray-900">Meus Materiais</h3>
                     <p className="text-sm text-gray-600">
                         Configure preços e estoque dos materiais disponíveis para sua empresa.
                     </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2" data-tour="materiais-acoes">
                     <button
                         onClick={handleDownloadSpreadsheet}
                         disabled={exportingSpreadsheet || importingSpreadsheet || loadingMateriais}
@@ -737,7 +737,7 @@ export function SupplierMaterialsSection() {
             </div>
 
             {/* Filters */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm" data-tour="materiais-filtros">
                 <div className="flex flex-col md:flex-row gap-4">
                     {/* Search */}
                     <div className="relative flex-1">
@@ -778,7 +778,7 @@ export function SupplierMaterialsSection() {
             </div>
 
             {/* Materials Table */}
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm" data-tour="materiais-tabela">
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">

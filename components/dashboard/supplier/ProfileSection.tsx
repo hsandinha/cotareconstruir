@@ -332,7 +332,7 @@ export function SupplierProfileSection() {
             </div>
 
             {/* Botão Salvar */}
-            <div className="flex justify-end">
+            <div className="flex justify-end" data-tour="perfil-salvar">
                 <button
                     onClick={handleSave}
                     disabled={saving}
@@ -345,7 +345,7 @@ export function SupplierProfileSection() {
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 {/* Dados da Empresa */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" data-tour="perfil-dados-empresa">
                     <div className="flex items-center gap-3 mb-6">
                         <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600">
                             <Building2 className="w-5 h-5" />
@@ -413,7 +413,7 @@ export function SupplierProfileSection() {
                 </div>
 
                 {/* Contato Gerencial */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" data-tour="perfil-contato">
                     <div className="flex items-center gap-3 mb-6">
                         <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-100 text-blue-600">
                             <Briefcase className="w-5 h-5" />
@@ -484,7 +484,7 @@ export function SupplierProfileSection() {
                 </div>
 
                 {/* Endereço */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2" data-tour="perfil-endereco">
                     <div className="flex items-center gap-3 mb-6">
                         <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-orange-100 text-orange-600">
                             <MapPin className="w-5 h-5" />
@@ -577,7 +577,7 @@ export function SupplierProfileSection() {
                 </div>
 
                 {/* Preferências de Atendimento */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2" data-tour="perfil-regioes">
                     <div className="flex items-center gap-3 mb-6">
                         <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-purple-100 text-purple-600">
                             <MapPin className="w-5 h-5" />
@@ -602,7 +602,7 @@ export function SupplierProfileSection() {
             </div>
 
             {/* Grupos de Insumo */}
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden" data-tour="perfil-grupos">
                 <button
                     onClick={() => setShowGroups(!showGroups)}
                     className="w-full flex items-center justify-between p-6 hover:bg-slate-50 transition-colors"
@@ -773,7 +773,7 @@ export function SupplierProfileSection() {
             </div>
 
             {/* Verificação e Documentos */}
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden" data-tour="perfil-verificacao">
                 <button
                     onClick={() => setShowVerification(!showVerification)}
                     className="w-full flex items-center justify-between p-6 hover:bg-slate-50 transition-colors"

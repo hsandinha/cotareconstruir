@@ -325,7 +325,7 @@ export function SupplierMyProductsSection() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div>
+            <div data-tour="ofertas-header">
                 <h3 className="text-xl font-bold text-gray-900">Meus Produtos</h3>
                 <p className="text-sm text-gray-600">
                     Configure ofertas e quantidades mínimas para seus produtos
@@ -333,7 +333,7 @@ export function SupplierMyProductsSection() {
             </div>
 
             {/* Search */}
-            <div className="relative">
+            <div className="relative" data-tour="ofertas-busca">
                 <input
                     type="text"
                     placeholder="Buscar produto..."
@@ -357,7 +357,7 @@ export function SupplierMyProductsSection() {
             )}
 
             {/* Products Table */}
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm" data-tour="ofertas-tabela">
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">

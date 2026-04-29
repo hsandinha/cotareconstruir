@@ -13,7 +13,7 @@ export function SupplierSalesAndQuotationsSection() {
     return (
         <div className="space-y-6">
             {/* Cotações (Consultas Recebidas) */}
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm" data-tour="pedidos-cotacoes">
                 <button
                     onClick={() => setShowQuotations(!showQuotations)}
                     className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors"
@@ -44,7 +44,7 @@ export function SupplierSalesAndQuotationsSection() {
             </div>
 
             {/* Pedidos (Vendas Confirmadas) */}
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm" data-tour="pedidos-confirmados">
                 <button
                     onClick={() => setShowOrders(!showOrders)}
                     className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors"
