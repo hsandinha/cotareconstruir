@@ -600,7 +600,7 @@ export function SupplierQuotationInboxSection() {
                     </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2" data-tour="inbox-filtros">
                     <button
                         onClick={() => setStatusFilter('all')}
                         className={`px-3 py-1 text-xs font-medium rounded-full ${statusFilter === 'all' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}
@@ -629,7 +629,7 @@ export function SupplierQuotationInboxSection() {
             </div>
 
             {/* Lista de consultas */}
-            <div className="space-y-4">
+            <div className="space-y-4" data-tour="inbox-lista">
                 {loading ? (
                     <p className="text-center text-gray-500">Carregando cotações...</p>
                 ) : filteredQuotations.length === 0 ? (

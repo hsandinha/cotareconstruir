@@ -133,7 +133,10 @@ function FornecedorDashboardContent() {
         if (typeof window === 'undefined') return;
         const forceTour = searchParams?.get('tour') === '1';
         try {
-            const seen = localStorage.getItem('supplierTourSeen');
+            // Limpa a flag antiga para garantir que todos os fornecedores
+            // vejam o tour atualizado novamente
+            localStorage.removeItem('supplierTourSeen');
+            const seen = localStorage.getItem('supplierTourSeen_v2');
             if (forceTour || !seen) {
                 const t = window.setTimeout(() => setTourOpen(true), 600);
                 return () => window.clearTimeout(t);
@@ -276,9 +279,10 @@ function FornecedorDashboardContent() {
         },
         {
             requireTab: 'materiais',
+            selector: '[data-tour="materiais-filtro-status"]',
             title: 'Materiais • Status do material',
-            description: 'Cada material tem um status: Ativo (recebendo cotações), Pendente (aguardando aprovação) ou Inativo (pausado). Use os filtros para revisar cada grupo e mantenha apenas os ativos que você realmente fornece.',
-            placement: 'center',
+            description: 'Cada material tem um status: Ativo (recebendo cotações), Pendente (aguardando aprovação) ou Inativo (pausado). Use este filtro para revisar cada grupo e mantenha apenas como Ativos os itens que você realmente fornece — assim evita receber cotações irrelevantes.',
+            placement: 'bottom',
         },
 
         {
@@ -332,9 +336,17 @@ function FornecedorDashboardContent() {
         },
         {
             requireTab: 'vendas-cotacoes',
-            title: 'Pedidos • Itens parciais e negociação',
-            description: 'Não fornece todos os itens da cotação? Sem problema — responda apenas o que tem. O cliente pode fechar parte com você e parte com outro fornecedor. Use o chat dentro de cada cotação para negociar preços e condições; todo o histórico fica registrado.',
-            placement: 'center',
+            selector: '[data-tour="inbox-filtros"]',
+            title: 'Pedidos • Filtros e itens parciais',
+            description: 'Use estes filtros (Todas / Recebido / Respondido / Perdeu) para organizar sua caixa de cotações. Mesmo que não forneça todos os itens de uma cotação, abra-a e responda apenas o que tem — o cliente pode fechar parte com você e parte com outro fornecedor.',
+            placement: 'top',
+        },
+        {
+            requireTab: 'vendas-cotacoes',
+            selector: '[data-tour="inbox-lista"]',
+            title: 'Pedidos • Lista e ações por cotação',
+            description: 'Em cada cotação você tem 3 ações: "Chat" (negociar via mensagens com o cliente), "Visualizar" (ver os itens, quantidades e endereço da obra) e "Responder" (preencher preços, prazo e observações por item). Anexe PDFs e fichas técnicas no formulário de resposta.',
+            placement: 'top',
         },
         {
             requireTab: 'vendas-cotacoes',
@@ -629,7 +641,7 @@ function FornecedorDashboardContent() {
                 steps={tourSteps}
                 onClose={() => setTourOpen(false)}
                 onChangeTab={(t) => setTab(t as SupplierTabId)}
-                storageKey="supplierTourSeen"
+                storageKey="supplierTourSeen_v2"
             />
         </div>
     );
