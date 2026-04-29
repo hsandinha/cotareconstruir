@@ -192,31 +192,191 @@ function FornecedorDashboardContent() {
         {
             requireTab: 'perfil',
             selector: '[data-tour="tab-perfil"]',
-            title: 'Cadastro & Perfil',
-            description: 'Mantenha seus dados de cadastro, contatos, endereço, dados bancários e informações da empresa sempre atualizados. Um perfil completo aumenta sua credibilidade junto aos clientes.',
+            title: 'Aba: Cadastro & Perfil',
+            description: 'Esta é a sua identidade na plataforma. Vamos detalhar cada bloco desta aba nos próximos passos.',
+            placement: 'bottom',
+        },
+        {
+            requireTab: 'perfil',
+            title: 'Perfil • Dados da Empresa',
+            description: 'Preencha Razão Social, CNPJ e Inscrição Estadual. Ao digitar o CNPJ, o sistema busca automaticamente os dados oficiais da Receita Federal — você só confere e ajusta o que faltar.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'perfil',
+            title: 'Perfil • Endereço',
+            description: 'Informe o CEP e o endereço será preenchido automaticamente (logradouro, bairro, cidade e estado). Complete com número e complemento. Esse endereço é exibido aos clientes nas propostas.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'perfil',
+            title: 'Perfil • Responsável Comercial',
+            description: 'Cadastre o nome, cargo, e-mail e WhatsApp do responsável pelas vendas. É por esses contatos que os clientes vão te procurar quando suas propostas forem aprovadas.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'perfil',
+            title: 'Perfil • Regiões de Atendimento',
+            description: 'Liste os bairros, cidades ou estados que você atende (separados por vírgula). Cotações fora dessa área não aparecerão para você, evitando perda de tempo com pedidos inviáveis.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'perfil',
+            title: 'Perfil • Grupos de Insumos',
+            description: 'Selecione os grupos de materiais que você fornece (ex.: Elétrica, Hidráulica, Acabamentos). Esses grupos definem em quais cotações você será automaticamente convidado a participar.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'perfil',
+            title: 'Perfil • Verificação e Documentos',
+            description: 'Envie documentos da empresa para receber o selo de fornecedor verificado. Empresas verificadas têm prioridade nas listagens e mais credibilidade junto aos clientes.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'perfil',
+            title: 'Perfil • Salvar alterações',
+            description: 'Sempre que alterar qualquer campo, clique em "Salvar" no final da seção. A barra de "Completude do perfil" mostra o quanto falta para seu cadastro estar 100%.',
+            placement: 'center',
+        },
+
+        {
+            requireTab: 'materiais',
+            selector: '[data-tour="tab-materiais"]',
+            title: 'Aba: Cadastro de Materiais',
+            description: 'Aqui você monta o catálogo do que sua empresa fornece. É a base para ser convidado em cotações relevantes.',
             placement: 'bottom',
         },
         {
             requireTab: 'materiais',
-            selector: '[data-tour="tab-materiais"]',
-            title: 'Cadastro de Materiais',
-            description: 'Cadastre os materiais e serviços que você fornece. Esse catálogo é usado para casar suas ofertas com as cotações dos clientes automaticamente.',
+            title: 'Materiais • Buscar e adicionar',
+            description: 'Use a busca para encontrar materiais já cadastrados na plataforma. Clique em "Adicionar" para incluí-lo no seu catálogo. Use a unidade padrão (m, m², kg, un, etc.) compatível com a do material.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'materiais',
+            title: 'Materiais • Filtrar por grupo',
+            description: 'Filtre os materiais por grupo de insumo (Elétrica, Hidráulica, Estrutural...). Isso facilita encontrar rapidamente o que sua empresa trabalha.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'materiais',
+            title: 'Materiais • Variações e marcas',
+            description: 'Para cada material você pode informar marcas, modelos e variações que oferece. Quanto mais detalhado, mais preciso o pareamento com pedidos dos clientes.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'materiais',
+            title: 'Materiais • Remover ou desativar',
+            description: 'Material que você não fornece mais? Remova ou desative — assim você não recebe cotações daquele item. Você pode reativar a qualquer momento.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'materiais',
+            title: 'Materiais • Importação em lote',
+            description: 'Se tiver muitos itens, use a importação em lote (CSV/Excel) quando disponível. É a forma mais rápida de subir um catálogo grande.',
+            placement: 'center',
+        },
+
+        {
+            requireTab: 'ofertas',
+            selector: '[data-tour="tab-ofertas"]',
+            title: 'Aba: Minhas Ofertas',
+            description: 'Aqui ficam os preços e condições comerciais que você oferece para cada material do seu catálogo.',
             placement: 'bottom',
         },
         {
             requireTab: 'ofertas',
-            selector: '[data-tour="tab-ofertas"]',
-            title: 'Minhas Ofertas',
-            description: 'Visualize suas ofertas ativas, preços vigentes e condições comerciais. É aqui que você gerencia o que está disponível para os clientes solicitarem.',
+            title: 'Ofertas • Preço unitário',
+            description: 'Defina o preço unitário de cada material. Esse valor é a base usada quando você responde uma cotação — você pode ajustar caso a caso, mas o valor padrão acelera muito suas respostas.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'ofertas',
+            title: 'Ofertas • Prazo de entrega',
+            description: 'Informe o prazo médio de entrega (em dias). Clientes filtram fornecedores por prazo, então mantenha realista — atrasos prejudicam sua reputação.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'ofertas',
+            title: 'Ofertas • Quantidade mínima e máxima',
+            description: 'Configure a quantidade mínima de venda (caso aplicável) e a capacidade máxima por pedido. Cotações fora dessas faixas não geram convite automático.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'ofertas',
+            title: 'Ofertas • Validade e promoções',
+            description: 'Defina a validade dos preços. Para promoções, atualize o preço com data de expiração — o sistema volta ao preço normal automaticamente após a data.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'ofertas',
+            title: 'Ofertas • Ativar / Desativar',
+            description: 'Pause uma oferta quando estiver sem estoque, sem prejudicar seu catálogo. Reative quando voltar a ter o produto disponível.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'ofertas',
+            title: 'Ofertas • Atualização em massa',
+            description: 'Use a edição em massa para reajustar preços por percentual (ex.: +5% em todos os elétricos). Ideal para repassar variação de custo de uma só vez.',
+            placement: 'center',
+        },
+
+        {
+            requireTab: 'vendas-cotacoes',
+            selector: '[data-tour="tab-pedidos"]',
+            title: 'Aba: Pedidos',
+            description: 'O coração do seu trabalho na plataforma: aqui chegam as cotações dos clientes, você responde com propostas e acompanha cada pedido até a entrega.',
             placement: 'bottom',
         },
         {
             requireTab: 'vendas-cotacoes',
-            selector: '[data-tour="tab-pedidos"]',
-            title: 'Pedidos & Cotações',
-            description: 'Aqui chegam as cotações dos clientes. Você pode responder com propostas, negociar via chat e acompanhar pedidos confirmados até a entrega.',
-            placement: 'bottom',
+            title: 'Pedidos • Caixa de Cotações',
+            description: 'Veja todas as cotações abertas em que você foi convidado. Cada cotação mostra o cliente, a obra, os materiais pedidos e o prazo para responder.',
+            placement: 'center',
         },
+        {
+            requireTab: 'vendas-cotacoes',
+            title: 'Pedidos • Responder cotação',
+            description: 'Ao abrir uma cotação, informe preço unitário, prazo de entrega e condições para cada item. Você pode usar os preços do seu catálogo como sugestão e ajustar individualmente.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'vendas-cotacoes',
+            title: 'Pedidos • Itens parciais',
+            description: 'Não fornece todos os itens da cotação? Sem problema — responda apenas o que tem. O cliente pode escolher fechar parte com você e parte com outro fornecedor.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'vendas-cotacoes',
+            title: 'Pedidos • Anexos e observações',
+            description: 'Anexe fichas técnicas, propostas em PDF ou catálogos. Use o campo de observações para condições de pagamento, frete incluso/não incluso e outros detalhes comerciais.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'vendas-cotacoes',
+            title: 'Pedidos • Chat com o cliente',
+            description: 'Cada cotação tem um chat integrado. Use-o para tirar dúvidas, negociar preços e alinhar entrega — todo o histórico fica registrado na plataforma.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'vendas-cotacoes',
+            title: 'Pedidos • Status do pedido',
+            description: 'Acompanhe o status: Aguardando resposta → Proposta enviada → Em análise → Confirmado → Em entrega → Entregue. A cada mudança, você é notificado.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'vendas-cotacoes',
+            title: 'Pedidos • Confirmar entrega',
+            description: 'Quando o pedido for entregue, confirme na plataforma. Isso libera a avaliação do cliente e atualiza seu indicador de "Aprovações" no topo do painel.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'vendas-cotacoes',
+            title: 'Pedidos • Histórico e relatórios',
+            description: 'Use os filtros (período, status, cliente) para revisar pedidos antigos. É útil para conferir vendas do mês, recuperar dados de uma proposta passada e analisar sua performance.',
+            placement: 'center',
+        },
+
         {
             title: 'Pronto para começar!',
             description: 'Você pode reabrir este tour a qualquer momento clicando no botão "Tour guiado" no topo do painel. Bons negócios!',
@@ -287,34 +447,34 @@ function FornecedorDashboardContent() {
     return (
         <div className="min-h-screen bg-slate-50 text-slate-900">
             <div data-tour="supplier-header">
-            <DashboardHeader
-                currentRole="fornecedor"
-                availableRoles={userRoles}
-                userName={userName}
-                userInitial={userInitial}
-            >
-                {(suppliers.length > 0) && (
-                    <div className="hidden md:flex items-center" data-tour="supplier-company-switcher">
-                        <div className="rounded-xl border border-slate-200 bg-white px-2 py-1 shadow-sm">
-                            <label className="sr-only" htmlFor="supplier-company-switcher">Empresa ativa</label>
-                            <select
-                                id="supplier-company-switcher"
-                                value={activeSupplierId || ""}
-                                onChange={(e) => setActiveSupplierId(e.target.value || null)}
-                                className="max-w-[280px] bg-transparent px-2 py-1 text-sm font-medium text-slate-700 focus:outline-none"
-                            >
-                                <option value="" disabled={suppliers.length > 1}>Selecionar empresa</option>
-                                {suppliers.map((supplier) => (
-                                    <option key={supplier.id} value={supplier.id}>
-                                        {(supplier.nome_fantasia || supplier.razao_social || "Fornecedor")}
-                                        {supplier.isPrimary ? " (principal)" : ""}
-                                    </option>
-                                ))}
-                            </select>
+                <DashboardHeader
+                    currentRole="fornecedor"
+                    availableRoles={userRoles}
+                    userName={userName}
+                    userInitial={userInitial}
+                >
+                    {(suppliers.length > 0) && (
+                        <div className="hidden md:flex items-center" data-tour="supplier-company-switcher">
+                            <div className="rounded-xl border border-slate-200 bg-white px-2 py-1 shadow-sm">
+                                <label className="sr-only" htmlFor="supplier-company-switcher">Empresa ativa</label>
+                                <select
+                                    id="supplier-company-switcher"
+                                    value={activeSupplierId || ""}
+                                    onChange={(e) => setActiveSupplierId(e.target.value || null)}
+                                    className="max-w-[280px] bg-transparent px-2 py-1 text-sm font-medium text-slate-700 focus:outline-none"
+                                >
+                                    <option value="" disabled={suppliers.length > 1}>Selecionar empresa</option>
+                                    {suppliers.map((supplier) => (
+                                        <option key={supplier.id} value={supplier.id}>
+                                            {(supplier.nome_fantasia || supplier.razao_social || "Fornecedor")}
+                                            {supplier.isPrimary ? " (principal)" : ""}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
-                    </div>
-                )}
-            </DashboardHeader>
+                    )}
+                </DashboardHeader>
             </div>
 
             {/* Tabs Header */}
