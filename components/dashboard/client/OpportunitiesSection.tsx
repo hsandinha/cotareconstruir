@@ -249,7 +249,7 @@ export function ClientOpportunitiesSection() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" data-tour="cliente-oportunidades-header">
                 <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                     <div>
                         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">

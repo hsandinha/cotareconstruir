@@ -1036,7 +1036,7 @@ export function ClientSolicitationSection() {
     return (
         <div className="space-y-7">
             {/* Header com Steps */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm" data-tour="cliente-cotacao-steps">
                 <div className="flex flex-wrap items-center justify-between gap-4 mb-7">
                     <div>
                         <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-2">
@@ -1096,7 +1096,7 @@ export function ClientSolicitationSection() {
 
             {/* Step 1: Selecionar Obra */}
             {step === 1 && (
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" data-tour="cliente-cotacao-obra">
                     <div className="flex items-center gap-3 mb-6">
                         <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600">
                             <Building2 className="w-6 h-6" />

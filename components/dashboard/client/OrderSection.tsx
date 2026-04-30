@@ -181,14 +181,14 @@ export function ClientOrderSection() {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between" data-tour="cliente-pedidos-header">
                 <div>
                     <h2 className="text-2xl font-bold text-gray-900">Meus Pedidos</h2>
                     <p className="text-gray-600 mt-1">Acompanhe suas solicitações de cotação e pedidos de compra.</p>
                 </div>
             </div>
 
-            <div className="grid gap-4">
+            <div className="grid gap-4" data-tour="cliente-pedidos-lista">
                 {loading ? (
                     <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
                         <p className="text-gray-500">Carregando pedidos...</p>

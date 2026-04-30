@@ -387,7 +387,7 @@ export function ClientProfileSection() {
     return (
         <div className="space-y-6">
             {/* Header com barra de progresso */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" data-tour="cliente-perfil-header">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
                         <h1 className="text-2xl font-bold text-slate-900">Meu Perfil</h1>
@@ -414,7 +414,7 @@ export function ClientProfileSection() {
             </div>
 
             {/* Seletor de tipo */}
-            <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-4" data-tour="cliente-perfil-tipo">
                 <div className="flex items-center gap-2 rounded-2xl bg-slate-100 p-1.5">
                     <button
                         type="button"
@@ -447,7 +447,7 @@ export function ClientProfileSection() {
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 {/* Dados Pessoais */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" data-tour="cliente-perfil-dados">
                     <div className="flex items-center gap-3 mb-6">
                         <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-100 text-blue-600">
                             <User className="w-5 h-5" />
@@ -528,7 +528,7 @@ export function ClientProfileSection() {
                 </div>
 
                 {/* Endereço */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" data-tour="cliente-perfil-endereco">
                     <div className="flex items-center gap-3 mb-6">
                         <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600">
                             <MapPin className="w-5 h-5" />
@@ -626,7 +626,7 @@ export function ClientProfileSection() {
 
                 {/* Dados Empresa (CNPJ) */}
                 {profileType === "cnpj" && (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2" data-tour="cliente-perfil-empresa">
                         <div className="flex items-center gap-3 mb-6">
                             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-violet-100 text-violet-600">
                                 <Building2 className="w-5 h-5" />
@@ -674,7 +674,7 @@ export function ClientProfileSection() {
 
                 {/* Equipe (CNPJ) */}
                 {profileType === "cnpj" && (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2" data-tour="cliente-perfil-equipe">
                         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                             <div className="flex items-center gap-3">
                                 <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-100 text-blue-600">

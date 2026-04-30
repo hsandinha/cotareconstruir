@@ -466,7 +466,7 @@ export function ClientWorksSection() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-4" data-tour="cliente-obras-header">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900">Minhas Obras</h1>
                     <p className="text-sm text-slate-500 mt-1">Gerencie suas obras e cronograma de etapas</p>
@@ -474,6 +474,7 @@ export function ClientWorksSection() {
                 <button
                     onClick={() => { resetObraForm(); setShowObraForm(true); }}
                     className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-blue-700 transition-all"
+                    data-tour="cliente-obras-nova"
                 >
                     <Plus className="w-4 h-4" />
                     Nova Obra

@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/useAuth";
 import { supabase } from "@/lib/supabaseAuth";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChatNotificationListener } from "@/components/ChatNotificationListener";
+import { SupplierTour, type SupplierTourStep } from "@/components/SupplierTour";
 
 export type TabId =
     | "perfil"
@@ -39,6 +40,7 @@ function ClienteDashboardContent() {
     const [userEmail, setUserEmail] = useState("");
     const [userId, setUserId] = useState("");
     const [showPendingProfileModal, setShowPendingProfileModal] = useState(false);
+    const [tourOpen, setTourOpen] = useState(false);
     const [stats, setStats] = useState({
         works: 0,
         quotations: 0,
@@ -96,6 +98,249 @@ function ClienteDashboardContent() {
         }
     }, [searchParams]);
 
+    // Abrir tour automaticamente no primeiro acesso (ou via ?tour=1)
+    useEffect(() => {
+        if (!initialized || !user) return;
+        if (typeof window === 'undefined') return;
+        const forceTour = searchParams?.get('tour') === '1';
+        try {
+            // Limpa flag antiga para garantir que todos os clientes
+            // vejam o tour atualizado novamente
+            localStorage.removeItem('clientTourSeen');
+            const seen = localStorage.getItem('clientTourSeen_v2');
+            if (forceTour || !seen) {
+                const t = window.setTimeout(() => setTourOpen(true), 600);
+                return () => window.clearTimeout(t);
+            }
+        } catch { }
+    }, [initialized, user, searchParams]);
+
+    const tourSteps: SupplierTourStep[] = [
+        {
+            title: 'Bem-vindo ao seu painel de Cliente',
+            description: 'Vamos fazer um tour completo pelo painel: cadastro, obras, cotações, pedidos e oportunidades. Use as setas do teclado ou os botões abaixo para navegar.',
+            placement: 'center',
+        },
+        {
+            selector: '[data-tour="cliente-header"]',
+            title: 'Cabeçalho do painel',
+            description: 'Aqui você vê seu nome, alterna entre perfis (caso tenha cliente e fornecedor na mesma conta) e acessa notificações e configurações.',
+            placement: 'bottom',
+        },
+        {
+            selector: '[data-tour="cliente-tabs"]',
+            title: 'Abas de navegação',
+            description: 'As 5 áreas principais: Cadastro & Perfil, Obras & Endereços, Nova Cotação, Meus Pedidos e Oportunidades. Vamos explicar cada uma a seguir.',
+            placement: 'bottom',
+        },
+        {
+            selector: '[data-tour="cliente-stat-perfis"]',
+            title: 'Perfis Ativos',
+            description: 'Mostra quantos perfis você tem ativos na plataforma. Você pode ter perfil de Cliente e Fornecedor na mesma conta.',
+            placement: 'bottom',
+        },
+        {
+            selector: '[data-tour="cliente-stat-obras"]',
+            title: 'Obras',
+            description: 'Total de obras cadastradas. Cada obra tem endereço e cronograma de etapas próprios e é a base para criar cotações.',
+            placement: 'bottom',
+        },
+        {
+            selector: '[data-tour="cliente-stat-cotacoes"]',
+            title: 'Cotações em andamento',
+            description: 'Cotações enviadas que ainda estão aguardando ou recebendo respostas dos fornecedores.',
+            placement: 'bottom',
+        },
+        {
+            selector: '[data-tour="cliente-stat-pedidos"]',
+            title: 'Ordens Ativas',
+            description: 'Pedidos confirmados em produção ou aguardando entrega.',
+            placement: 'bottom',
+        },
+
+        // Aba Perfil
+        {
+            requireTab: 'perfil',
+            selector: '[data-tour="tab-perfil"]',
+            title: 'Aba: Cadastro & Perfil',
+            description: 'Aqui você mantém seus dados cadastrais. Um perfil completo gera mais confiança com fornecedores e libera todas as funcionalidades.',
+            placement: 'bottom',
+        },
+        {
+            requireTab: 'perfil',
+            selector: '[data-tour="cliente-perfil-header"]',
+            title: 'Perfil • Indicador de Completude',
+            description: 'O percentual mostra o quanto do seu cadastro está preenchido. Mire em 100% para liberar todas as funcionalidades e aumentar sua credibilidade junto aos fornecedores.',
+            placement: 'bottom',
+        },
+        {
+            requireTab: 'perfil',
+            selector: '[data-tour="cliente-perfil-tipo"]',
+            title: 'Perfil • Pessoa Física ou Jurídica',
+            description: 'Escolha entre CPF (pessoa física) ou CNPJ (pessoa jurídica). Para CNPJ aparecem campos extras: Dados da Empresa e Equipe. Use o botão "Salvar Alterações" sempre que mudar algo.',
+            placement: 'bottom',
+        },
+        {
+            requireTab: 'perfil',
+            selector: '[data-tour="cliente-perfil-dados"]',
+            title: 'Perfil • Dados Pessoais / Responsável',
+            description: 'No CPF: seus dados pessoais (nome, CPF, telefone, e-mail). No CNPJ: dados do responsável legal pela empresa. Esses contatos são usados pelos fornecedores para falar com você.',
+            placement: 'right',
+        },
+        {
+            requireTab: 'perfil',
+            selector: '[data-tour="cliente-perfil-endereco"]',
+            title: 'Perfil • Endereço',
+            description: 'Digite o CEP e o endereço (logradouro, bairro, cidade, estado) é preenchido automaticamente. Para PF é o endereço de entrega; para PJ é o endereço da empresa.',
+            placement: 'left',
+        },
+        {
+            requireTab: 'perfil',
+            selector: '[data-tour="cliente-perfil-empresa"]',
+            title: 'Perfil • Dados da Empresa (CNPJ)',
+            description: 'Aparece apenas quando você escolhe Pessoa Jurídica. Digite o CNPJ e clique em "Consultar" para preencher Razão Social automaticamente via Receita Federal. Mostra também o número de obras ativas.',
+            placement: 'top',
+        },
+        {
+            requireTab: 'perfil',
+            selector: '[data-tour="cliente-perfil-equipe"]',
+            title: 'Perfil • Equipe (CNPJ)',
+            description: 'Adicione funcionários da sua empresa para que também possam acessar e gerenciar pedidos. Cada um pode ter cargo e perfil de acesso próprio. Ordene por Nome ou Cargo no topo da lista.',
+            placement: 'top',
+        },
+
+        // Aba Obras
+        {
+            requireTab: 'obras',
+            selector: '[data-tour="tab-obras"]',
+            title: 'Aba: Obras & Endereços',
+            description: 'Gerencie suas obras com endereço e cronograma de etapas. Cada cotação será sempre vinculada a uma obra.',
+            placement: 'bottom',
+        },
+        {
+            requireTab: 'obras',
+            selector: '[data-tour="cliente-obras-nova"]',
+            title: 'Obras • Cadastrar nova obra',
+            description: 'Clique em "Nova Obra" para abrir o formulário. Você informa nome, endereço (com auto-preenchimento por CEP) e pode adicionar etapas (fundação, alvenaria, acabamento, etc.).',
+            placement: 'left',
+        },
+        {
+            requireTab: 'obras',
+            title: 'Obras • Lista e progresso',
+            description: 'Cada cartão de obra mostra endereço, etapas e percentual de progresso (etapas concluídas / total). Clique em uma obra para editar dados, marcar etapas como concluídas ou adicionar novas etapas.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'obras',
+            title: 'Obras • Adicionar Etapa',
+            description: 'Dentro de cada obra, você pode usar "Adicionar Etapa" para incluir novas fases do cronograma. Etapas servem para organizar cotações por momento da obra (ex.: cotação só do hidráulico, só do elétrico, etc.).',
+            placement: 'center',
+        },
+
+        // Aba Cotação
+        {
+            requireTab: 'cotacao',
+            selector: '[data-tour="tab-cotacao"]',
+            title: 'Aba: Nova Cotação',
+            description: 'Aqui você cria cotações para receber preços de vários fornecedores ao mesmo tempo, em 3 etapas guiadas.',
+            placement: 'bottom',
+        },
+        {
+            requireTab: 'cotacao',
+            selector: '[data-tour="cliente-cotacao-steps"]',
+            title: 'Cotação • Fluxo em 3 passos',
+            description: 'Passo 1: Selecionar Obra. Passo 2: Adicionar Itens (por etapa da obra ou busca rápida, ou importando uma planilha). Passo 3: Revisar e Enviar. Você pode voltar e editar em qualquer momento.',
+            placement: 'bottom',
+        },
+        {
+            requireTab: 'cotacao',
+            selector: '[data-tour="cliente-cotacao-obra"]',
+            title: 'Cotação • Passo 1: Selecionar a obra',
+            description: 'Escolha para qual obra essa cotação será feita. Os fornecedores da região dessa obra serão automaticamente notificados quando você enviar.',
+            placement: 'top',
+        },
+        {
+            requireTab: 'cotacao',
+            title: 'Cotação • Passo 2: Adicionar Itens',
+            description: 'Você tem 2 modos: "Por Fases da Obra" (escolhe a etapa e vê os materiais sugeridos por categoria) ou "Busca Rápida" (procura qualquer material pelo nome). Também pode importar uma planilha CSV/XLSX com seus itens.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'cotacao',
+            title: 'Cotação • Passo 3: Revisar e Enviar',
+            description: 'Confira a lista final de itens (com quantidade e unidade), adicione observações se quiser e clique em Enviar. Os fornecedores qualificados na região serão notificados imediatamente.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'cotacao',
+            title: 'Cotação • Sem fornecedor específico',
+            description: 'Você não precisa escolher fornecedores manualmente — a plataforma busca automaticamente os fornecedores da região que atendem aos materiais solicitados.',
+            placement: 'center',
+        },
+
+        // Aba Pedidos
+        {
+            requireTab: 'pedidos',
+            selector: '[data-tour="tab-pedidos"]',
+            title: 'Aba: Meus Pedidos',
+            description: 'Acompanhe todas as suas cotações enviadas e os pedidos confirmados em um único lugar.',
+            placement: 'bottom',
+        },
+        {
+            requireTab: 'pedidos',
+            selector: '[data-tour="cliente-pedidos-lista"]',
+            title: 'Pedidos • Lista de cotações',
+            description: 'Cada item mostra número da cotação, status (Aguardando, Recebendo Propostas, Fechada), obra, data, número de itens e quantidade de propostas recebidas. Quando uma cotação tem propostas, o badge fica verde piscando para chamar sua atenção.',
+            placement: 'top',
+        },
+        {
+            requireTab: 'pedidos',
+            title: 'Pedidos • Mapa Comparativo',
+            description: 'Clique em qualquer cotação para abrir o Mapa Comparativo: tabela lado a lado com todas as propostas dos fornecedores (preço por item, prazo, condições). É onde você escolhe os melhores e fecha o pedido.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'pedidos',
+            title: 'Pedidos • Chat e negociação',
+            description: 'Dentro do Mapa Comparativo você pode iniciar um chat com cada fornecedor para tirar dúvidas, pedir descontos e ajustar prazos. Todo o histórico fica registrado.',
+            placement: 'center',
+        },
+        {
+            requireTab: 'pedidos',
+            title: 'Pedidos • Fechar pedido',
+            description: 'No Mapa Comparativo você pode fechar com um único fornecedor ou dividir o pedido entre vários (item a item). Após fechar, a cotação vira pedido confirmado e os fornecedores escolhidos são notificados.',
+            placement: 'center',
+        },
+
+        // Aba Oportunidades
+        {
+            requireTab: 'oportunidades',
+            selector: '[data-tour="tab-oportunidades"]',
+            title: 'Aba: Oportunidades',
+            description: 'Promoções e ofertas especiais publicadas pelos fornecedores específicas para sua obra e região.',
+            placement: 'bottom',
+        },
+        {
+            requireTab: 'oportunidades',
+            selector: '[data-tour="cliente-oportunidades-header"]',
+            title: 'Oportunidades • Como funciona',
+            description: 'Passo 1: selecione a obra para a qual quer ver ofertas. Passo 2: o sistema filtra automaticamente as promoções dos fornecedores da região, dos materiais relevantes para as etapas da sua obra.',
+            placement: 'bottom',
+        },
+        {
+            requireTab: 'oportunidades',
+            title: 'Oportunidades • Aproveitar uma oferta',
+            description: 'Cada oferta mostra fornecedor, material, preço promocional e validade. Você pode clicar para criar uma cotação direta com aquele fornecedor ou simplesmente usar a oferta como referência em outras cotações.',
+            placement: 'center',
+        },
+
+        {
+            title: 'Pronto para começar!',
+            description: 'Você pode reabrir este tour a qualquer momento clicando no botão "Tour guiado" no topo do painel. Boa obra!',
+            placement: 'center',
+        },
+    ];
+
     useEffect(() => {
         if (!initialized) return;
 
@@ -149,20 +394,23 @@ function ClienteDashboardContent() {
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-900">
+            <div data-tour="cliente-header">
             <DashboardHeader
                 currentRole="cliente"
                 availableRoles={userRoles}
                 userName={userName}
                 userInitial={userInitial}
             />
+            </div>
 
             {/* Tabs Header */}
-            <div className="bg-white border-b border-slate-200/80">
-                <div className="section-shell">
-                    <nav className="flex space-x-6 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="bg-white border-b border-slate-200/80" data-tour="cliente-tabs">
+                <div className="section-shell flex items-center justify-between gap-4">
+                    <nav className="flex space-x-6 overflow-x-auto scrollbar-hide flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
                         {tabs.map((item) => (
                             <button
                                 key={item.id}
+                                data-tour={`tab-${item.id}`}
                                 onClick={() => setTab(item.id)}
                                 className={`tab-button ${tab === item.id
                                     ? 'border-blue-600 text-blue-700'
@@ -173,6 +421,17 @@ function ClienteDashboardContent() {
                             </button>
                         ))}
                     </nav>
+                    <button
+                        type="button"
+                        onClick={() => setTourOpen(true)}
+                        className="hidden md:inline-flex shrink-0 items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition"
+                        aria-label="Iniciar tour guiado"
+                    >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 22a10 10 0 100-20 10 10 0 000 20z" />
+                        </svg>
+                        Tour guiado
+                    </button>
                 </div>
             </div>
 
@@ -181,7 +440,7 @@ function ClienteDashboardContent() {
 
                 {/* Stats Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div className="card-elevated p-6">
+                    <div className="card-elevated p-6" data-tour="cliente-stat-perfis">
                         <div className="flex items-center">
                             <div className="p-2 bg-blue-100 rounded-lg">
                                 <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -195,7 +454,7 @@ function ClienteDashboardContent() {
                         </div>
                     </div>
 
-                    <div className="card-elevated p-6">
+                    <div className="card-elevated p-6" data-tour="cliente-stat-obras">
                         <div className="flex items-center">
                             <div className="p-2 bg-green-100 rounded-lg">
                                 <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -209,7 +468,7 @@ function ClienteDashboardContent() {
                         </div>
                     </div>
 
-                    <div className="card-elevated p-6">
+                    <div className="card-elevated p-6" data-tour="cliente-stat-cotacoes">
                         <div className="flex items-center">
                             <div className="p-2 bg-purple-100 rounded-lg">
                                 <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -223,7 +482,7 @@ function ClienteDashboardContent() {
                         </div>
                     </div>
 
-                    <div className="card-elevated p-6">
+                    <div className="card-elevated p-6" data-tour="cliente-stat-pedidos">
                         <div className="flex items-center">
                             <div className="p-2 bg-orange-100 rounded-lg">
                                 <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -266,6 +525,14 @@ function ClienteDashboardContent() {
             />
 
             <ChatNotificationListener />
+
+            <SupplierTour
+                open={tourOpen}
+                steps={tourSteps}
+                onClose={() => setTourOpen(false)}
+                onChangeTab={(t) => setTab(t as TabId)}
+                storageKey="clientTourSeen_v2"
+            />
         </div>
     );
 }
