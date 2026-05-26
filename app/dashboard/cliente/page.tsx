@@ -384,7 +384,7 @@ function ClienteDashboardContent() {
             case "cotacao":
                 return <ClientSolicitationSection />;
             case "pedidos":
-                return <ClientOrderSection />;
+                return <ClientOrderSection onCreateQuotation={() => setTab("cotacao")} />;
             case "oportunidades":
                 return <ClientOpportunitiesSection />;
             default:

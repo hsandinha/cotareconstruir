@@ -11,6 +11,7 @@ export function FornecedorRecadastroEmail({ logoUrl, recipientEmail, temporaryPa
 
     return (
         <html lang="pt-BR">
+            {/* eslint-disable-next-line @next/next/no-head-element -- e-mail HTML real, não página Next; <Head/> não se aplica */}
             <head>
                 <meta charSet="UTF-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1.0" />

@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
             // List all cotações for this user with proposal counts
             const { data, error } = await supabaseAdmin
                 .from('cotacoes')
-                .select('*, cotacao_itens(id)')
+                .select('*, cotacao_itens(id, grupo)')
                 .eq('user_id', user.id)
                 .order('created_at', { ascending: false });
 
@@ -98,19 +98,25 @@ export async function GET(req: NextRequest) {
                 return NextResponse.json({ error: error.message }, { status: 500 });
             }
 
-            // Enrich with proposal count for each cotação
+            // Enrich with proposal count and best (lowest) proposal value for each cotação
             const cotacaoIds = (data || []).map(c => c.id);
             let propostaCounts: Record<string, number> = {};
+            const melhorProposta: Record<string, number> = {};
 
             if (cotacaoIds.length > 0) {
-                // Fetch proposal counts grouped by cotacao_id
+                // Fetch proposal counts and values grouped by cotacao_id
                 const { data: propostasData } = await supabaseAdmin
                     .from('propostas')
-                    .select('cotacao_id')
+                    .select('cotacao_id, valor_total')
                     .in('cotacao_id', cotacaoIds);
 
                 (propostasData || []).forEach(p => {
                     propostaCounts[p.cotacao_id] = (propostaCounts[p.cotacao_id] || 0) + 1;
+                    const valor = Number(p.valor_total);
+                    if (Number.isFinite(valor) && valor > 0) {
+                        const atual = melhorProposta[p.cotacao_id];
+                        if (atual === undefined || valor < atual) melhorProposta[p.cotacao_id] = valor;
+                    }
                 });
             }
 
@@ -118,7 +124,11 @@ export async function GET(req: NextRequest) {
                 ...c,
                 propostas_count: c.status === 'fechada'
                     ? (c.total_propostas_recebidas || propostaCounts[c.id] || 0)
-                    : (propostaCounts[c.id] || 0)
+                    : (propostaCounts[c.id] || 0),
+                melhor_proposta: melhorProposta[c.id] ?? null,
+                grupos: [...new Set(((c.cotacao_itens || []) as any[])
+                    .map(i => (i.grupo || '').trim())
+                    .filter(Boolean))]
             }));
 
             return NextResponse.json({ data: enrichedData });
@@ -251,6 +261,40 @@ export async function POST(req: NextRequest) {
 
         const body = await req.json();
         const { action } = body;
+
+        if (action === 'cancel-order') {
+            const { cotacaoId } = body;
+            if (!cotacaoId) {
+                return NextResponse.json({ error: 'cotacaoId é obrigatório' }, { status: 400 });
+            }
+
+            // Verifica posse e status atual
+            const { data: cot, error: cotErr } = await supabaseAdmin
+                .from('cotacoes')
+                .select('id, status')
+                .eq('id', cotacaoId)
+                .eq('user_id', user.id)
+                .single();
+
+            if (cotErr || !cot) {
+                return NextResponse.json({ error: 'Pedido não encontrado.' }, { status: 404 });
+            }
+            if (cot.status === 'fechada' || cot.status === 'cancelada') {
+                return NextResponse.json({ error: 'Este pedido não pode ser cancelado.' }, { status: 400 });
+            }
+
+            const { error: upErr } = await supabaseAdmin
+                .from('cotacoes')
+                .update({ status: 'cancelada' })
+                .eq('id', cotacaoId)
+                .eq('user_id', user.id);
+
+            if (upErr) {
+                return NextResponse.json({ error: upErr.message }, { status: 500 });
+            }
+
+            return NextResponse.json({ success: true });
+        }
 
         if (action === 'finalize-order') {
             const { cotacaoId, obraId, itemsBySupplier, proposals: proposalsData } = body;

@@ -114,7 +114,6 @@ export function SupplierTour({ open, steps, onClose, onChangeTab, storageKey }: 
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, index, steps.length]);
 
     const next = () => {

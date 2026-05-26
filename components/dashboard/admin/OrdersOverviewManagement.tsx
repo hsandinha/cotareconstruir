@@ -141,7 +141,6 @@ export default function OrdersOverviewManagement() {
 
     useEffect(() => {
         fetchPedidos();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filterFornecedorId]);
 
     const filteredPedidos = useMemo(() => {
