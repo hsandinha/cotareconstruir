@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveSupplierAccess } from '@/lib/supplierAccessServer';
 
@@ -82,19 +83,21 @@ export async function GET(req: NextRequest) {
         }
         const fornecedorId = resolvedAccess.fornecedorId;
 
-        // Get fornecedor data (status, regioes_atendimento)
+        // Get fornecedor data (status, regioes_atendimento, apenas_materiais_ativos)
         let fornecedorStatus = 'ativo';
         let regioes: string[] = [];
+        let apenasMateriaisAtivos = false;
 
         if (fornecedorId) {
             const { data: fornecedor } = await supabaseAdmin
                 .from('fornecedores')
-                .select('status, regioes_atendimento')
+                .select('status, regioes_atendimento, apenas_materiais_ativos')
                 .eq('id', fornecedorId)
                 .single();
 
             if (fornecedor) {
                 fornecedorStatus = fornecedor.status || 'ativo';
+                apenasMateriaisAtivos = !!fornecedor.apenas_materiais_ativos;
                 const rawRegioes = fornecedor.regioes_atendimento;
                 if (Array.isArray(rawRegioes)) {
                     regioes = rawRegioes.map((r: string) => String(r || '').toLowerCase()).filter(Boolean);
@@ -330,6 +333,55 @@ export async function GET(req: NextRequest) {
             }
         }
 
+        // ========================================================
+        // 7. Preferência "apenas materiais ativos":
+        //    - Marca cada item da cotação com `_inativo_para_fornecedor`
+        //    - Remove cotações em que TODOS os itens estão inativos
+        // ========================================================
+        if (apenasMateriaisAtivos && cotacoes.length > 0) {
+            const { data: fmRows } = await supabaseAdmin
+                .from('fornecedor_materiais')
+                .select('material_id, ativo')
+                .eq('fornecedor_id', fornecedorId)
+                .eq('ativo', true);
+            const activeMaterialIds = new Set(
+                (fmRows || []).map((r: any) => r.material_id).filter(Boolean)
+            );
+
+            cotacoes = cotacoes.filter((cotacao: any) => {
+                const items = cotacao.cotacao_itens || [];
+                let temAtivo = false;
+                for (const item of items) {
+                    const inativo = !item.material_id || !activeMaterialIds.has(item.material_id);
+                    item._inativo_para_fornecedor = inativo;
+                    if (!inativo) temAtivo = true;
+                }
+                return temAtivo;
+            });
+        } else {
+            for (const cotacao of cotacoes) {
+                for (const item of (cotacao.cotacao_itens || [])) {
+                    item._inativo_para_fornecedor = false;
+                }
+            }
+        }
+
+        // Mark cotações as "visualizado" by this supplier (first time it shows up
+        // in the inbox). Powers the admin "Acompanhamento de Pedidos" view.
+        try {
+            const visibleIds = cotacoes.map(c => c.id);
+            if (visibleIds.length > 0) {
+                await supabaseAdmin
+                    .from('cotacao_convites')
+                    .update({ visualizado_em: new Date().toISOString() })
+                    .eq('fornecedor_id', fornecedorId)
+                    .in('cotacao_id', visibleIds)
+                    .is('visualizado_em', null);
+            }
+        } catch (viewErr) {
+            console.error('Erro ao marcar visualizacao do convite:', viewErr);
+        }
+
         return NextResponse.json({
             data: cotacoes,
             fornecedor_id: fornecedorId,
@@ -465,6 +517,7 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: 'Nenhum item com grupo de insumo válido para gerar solicitações.' }, { status: 400 });
             }
 
+            const pedidoGeralId = randomUUID();
             const createdCotacoes: any[] = [];
             for (const grouped of groupedItems.values()) {
                 const groupObservacaoPrefix = `[GRUPO=${grouped.groupName}]`;
@@ -480,6 +533,7 @@ export async function POST(req: NextRequest) {
                         status: 'enviada',
                         data_envio: new Date().toISOString(),
                         observacoes: observacoesComGrupo,
+                        pedido_geral_id: pedidoGeralId,
                     })
                     .select()
                     .single();
@@ -522,6 +576,9 @@ export async function POST(req: NextRequest) {
                     group_id: grouped.groupId,
                     group_name: grouped.groupName,
                     items_count: grouped.items.length,
+                    cotacao_itens_material_ids: grouped.items
+                        .map((it: any) => it.material_id)
+                        .filter(Boolean),
                 });
             }
 
@@ -534,7 +591,7 @@ export async function POST(req: NextRequest) {
                     const [suppliersRes, supplierGroupRes] = await Promise.all([
                         supabaseAdmin
                             .from('fornecedores')
-                            .select('id, regioes_atendimento')
+                            .select('id, regioes_atendimento, apenas_materiais_ativos')
                             .eq('status', 'active'),
                         createdGroupIds.length > 0
                             ? supabaseAdmin
@@ -553,7 +610,9 @@ export async function POST(req: NextRequest) {
                         }
 
                         const matchedSupplierIds = new Set<string>();
+                        const supplierApenasAtivos = new Map<string, boolean>();
                         for (const supplier of (suppliersRes.data || [])) {
+                            supplierApenasAtivos.set(supplier.id, !!supplier.apenas_materiais_ativos);
                             const inRegion = supplier.regioes_atendimento?.some((r: string) => r.toLowerCase().includes(cityName));
                             if (!inRegion) continue;
 
@@ -573,7 +632,62 @@ export async function POST(req: NextRequest) {
                             }
                         }
 
-                        suppliersNotified = matchedSupplierIds.size;
+                        // Para fornecedores que optaram por "apenas materiais ativos",
+                        // restringe os convites a cotações que contenham AO MENOS
+                        // 1 material ativo da lista deles.
+                        const optInSupplierIds = [...matchedSupplierIds].filter(
+                            (sid) => supplierApenasAtivos.get(sid)
+                        );
+                        const activeMaterialsBySupplier = new Map<string, Set<string>>();
+                        if (optInSupplierIds.length > 0) {
+                            const { data: fmRows } = await supabaseAdmin
+                                .from('fornecedor_materiais')
+                                .select('fornecedor_id, material_id, ativo')
+                                .in('fornecedor_id', optInSupplierIds)
+                                .eq('ativo', true);
+                            for (const row of (fmRows || [])) {
+                                const set = activeMaterialsBySupplier.get(row.fornecedor_id) || new Set<string>();
+                                set.add(row.material_id);
+                                activeMaterialsBySupplier.set(row.fornecedor_id, set);
+                            }
+                        }
+
+                        // Persist invites: link each created cotacao with each matching supplier
+                        // (by group). This powers the admin "Acompanhamento de Pedidos" view.
+                        try {
+                            const conviteRows: Array<{ cotacao_id: string; fornecedor_id: string }> = [];
+                            const invitedSupplierIds = new Set<string>();
+                            for (const cot of createdCotacoes) {
+                                if (!cot.group_id) continue;
+                                const cotMaterialIds = (cot.cotacao_itens_material_ids
+                                    || (Array.isArray((cot as any)._materialIds) ? (cot as any)._materialIds : [])) as string[];
+                                for (const supplierId of matchedSupplierIds) {
+                                    const groups = supplierToGroupIds.get(supplierId);
+                                    if (!groups || !groups.has(cot.group_id)) continue;
+
+                                    // Se o fornecedor optou por receber só dos ativos,
+                                    // verifica se pelo menos 1 item desta cotação está ativo
+                                    if (supplierApenasAtivos.get(supplierId)) {
+                                        const activeSet = activeMaterialsBySupplier.get(supplierId);
+                                        const hasAny = cotMaterialIds.some(
+                                            (mid: string) => mid && activeSet?.has(mid)
+                                        );
+                                        if (!hasAny) continue;
+                                    }
+
+                                    conviteRows.push({ cotacao_id: cot.id, fornecedor_id: supplierId });
+                                    invitedSupplierIds.add(supplierId);
+                                }
+                            }
+                            suppliersNotified = invitedSupplierIds.size;
+                            if (conviteRows.length > 0) {
+                                await supabaseAdmin
+                                    .from('cotacao_convites')
+                                    .upsert(conviteRows, { onConflict: 'cotacao_id,fornecedor_id', ignoreDuplicates: true });
+                            }
+                        } catch (inviteErr) {
+                            console.error('Erro ao persistir convites de cotação:', inviteErr);
+                        }
                     }
                 }
             } catch (notifyErr) {

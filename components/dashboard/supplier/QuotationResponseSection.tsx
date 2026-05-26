@@ -25,9 +25,10 @@ interface SupplierQuotationResponseSectionProps {
     mode?: 'create' | 'update';
     onUpdate?: () => Promise<void>;
     fornecedorId?: string | null;
+    filterOnlyActiveItems?: boolean;
 }
 
-export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'create', onUpdate, fornecedorId }: SupplierQuotationResponseSectionProps) {
+export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'create', onUpdate, fornecedorId, filterOnlyActiveItems = false }: SupplierQuotationResponseSectionProps) {
     const { showToast } = useToast();
     const { user, profile, session } = useAuth();
     const [responses, setResponses] = useState<{ [key: string]: { preco: string, disponibilidade: string } }>({});
@@ -40,6 +41,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
     const [loading, setLoading] = useState(false);
     const [importingCsv, setImportingCsv] = useState(false);
     const [exportingCsv, setExportingCsv] = useState(false);
+    const [inactiveItemsModal, setInactiveItemsModal] = useState<any[] | null>(null);
     const csvInputRef = useRef<HTMLInputElement | null>(null);
 
     // Extract resumo outside useEffect so it's accessible in JSX
@@ -524,7 +526,11 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                         <h4 className="text-sm font-semibold text-gray-900">Itens para Cotação</h4>
                         <p className="text-xs text-gray-500 mt-0.5">Preencha preço e disponibilidade para cada item</p>
                     </div>
-                    <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">{quotation.items?.length || 0} {quotation.items?.length === 1 ? 'item' : 'itens'}</span>
+                    <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">
+                        {filterOnlyActiveItems
+                            ? `${(quotation.items || []).filter((item: any) => !item._inativo_para_fornecedor).length} ${(quotation.items || []).filter((item: any) => !item._inativo_para_fornecedor).length === 1 ? 'item' : 'itens'} ativos`
+                            : `${(quotation.items || []).length} ${(quotation.items || []).length === 1 ? 'item' : 'itens'}`}
+                    </span>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
@@ -539,7 +545,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-100">
-                            {quotation.items && quotation.items.map((item: any) => {
+                            {quotation.items && (filterOnlyActiveItems ? quotation.items.filter((item: any) => !item._inativo_para_fornecedor) : quotation.items).map((item: any) => {
                                 const response = responses[item.id] || { preco: '', disponibilidade: '' };
                                 const subtotal = response.preco ? (parseFloat(response.preco) * item.quantidade).toFixed(2) : '0.00';
                                 const dispColor = response.disponibilidade === 'disponivel'
@@ -553,7 +559,9 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                                 return (
                                     <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
                                         <td className="px-4 py-3 text-sm text-gray-900">
-                                            <div className="font-medium">{item.descricao}</div>
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="font-medium">{item.descricao}</span>
+                                            </div>
                                             {item.observacao && (
                                                 <div className="text-xs text-gray-400 mt-0.5">{item.observacao}</div>
                                             )}
@@ -598,6 +606,24 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                         </tfoot>
                     </table>
                 </div>
+
+                {/* Aviso de Itens Inativos */}
+                {filterOnlyActiveItems && (() => {
+                    const inactiveItems = (quotation.items || []).filter((item: any) => item._inativo_para_fornecedor);
+                    return inactiveItems.length > 0 ? (
+                        <div className="px-4 py-4 border-t border-gray-200 bg-orange-50">
+                            <button
+                                onClick={() => setInactiveItemsModal(inactiveItems)}
+                                className="flex items-center gap-2 text-sm font-medium text-orange-700 bg-white hover:bg-orange-100 border border-orange-200 rounded-md px-3 py-2 transition-colors"
+                            >
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                                ⚠️ Você tem {inactiveItems.length} item{inactiveItems.length !== 1 ? 'ns' : ''} inativo{inactiveItems.length !== 1 ? 's' : ''} que não estão em seu catálogo
+                            </button>
+                        </div>
+                    ) : null;
+                })()}
             </div>
 
             <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -752,6 +778,81 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                     )}
                 </button>
             </div>
+
+            {/* Modal de Itens Inativos */}
+            {inactiveItemsModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
+                        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-900">Itens que Você Não Tem em Catálogo</h3>
+                                <p className="text-sm text-gray-600 mt-1">
+                                    Estes itens não fazem parte de seus materiais ativos. Para fornecê-los, configure-os em "Cadastro de Materiais".
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setInactiveItemsModal(null)}
+                                className="text-gray-400 hover:text-gray-600 text-2xl"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="px-6 py-4 max-h-96 overflow-y-auto">
+                            {inactiveItemsModal.length === 0 ? (
+                                <p className="text-center text-gray-500 py-8">
+                                    Nenhum item inativo encontrado
+                                </p>
+                            ) : (
+                                <div className="space-y-3">
+                                    {inactiveItemsModal.map((item, idx) => (
+                                        <div key={item.id || idx} className="p-4 border border-orange-200 bg-orange-50 rounded-lg">
+                                            <div className="flex items-start justify-between">
+                                                <div className="flex-1">
+                                                    <h4 className="font-medium text-gray-900">{item.descricao}</h4>
+                                                    {item.observacao && (
+                                                        <p className="text-xs text-gray-600 mt-1">{item.observacao}</p>
+                                                    )}
+                                                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-gray-700">
+                                                        <div>
+                                                            <span className="font-medium">Quantidade:</span> {item.quantidade}
+                                                        </div>
+                                                        <div>
+                                                            <span className="font-medium">Unidade:</span> {item.unidade}
+                                                        </div>
+                                                        {item.grupo && (
+                                                            <div>
+                                                                <span className="font-medium">Grupo:</span> {item.grupo}
+                                                            </div>
+                                                        )}
+                                                        {item.fase_nome && (
+                                                            <div>
+                                                                <span className="font-medium">Fase:</span> {item.fase_nome}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 ml-3 whitespace-nowrap">
+                                                    Não Disponível
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
+                            <button
+                                onClick={() => setInactiveItemsModal(null)}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                            >
+                                Fechar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

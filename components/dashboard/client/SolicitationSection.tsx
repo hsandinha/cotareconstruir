@@ -18,7 +18,7 @@ import {
     Package, Plus, Trash2, ShoppingCart, Building2, Send, Search, Check,
     AlertCircle, Loader2, ChevronRight, Sparkles, ArrowRight, X, Tag,
     FileText, Scale, MessageSquare, Boxes, CheckCircle2, ChevronDown,
-    Calendar, Clock, Layers, Zap, Filter, Download, Upload
+    Calendar, Clock, Layers, Zap, Filter, Download, Upload, RotateCcw
 } from "lucide-react";
 
 // Helper para obter headers com token (com fallback para localStorage)
@@ -116,12 +116,25 @@ interface RemoteSearchCacheEntry {
     hasMore: boolean;
 }
 
+// Chave para persistir o rascunho do carrinho entre sessões/reloads
+const DRAFT_STORAGE_KEY = "cotacao_carrinho_rascunho_v1";
+
 export function ClientSolicitationSection() {
     const { showToast } = useToast();
     const { user, initialized } = useAuth();
 
     // Estados principais
     const [items, setItems] = useState<CartItem[]>([]);
+    // Feedback ao adicionar, desfazer remoção e persistência de rascunho
+    const [recentlyAddedId, setRecentlyAddedId] = useState<number | null>(null);
+    const [cartBump, setCartBump] = useState(false);
+    const [lastRemoved, setLastRemoved] = useState<{ item: CartItem; index: number } | null>(null);
+    const [draftRestored, setDraftRestored] = useState(false);
+    const recentlyAddedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const cartBumpTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const draftHydratedRef = useRef(false);
+    const autoExpandedObraRef = useRef<string | null>(null);
     const [obras, setObras] = useState<Obra[]>([]);
     const [selectedObraId, setSelectedObraId] = useState<string>("");
     const [obraEtapas, setObraEtapas] = useState<ObraEtapa[]>([]);
@@ -145,6 +158,8 @@ export function ClientSolicitationSection() {
     const [success, setSuccess] = useState(false);
     const [successMeta, setSuccessMeta] = useState<{ cotacoes: number; grupos: number } | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
+    const [phaseFilter, setPhaseFilter] = useState("");
+    const [mobileCartOpen, setMobileCartOpen] = useState(false);
     const [remoteMaterials, setRemoteMaterials] = useState<Material[]>([]);
     const [isSearchingRemote, setIsSearchingRemote] = useState(false);
     const [isLoadingMoreRemote, setIsLoadingMoreRemote] = useState(false);
@@ -155,6 +170,20 @@ export function ClientSolicitationSection() {
     const [searchDropdownRect, setSearchDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
     const [uploadingList, setUploadingList] = useState(false);
     const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+    const [importMenuOpen, setImportMenuOpen] = useState(false);
+    const importMenuRef = useRef<HTMLDivElement | null>(null);
+
+    // Solicitação de novo material (envia para aprovação do admin)
+    const [showRequestMaterialModal, setShowRequestMaterialModal] = useState(false);
+    const [requestMaterialForm, setRequestMaterialForm] = useState({
+        nome: "",
+        unidade: "unid",
+        descricao: "",
+        grupo_sugerido: "",
+    });
+    const [requestMaterialSubmitting, setRequestMaterialSubmitting] = useState(false);
+    const [requestMaterialSimilares, setRequestMaterialSimilares] = useState<Array<{ id: string; nome: string; unidade: string; similarity: number }>>([]);
+    const [requestMaterialForce, setRequestMaterialForce] = useState(false);
 
     // Formulário de item manual
     const [form, setForm] = useState({
@@ -294,6 +323,25 @@ export function ClientSolicitationSection() {
     };
 
     // Carregar dados iniciais
+    // Fecha o menu "Importar" ao clicar fora ou pressionar ESC
+    useEffect(() => {
+        if (!importMenuOpen) return;
+        const onDown = (e: MouseEvent) => {
+            if (importMenuRef.current && !importMenuRef.current.contains(e.target as Node)) {
+                setImportMenuOpen(false);
+            }
+        };
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setImportMenuOpen(false);
+        };
+        document.addEventListener('mousedown', onDown);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('mousedown', onDown);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, [importMenuOpen]);
+
     useEffect(() => {
         if (!initialized || !user) return;
 
@@ -451,6 +499,50 @@ export function ClientSolicitationSection() {
         return map;
     }, [validEtapasForQuotation, servicos]);
 
+    // Resumo por etapa: nº de grupos com materiais e nº de materiais distintos
+    const etapaResumo = useMemo(() => {
+        const map = new Map<string, { materiais: number; grupos: number }>();
+        for (const etapa of validEtapasForQuotation) {
+            const grupoIds = groupIdsByEtapa.get(etapa.id) || new Set<string>();
+            const materiaisIds = new Set<string>();
+            let gruposComMateriais = 0;
+            for (const grupo of grupos) {
+                if (!grupoIds.has(grupo.id)) continue;
+                const matsDoGrupo = materiais.filter(m => m.gruposInsumoIds.includes(grupo.id));
+                if (matsDoGrupo.length > 0) {
+                    gruposComMateriais += 1;
+                    matsDoGrupo.forEach(m => materiaisIds.add(m.id));
+                }
+            }
+            map.set(etapa.id, { materiais: materiaisIds.size, grupos: gruposComMateriais });
+        }
+        return map;
+    }, [validEtapasForQuotation, groupIdsByEtapa, grupos, materiais]);
+
+    // Árvore de fases já filtrada pelo termo do filtro inline (modo Navegar por Fases)
+    const isPhaseFilterActive = phaseFilter.trim().length > 0;
+    const phaseTree = useMemo(() => {
+        const term = phaseFilter.trim().toLowerCase();
+        const active = term.length > 0;
+        return validEtapasForQuotation
+            .map(etapa => {
+                const grupoIds = groupIdsByEtapa.get(etapa.id) || new Set<string>();
+                const gruposView = grupos
+                    .filter(g => grupoIds.has(g.id))
+                    .map(grupo => ({
+                        grupo,
+                        materiaisDoGrupo: materiais.filter(m =>
+                            m.gruposInsumoIds.includes(grupo.id) &&
+                            (!active || m.nome.toLowerCase().includes(term))
+                        ),
+                    }))
+                    .filter(gv => gv.materiaisDoGrupo.length > 0);
+                const totalMateriais = gruposView.reduce((acc, gv) => acc + gv.materiaisDoGrupo.length, 0);
+                return { etapa, gruposView, totalMateriais };
+            })
+            .filter(ev => !active || ev.totalMateriais > 0);
+    }, [validEtapasForQuotation, groupIdsByEtapa, grupos, materiais, phaseFilter]);
+
     // Itens agrupados por categoria
     const groupedItems = useMemo(() => {
         const groups: Record<string, CartItem[]> = {};
@@ -462,6 +554,144 @@ export function ClientSolicitationSection() {
         });
         return groups;
     }, [items]);
+
+    // Restaura o rascunho salvo localmente (uma vez, ao montar)
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+            if (raw) {
+                const draft = JSON.parse(raw) as { obraId?: string; items?: CartItem[] };
+                if (Array.isArray(draft?.items) && draft.items.length > 0) {
+                    setItems(draft.items);
+                    if (draft.obraId) setSelectedObraId(draft.obraId);
+                    setDraftRestored(true);
+                }
+            }
+        } catch {
+            /* rascunho corrompido ou storage indisponível: ignora */
+        }
+        draftHydratedRef.current = true;
+    }, []);
+
+    // Persiste o rascunho enquanto o usuário monta a cotação
+    useEffect(() => {
+        if (!draftHydratedRef.current) return;
+        try {
+            if (items.length === 0) {
+                localStorage.removeItem(DRAFT_STORAGE_KEY);
+            } else {
+                localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ obraId: selectedObraId, items }));
+            }
+        } catch {
+            /* storage indisponível: segue sem persistir */
+        }
+    }, [items, selectedObraId]);
+
+    // Abre automaticamente a fase atual (uma vez por obra) para o usuário já cair pronto pra agir
+    useEffect(() => {
+        if (!selectedObraId || validEtapasForQuotation.length === 0) return;
+        if (autoExpandedObraRef.current === selectedObraId) return;
+        autoExpandedObraRef.current = selectedObraId;
+        const faseAtual = validEtapasForQuotation.find(e => e.nome === selectedObra?.etapa);
+        const alvo = faseAtual || validEtapasForQuotation[0];
+        if (alvo) setExpandedFases(prev => new Set(prev).add(alvo.id));
+    }, [selectedObraId, validEtapasForQuotation, selectedObra]);
+
+    // Limpa timeouts pendentes ao desmontar
+    useEffect(() => {
+        return () => {
+            if (recentlyAddedTimeoutRef.current) clearTimeout(recentlyAddedTimeoutRef.current);
+            if (cartBumpTimeoutRef.current) clearTimeout(cartBumpTimeoutRef.current);
+            if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+        };
+    }, []);
+
+    // Realça o item recém-adicionado e dá um "pulse" no contador do carrinho
+    const flashCartFeedback = (itemId: number) => {
+        setRecentlyAddedId(itemId);
+        setCartBump(true);
+        if (recentlyAddedTimeoutRef.current) clearTimeout(recentlyAddedTimeoutRef.current);
+        if (cartBumpTimeoutRef.current) clearTimeout(cartBumpTimeoutRef.current);
+        recentlyAddedTimeoutRef.current = setTimeout(() => setRecentlyAddedId(null), 1400);
+        cartBumpTimeoutRef.current = setTimeout(() => setCartBump(false), 350);
+    };
+
+    // Descarta o rascunho restaurado e zera o carrinho
+    const discardDraft = () => {
+        setItems([]);
+        setSelectedObraId("");
+        setDraftRestored(false);
+        try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* ignora */ }
+    };
+
+    // Reinsere o último item removido na mesma posição
+    const undoRemove = () => {
+        if (!lastRemoved) return;
+        const { item, index } = lastRemoved;
+        setItems(prev => {
+            const copy = [...prev];
+            copy.splice(Math.min(index, copy.length), 0, item);
+            return copy;
+        });
+        setLastRemoved(null);
+        if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+    };
+
+    // Fecha o carrinho mobile ao sair da etapa de seleção de itens
+    useEffect(() => {
+        if (step !== 2) setMobileCartOpen(false);
+    }, [step]);
+
+    // Lista do carrinho agrupada por grupo (reutilizada no rail desktop e no bottom-sheet mobile)
+    const renderCartGroups = () => (
+        <>
+            {Object.entries(groupedItems).map(([grupo, grupoItems]) => (
+                <div key={grupo} className="border-b border-slate-100 last:border-0">
+                    {/* Cabeçalho do grupo (fixo ao rolar) */}
+                    <div className="sticky top-0 z-10 flex items-center justify-between gap-2 bg-slate-50/95 backdrop-blur px-3 py-1.5 border-b border-slate-100">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                            <Boxes className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500 truncate">{grupo}</span>
+                        </div>
+                        <span className="shrink-0 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 tabular-nums">
+                            {grupoItems.length}
+                        </span>
+                    </div>
+                    {/* Itens do grupo */}
+                    <div className="divide-y divide-slate-50">
+                        {grupoItems.map(item => (
+                            <div key={item.id} className={`group flex items-center gap-2 px-3 py-2.5 transition-colors duration-500 ${recentlyAddedId === item.id ? "bg-emerald-50 ring-1 ring-inset ring-emerald-200" : "hover:bg-slate-50"}`}>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-slate-800 truncate">{item.descricao}</p>
+                                    {item.faseNome && (
+                                        <p className="text-[11px] text-slate-400 truncate flex items-center gap-1">
+                                            <Layers className="h-2.5 w-2.5 shrink-0" />
+                                            {item.faseNome}
+                                        </p>
+                                    )}
+                                </div>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    value={item.quantidade}
+                                    onChange={e => updateItemQuantity(item.id, Number(e.target.value))}
+                                    className="w-14 rounded-md border border-slate-200 px-1.5 py-1 text-center text-sm tabular-nums focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                />
+                                <span className="text-[11px] text-slate-400 w-8 truncate">{item.unidade}</span>
+                                <button
+                                    onClick={() => handleRemoveItem(item.id)}
+                                    aria-label="Remover item"
+                                    className="p-1.5 rounded-md text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ))}
+        </>
+    );
 
     // Filtrar materiais na busca
     const filteredMaterials = useMemo(() => {
@@ -622,28 +852,22 @@ export function ClientSolicitationSection() {
                     material: "Cimento CP II 50kg",
                     quantidade: 120,
                     unidade: "sc",
-                    grupo: "Cimento e Concreto",
-                    fornecedor: "",
+                    fabricante: "",
                     observacao: "Entrega em até 3 dias",
-                    material_id: "",
                 },
                 {
                     material: "Areia Média Lavada",
                     quantidade: 20,
                     unidade: "m³",
-                    grupo: "Areia e Brita",
-                    fornecedor: "",
+                    fabricante: "",
                     observacao: "",
-                    material_id: "",
                 },
                 {
                     material: "Tubo PVC 100mm",
                     quantidade: 80,
                     unidade: "m",
-                    grupo: "Hidráulica",
-                    fornecedor: "Tigre",
+                    fabricante: "Tigre",
                     observacao: "",
-                    material_id: "",
                 },
             ];
 
@@ -651,10 +875,8 @@ export function ClientSolicitationSection() {
                 "material",
                 "quantidade",
                 "unidade",
-                "grupo",
-                "fornecedor",
+                "fabricante",
                 "observacao",
-                "material_id",
             ]);
 
             downloadCsvFile("modelo_lista_materiais_cliente.csv", csv);
@@ -714,7 +936,7 @@ export function ClientSolicitationSection() {
                 const rawQuantity = getCsvRowValue(row, ["quantidade", "qtd", "qtde", "volume"]);
                 const rawUnit = getCsvRowValue(row, ["unidade", "unid", "und"]);
                 const rawObservacao = getCsvRowValue(row, ["observacao", "observacoes", "obs"]);
-                const rawFornecedor = getCsvRowValue(row, ["fornecedor", "fabricante", "marca"]);
+                const rawFornecedor = getCsvRowValue(row, ["fabricante", "fornecedor", "marca"]);
 
                 let matchedMaterial: Material | null = null;
                 if (rawMaterialId) {
@@ -783,6 +1005,7 @@ export function ClientSolicitationSection() {
                 : true;
 
             setItems((prev) => replaceExisting ? importedItems : [...prev, ...importedItems]);
+            flashCartFeedback(importedItems[importedItems.length - 1].id);
 
             alert(
                 `Lista importada com sucesso: ${importedItems.length} item(ns) adicionados` +
@@ -857,8 +1080,9 @@ export function ClientSolicitationSection() {
 
     // Adicionar material da árvore
     const addMaterialFromTree = (material: Material, faseNome: string, servicoNome: string, grupoNome: string) => {
+        const newId = Date.now();
         setItems(prev => [...prev, {
-            id: Date.now(),
+            id: newId,
             descricao: material.nome,
             categoria: grupoNome,
             quantidade: 1,
@@ -868,6 +1092,7 @@ export function ClientSolicitationSection() {
             servicoNome,
             materialId: material.id
         }]);
+        flashCartFeedback(newId);
     };
 
     // Adicionar material da busca
@@ -877,8 +1102,9 @@ export function ClientSolicitationSection() {
             showToast("success", "Este material não possui grupo de insumo válido e não pode ser adicionado.");
             return;
         }
+        const newId = Date.now();
         setItems(prev => [...prev, {
-            id: Date.now(),
+            id: newId,
             descricao: material.nome,
             categoria: grupo.nome,
             quantidade: 1,
@@ -886,6 +1112,7 @@ export function ClientSolicitationSection() {
             observacao: "",
             materialId: material.id
         }]);
+        flashCartFeedback(newId);
         setSearchTerm("");
     };
 
@@ -899,10 +1126,12 @@ export function ClientSolicitationSection() {
             return;
         }
 
+        const newId = Date.now();
         setItems(prev => [...prev, {
-            id: Date.now(),
+            id: newId,
             ...form,
         }]);
+        flashCartFeedback(newId);
 
         setForm(prev => ({
             ...prev,
@@ -914,9 +1143,69 @@ export function ClientSolicitationSection() {
         setShowAddForm(false);
     };
 
-    // Remover item
+    // Remover item (mantém referência para permitir Desfazer)
     const handleRemoveItem = (id: number) => {
+        const index = items.findIndex(item => item.id === id);
+        if (index === -1) return;
+        const removed = items[index];
         setItems(prev => prev.filter(item => item.id !== id));
+        setLastRemoved({ item: removed, index });
+        if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+        undoTimeoutRef.current = setTimeout(() => setLastRemoved(null), 5000);
+    };
+
+    // Enviar solicitação de novo material (cliente) para aprovação do admin
+    const submitNewMaterialRequest = async () => {
+        const nome = requestMaterialForm.nome.trim();
+        if (!nome) {
+            showToast("error", "Informe o nome do material.");
+            return;
+        }
+        setRequestMaterialSubmitting(true);
+        try {
+            const headers = await getAuthHeaders();
+            const res = await fetch('/api/material-requests', {
+                method: 'POST',
+                headers,
+                credentials: 'include',
+                body: JSON.stringify({
+                    nome,
+                    unidade: requestMaterialForm.unidade || 'unid',
+                    descricao: requestMaterialForm.descricao,
+                    grupo_sugerido: requestMaterialForm.grupo_sugerido,
+                    tipo_solicitante: 'cliente',
+                    force: requestMaterialForce,
+                    contexto: {
+                        origem: 'cart',
+                        obra_id: selectedObraId || null,
+                    },
+                }),
+            });
+            const json = await res.json();
+            if (res.status === 409 && json?.duplicate) {
+                setRequestMaterialSimilares(json.similares || []);
+                setRequestMaterialForce(true);
+                showToast("info", json.message || "Encontramos material parecido. Confirme para enviar mesmo assim.");
+                return;
+            }
+            if (!res.ok) {
+                throw new Error(json?.error || 'Erro ao enviar solicitação');
+            }
+            if (json.alreadyPending) {
+                showToast("info", "Você já enviou uma solicitação para este material. Aguarde a análise do administrador.");
+            } else {
+                showToast("success", "Solicitação enviada! O administrador irá analisar o novo material.");
+            }
+            setShowRequestMaterialModal(false);
+            setRequestMaterialForce(false);
+            setRequestMaterialSimilares([]);
+            setRequestMaterialForm({ nome: "", unidade: "unid", descricao: "", grupo_sugerido: "" });
+        } catch (e: any) {
+            console.error(e);
+            showToast("error", e?.message || "Erro ao enviar solicitação.");
+        } finally {
+            setRequestMaterialSubmitting(false);
+        }
     };
 
     // Atualizar quantidade do item
@@ -995,6 +1284,7 @@ export function ClientSolicitationSection() {
             setSuccess(true);
             setSuccessMeta({ cotacoes: cotacoesCreated, grupos: gruposCreated });
             setItems([]);
+            setDraftRestored(false);
             setTimeout(() => {
                 setSuccess(false);
                 setSuccessMeta(null);
@@ -1034,27 +1324,56 @@ export function ClientSolicitationSection() {
     }
 
     return (
-        <div className="space-y-7">
+        <div className="space-y-5">
+            {/* Aviso de rascunho retomado */}
+            {draftRestored && items.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                        <RotateCcw className="h-4 w-4 shrink-0 text-blue-600" />
+                        <p className="text-sm text-blue-900">
+                            <span className="font-semibold">Retomamos sua cotação anterior</span>
+                            {" — "}{items.length} {items.length === 1 ? "item" : "itens"} no carrinho.
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {selectedObra && (
+                            <button
+                                onClick={() => { setStep(2); setDraftRestored(false); }}
+                                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                            >
+                                Continuar de onde parei
+                            </button>
+                        )}
+                        <button
+                            onClick={discardDraft}
+                            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-white hover:text-slate-700"
+                        >
+                            Descartar
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Header com Steps */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm" data-tour="cliente-cotacao-steps">
-                <div className="flex flex-wrap items-center justify-between gap-4 mb-7">
+            <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm" data-tour="cliente-cotacao-steps">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
                     <div>
-                        <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-2">
-                            <Sparkles className="w-6 h-6 text-blue-600" />
+                        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                            <Sparkles className="w-5 h-5 text-blue-600" />
                             Nova Cotação
                         </h1>
-                        <p className="text-slate-500 mt-2">Monte sua solicitação por etapas ou busca rápida, com revisão antes do envio.</p>
+                        <p className="text-sm text-slate-500 mt-0.5">Monte sua solicitação por etapas ou busca rápida, com revisão antes do envio.</p>
                     </div>
                     {items.length > 0 && (
-                        <div className="flex items-center gap-2 rounded-full bg-blue-100 px-4 py-2">
-                            <ShoppingCart className="w-5 h-5 text-blue-600" />
-                            <span className="font-semibold text-blue-600">{items.length} {items.length === 1 ? 'item' : 'itens'}</span>
+                        <div className={`flex items-center gap-1.5 rounded-full border px-3 py-1 transition-all duration-300 ${cartBump ? "bg-emerald-50 border-emerald-200 scale-105" : "bg-blue-50 border-blue-100 scale-100"}`}>
+                            <ShoppingCart className={`w-4 h-4 ${cartBump ? "text-emerald-600" : "text-blue-600"}`} />
+                            <span className={`text-sm font-semibold tabular-nums ${cartBump ? "text-emerald-700" : "text-blue-700"}`}>{items.length} {items.length === 1 ? 'item' : 'itens'}</span>
                         </div>
                     )}
                 </div>
 
                 {/* Progress Steps */}
-                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
                     {[
                         { num: 1, label: "Selecionar Obra", icon: Building2 },
                         { num: 2, label: "Adicionar Itens", icon: Package },
@@ -1071,24 +1390,24 @@ export function ClientSolicitationSection() {
                                     (s.num === 2 && !selectedObraId) ||
                                     (s.num === 3 && items.length === 0)
                                 }
-                                className={`flex items-center gap-2 flex-1 min-w-[220px] rounded-xl px-4 py-3 transition-all ${step === s.num
-                                    ? 'bg-blue-600 text-white shadow-lg'
+                                className={`flex items-center gap-2 flex-1 min-w-[180px] rounded-lg px-3 py-2 transition-all ${step === s.num
+                                    ? 'bg-blue-600 text-white shadow-sm'
                                     : step > s.num
-                                        ? 'bg-emerald-100 text-emerald-700'
-                                        : 'bg-slate-100 text-slate-500'
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                        : 'bg-slate-50 text-slate-500 border border-slate-100'
                                     } disabled:cursor-not-allowed disabled:opacity-50`}
                             >
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${step === s.num
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${step === s.num
                                     ? 'bg-white/20 text-white'
                                     : step > s.num
                                         ? 'bg-emerald-500 text-white'
                                         : 'bg-slate-200 text-slate-500'
                                     }`}>
-                                    {step > s.num ? <Check className="w-4 h-4" /> : s.num}
+                                    {step > s.num ? <Check className="w-3.5 h-3.5" /> : s.num}
                                 </div>
                                 <span className="hidden sm:block text-sm font-medium">{s.label}</span>
                             </button>
-                            {i < 2 && <ChevronRight className="w-5 h-5 text-slate-300 mx-1 flex-shrink-0" />}
+                            {i < 2 && <ChevronRight className="w-4 h-4 text-slate-300 mx-0.5 flex-shrink-0" />}
                         </div>
                     ))}
                 </div>
@@ -1169,120 +1488,182 @@ export function ClientSolicitationSection() {
             {/* Step 2: Adicionar Itens */}
             {step === 2 && (
                 <div className="space-y-5">
-                    {/* Obra selecionada */}
-                    <div className="rounded-2xl bg-white border border-slate-200 p-4 flex items-center justify-between shadow-sm transition-all duration-200 hover:shadow-md">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
-                                <Building2 className="w-5 h-5" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Obra selecionada</p>
-                                <p className="font-semibold text-slate-900">{selectedObra?.nome}</p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => setStep(1)}
-                            className="text-sm text-blue-600 hover:underline"
-                        >
-                            Alterar
-                        </button>
-                    </div>
-
-                    {/* Toggle de modo */}
-                    <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 transition-all duration-200">
-                        <div className="flex flex-wrap items-center gap-4">
-                            <span className="text-sm font-semibold text-slate-700">Modo de Cotação:</span>
-                            <div className="flex gap-2 flex-wrap">
+                    {/* Toolbar unificada (Obra + Modo + Ações) */}
+                    <div className="sticky top-2 z-30 rounded-2xl border border-slate-200 bg-white/95 backdrop-blur shadow-sm">
+                        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3">
+                            {/* Obra selecionada */}
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                                    <Building2 className="h-5 w-5" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Obra</p>
+                                    <p className="truncate text-sm font-semibold text-slate-900">{selectedObra?.nome}</p>
+                                </div>
                                 <button
+                                    onClick={() => setStep(1)}
+                                    className="ml-1 rounded-md px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                                >
+                                    Alterar
+                                </button>
+                            </div>
+
+                            {/* Divisor */}
+                            <div className="hidden md:block h-8 w-px bg-slate-200" />
+
+                            {/* Segmented control: modo de cotação */}
+                            <div role="tablist" aria-label="Modo de cotação" className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+                                <button
+                                    role="tab"
+                                    aria-selected={quotationMode === "phases"}
                                     onClick={() => setQuotationMode("phases")}
-                                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${quotationMode === "phases"
-                                        ? "bg-blue-600 text-white shadow-md"
-                                        : "bg-white text-slate-600 hover:bg-slate-50"
+                                    className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${quotationMode === "phases"
+                                        ? "bg-white text-slate-900 shadow-sm"
+                                        : "text-slate-500 hover:text-slate-700"
                                         }`}
                                 >
-                                    <Layers className="w-4 h-4" />
-                                    Navegação por Fases
+                                    <Layers className="h-3.5 w-3.5" />
+                                    Navegar por Fases
                                 </button>
                                 <button
+                                    role="tab"
+                                    aria-selected={quotationMode === "search"}
                                     onClick={() => setQuotationMode("search")}
-                                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${quotationMode === "search"
-                                        ? "bg-blue-600 text-white shadow-md"
-                                        : "bg-white text-slate-600 hover:bg-slate-50"
+                                    className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${quotationMode === "search"
+                                        ? "bg-white text-slate-900 shadow-sm"
+                                        : "text-slate-500 hover:text-slate-700"
                                         }`}
                                 >
-                                    <Search className="w-4 h-4" />
+                                    <Search className="h-3.5 w-3.5" />
                                     Busca Rápida
                                 </button>
                             </div>
-                            <div className="ml-auto flex flex-wrap gap-2">
-                                <button
-                                    onClick={handleDownloadClientTemplate}
-                                    disabled={downloadingTemplate || uploadingList}
-                                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-                                >
-                                    <Download className="w-4 h-4" />
-                                    {downloadingTemplate ? "Gerando modelo..." : "Baixar arquivo modelo"}
-                                </button>
-                                <button
-                                    onClick={openUploadClientListDialog}
-                                    disabled={uploadingList || downloadingTemplate}
-                                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-                                >
-                                    <Upload className="w-4 h-4" />
-                                    {uploadingList ? "Importando lista..." : "Carregar lista (CSV/XLSX)"}
-                                </button>
-                                <input
-                                    ref={uploadListInputRef}
-                                    type="file"
-                                    accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-                                    className="hidden"
-                                    onChange={handleUploadClientList}
-                                />
+
+                            {/* Ações à direita */}
+                            <div className="ml-auto flex items-center gap-2">
+                                {items.length > 0 && (
+                                    <div className="hidden sm:flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 border border-emerald-100">
+                                        <Check className="h-3 w-3" />
+                                        {items.length} {items.length === 1 ? 'item' : 'itens'} no carrinho
+                                    </div>
+                                )}
+                                <div className="relative" ref={importMenuRef}>
+                                    <button
+                                        onClick={() => setImportMenuOpen(o => !o)}
+                                        disabled={uploadingList || downloadingTemplate}
+                                        aria-haspopup="menu"
+                                        aria-expanded={importMenuOpen}
+                                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                                    >
+                                        <Upload className="h-3.5 w-3.5" />
+                                        {uploadingList ? "Importando..." : downloadingTemplate ? "Gerando..." : "Importar lista"}
+                                        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${importMenuOpen ? 'rotate-180' : ''}`} />
+                                    </button>
+                                    {importMenuOpen && (
+                                        <div
+                                            role="menu"
+                                            className="absolute right-0 mt-1.5 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg ring-1 ring-black/5 z-40"
+                                        >
+                                            <button
+                                                role="menuitem"
+                                                onClick={() => { setImportMenuOpen(false); openUploadClientListDialog(); }}
+                                                disabled={uploadingList || downloadingTemplate}
+                                                className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                                            >
+                                                <Upload className="mt-0.5 h-4 w-4 text-blue-600" />
+                                                <div>
+                                                    <p className="text-sm font-semibold text-slate-900">Carregar lista (CSV/XLSX)</p>
+                                                    <p className="text-[11px] text-slate-500">Envie sua planilha com materiais e quantidades.</p>
+                                                </div>
+                                            </button>
+                                            <div className="h-px bg-slate-100" />
+                                            <button
+                                                role="menuitem"
+                                                onClick={() => { setImportMenuOpen(false); handleDownloadClientTemplate(); }}
+                                                disabled={uploadingList || downloadingTemplate}
+                                                className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                                            >
+                                                <Download className="mt-0.5 h-4 w-4 text-slate-600" />
+                                                <div>
+                                                    <p className="text-sm font-semibold text-slate-900">Baixar modelo</p>
+                                                    <p className="text-[11px] text-slate-500">Use o template recomendado: material, quantidade, unidade, fabricante.</p>
+                                                </div>
+                                            </button>
+                                        </div>
+                                    )}
+                                    <input
+                                        ref={uploadListInputRef}
+                                        type="file"
+                                        accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                                        className="hidden"
+                                        onChange={handleUploadClientList}
+                                    />
+                                </div>
                             </div>
                         </div>
-                        <p className="mt-3 text-xs text-slate-500">
-                            Formatos suportados: CSV e XLSX. Campos recomendados no modelo: <span className="font-medium">material, quantidade, unidade, grupo</span>.
-                        </p>
-
-                        {/* Info sobre fases disponíveis */}
-                        {quotationMode === "phases" && (
-                            <div className="mt-3 text-sm text-slate-600">
-                                <span className="font-medium">Fase Atual:</span>{" "}
-                                {selectedObra?.etapa || "Não definida"}
-                                {validEtapasForQuotation.length > 0 ? (
-                                    <span className="ml-4 text-emerald-600">
-                                        ✓ {validEtapasForQuotation.length} etapa(s) disponível(is) para cotação
-                                    </span>
-                                ) : (
-                                    <span className="ml-4 text-amber-600">
-                                        ⚠ Nenhuma etapa dentro do período de cotação
-                                    </span>
-                                )}
-                            </div>
-                        )}
-
-                        {items.length > 0 && (
-                            <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-                                {items.length} item(ns) no carrinho. Continue adicionando ou clique em <span className="font-semibold">Analisar Lista</span>.
-                            </div>
-                        )}
                     </div>
 
-                    <div className="grid grid-cols-1 xl:grid-cols-12 gap-7">
+                    <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
                         {/* Área principal */}
                         <div className="xl:col-span-8">
                             {/* MODO NAVEGAÇÃO POR FASES */}
                             {quotationMode === "phases" && (
-                                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
+                                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                                     <div className="p-6 border-b border-slate-100">
-                                        <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                                            <Layers className="w-5 h-5 text-blue-600" />
-                                            Materiais por Etapas da Obra
-                                        </h2>
-                                        <p className="text-sm text-slate-500 mt-1">
-                                            Expanda a etapa, abra o grupo e adicione os materiais necessários.
-                                        </p>
+                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                            <div>
+                                                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                                    <Layers className="w-5 h-5 text-blue-600" />
+                                                    Materiais por Etapas da Obra
+                                                </h2>
+                                                <p className="text-sm text-slate-500 mt-1">
+                                                    Expanda a etapa, abra o grupo e adicione os materiais necessários.
+                                                </p>
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                {selectedObra?.etapa && (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                                                        <Clock className="h-3 w-3" />
+                                                        Fase atual: {selectedObra.etapa}
+                                                    </span>
+                                                )}
+                                                {validEtapasForQuotation.length > 0 ? (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 border border-emerald-100">
+                                                        <Check className="h-3 w-3" />
+                                                        {validEtapasForQuotation.length} etapa(s) disponível(is)
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 border border-amber-100">
+                                                        <AlertCircle className="h-3 w-3" />
+                                                        Nenhuma etapa no período de cotação
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
+
+                                    {validEtapasForQuotation.length > 0 && (
+                                        <div className="px-4 py-3 border-b border-slate-100">
+                                            <div className="relative">
+                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                                <input
+                                                    value={phaseFilter}
+                                                    onChange={e => setPhaseFilter(e.target.value)}
+                                                    placeholder="Filtrar material nas fases (ex: cimento)..."
+                                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-9 text-sm focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                                />
+                                                {phaseFilter && (
+                                                    <button
+                                                        onClick={() => setPhaseFilter("")}
+                                                        aria-label="Limpar filtro"
+                                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                                                    >
+                                                        <X className="h-4 w-4" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {validEtapasForQuotation.length === 0 ? (
                                         <div className="p-8 text-center">
@@ -1299,52 +1680,79 @@ export function ClientSolicitationSection() {
                                         </div>
                                     ) : (
                                         <div className="divide-y divide-slate-100 max-h-[560px] overflow-y-auto">
-                                            {validEtapasForQuotation.map(etapa => {
+                                            {phaseTree.length === 0 ? (
+                                                <div className="p-8 text-center">
+                                                    <Search className="w-10 h-10 mx-auto text-slate-300 mb-3" />
+                                                    <p className="text-sm font-medium text-slate-600">Nenhum material encontrado para "{phaseFilter}"</p>
+                                                    <button
+                                                        onClick={() => setPhaseFilter("")}
+                                                        className="mt-2 text-xs font-semibold text-blue-600 hover:underline"
+                                                    >
+                                                        Limpar filtro
+                                                    </button>
+                                                </div>
+                                            ) : phaseTree.map(({ etapa, gruposView, totalMateriais }, faseIdx) => {
                                                 const dataPrevista = new Date(etapa.data_prevista);
                                                 const dataInicioCotacao = new Date(dataPrevista);
                                                 dataInicioCotacao.setDate(dataInicioCotacao.getDate() - etapa.dias_antecedencia_cotacao);
-                                                const grupoIdsPermitidos = groupIdsByEtapa.get(etapa.id) || new Set<string>();
-                                                const gruposDaEtapa = grupos.filter(grupo => grupoIdsPermitidos.has(grupo.id));
+                                                const resumo = etapaResumo.get(etapa.id) || { materiais: 0, grupos: 0 };
+                                                const isFaseAtual = !!selectedObra?.etapa && etapa.nome === selectedObra.etapa;
+                                                const faseExpandida = isPhaseFilterActive || expandedFases.has(etapa.id);
+                                                const matsBadge = isPhaseFilterActive ? totalMateriais : resumo.materiais;
+                                                const gruposBadge = isPhaseFilterActive ? gruposView.length : resumo.grupos;
 
                                                 return (
-                                                    <div key={etapa.id} className="bg-white">
+                                                    <div key={etapa.id} className={isFaseAtual ? "bg-blue-50/40" : "bg-white"}>
                                                         {/* Etapa Header */}
                                                         <button
                                                             onClick={() => toggleFase(etapa.id)}
                                                             className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors duration-200"
                                                         >
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                                                                    <Layers className="w-5 h-5" />
+                                                            <div className="flex items-center gap-3 min-w-0">
+                                                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-sm font-bold tabular-nums ${isFaseAtual ? 'bg-blue-100 text-blue-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                                                                    {faseIdx + 1}
                                                                 </div>
-                                                                <div className="text-left">
-                                                                    <p className="font-semibold text-slate-900">{etapa.nome}</p>
-                                                                    <p className="text-xs text-slate-500 flex items-center gap-2">
-                                                                        <Calendar className="w-3 h-3" />
+                                                                <div className="text-left min-w-0">
+                                                                    <p className="font-semibold text-slate-900 flex items-center gap-2 flex-wrap">
+                                                                        {etapa.nome}
+                                                                        {isFaseAtual && (
+                                                                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-700">
+                                                                                <Clock className="h-2.5 w-2.5" /> Fase atual
+                                                                            </span>
+                                                                        )}
+                                                                    </p>
+                                                                    <p className="text-xs text-slate-500 flex items-center gap-1.5 flex-wrap">
+                                                                        <Calendar className="w-3 h-3 shrink-0" />
                                                                         Previsão: {dataPrevista.toLocaleDateString('pt-BR')}
-                                                                        <span className="text-emerald-600 font-medium ml-2">
-                                                                            ✓ Cotações desde {dataInicioCotacao.toLocaleDateString('pt-BR')}
-                                                                        </span>
+                                                                        <span className="text-slate-300">·</span>
+                                                                        <span className="text-slate-400">Cotável desde {dataInicioCotacao.toLocaleDateString('pt-BR')}</span>
                                                                     </p>
                                                                 </div>
                                                             </div>
-                                                            <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${expandedFases.has(etapa.id) ? 'rotate-180' : ''
-                                                                }`} />
+                                                            <div className="flex items-center gap-3 shrink-0">
+                                                                {matsBadge > 0 && (
+                                                                    <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                                                                        <Package className="h-3 w-3 text-slate-400" />
+                                                                        {matsBadge} {matsBadge === 1 ? 'material' : 'materiais'}
+                                                                        <span className="text-slate-300">·</span>
+                                                                        {gruposBadge} {gruposBadge === 1 ? 'grupo' : 'grupos'}
+                                                                    </span>
+                                                                )}
+                                                                <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${faseExpandida ? 'rotate-180' : ''
+                                                                    }`} />
+                                                            </div>
                                                         </button>
 
                                                         {/* Grupos de Materiais da Etapa */}
-                                                        {expandedFases.has(etapa.id) && (
+                                                        {faseExpandida && (
                                                             <div className="pl-4 border-l-2 border-emerald-100 ml-7 mb-4">
-                                                                {gruposDaEtapa.length === 0 ? (
+                                                                {gruposView.length === 0 ? (
                                                                     <p className="text-sm text-slate-400 py-2 px-4">
                                                                         Nenhum grupo de insumo vinculado aos serviços desta etapa.
                                                                     </p>
                                                                 ) : (
-                                                                    gruposDaEtapa.map(grupo => {
-                                                                        const materiaisDoGrupo = materiais.filter(m =>
-                                                                            m.gruposInsumoIds.includes(grupo.id)
-                                                                        );
-                                                                        if (materiaisDoGrupo.length === 0) return null;
+                                                                    gruposView.map(({ grupo, materiaisDoGrupo }) => {
+                                                                        const grupoExpandido = isPhaseFilterActive || expandedGrupos.has(`${etapa.id}-${grupo.id}`);
 
                                                                         return (
                                                                             <div key={grupo.id} className="mb-2 transition-all duration-200">
@@ -1357,12 +1765,12 @@ export function ClientSolicitationSection() {
                                                                                         {grupo.nome}
                                                                                         <span className="text-xs text-slate-400">({materiaisDoGrupo.length})</span>
                                                                                     </span>
-                                                                                    <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${expandedGrupos.has(`${etapa.id}-${grupo.id}`) ? 'rotate-180' : ''
+                                                                                    <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${grupoExpandido ? 'rotate-180' : ''
                                                                                         }`} />
                                                                                 </button>
 
                                                                                 {/* Materiais do Grupo */}
-                                                                                {expandedGrupos.has(`${etapa.id}-${grupo.id}`) && (
+                                                                                {grupoExpandido && (
                                                                                     <div className="pl-4 space-y-1 mt-1 border-l border-slate-200 ml-4">
                                                                                         {materiaisDoGrupo.map(material => {
                                                                                             const isAdded = items.some(i => i.materialId === material.id && i.faseNome === etapa.nome);
@@ -1408,7 +1816,7 @@ export function ClientSolicitationSection() {
 
                             {/* MODO BUSCA RÁPIDA */}
                             {quotationMode === "search" && (
-                                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
+                                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                                     <div className="p-6 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
                                         <div>
                                             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -1440,7 +1848,28 @@ export function ClientSolicitationSection() {
                                         </div>
 
                                         {searchTerm.trim().length > 0 && filteredMaterials.length === 0 && (
-                                            <p className="mt-2 text-xs text-slate-500">Nenhum material encontrado para "{searchTerm}". Tente termo parcial (ex.: "arei").</p>
+                                            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                                                <p className="text-xs text-amber-800">
+                                                    Nenhum material encontrado para "{searchTerm}". Solicite o cadastro do material novo.
+                                                </p>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setRequestMaterialForm({
+                                                            nome: searchTerm.trim(),
+                                                            unidade: "unid",
+                                                            descricao: "",
+                                                            grupo_sugerido: "",
+                                                        });
+                                                        setRequestMaterialSimilares([]);
+                                                        setRequestMaterialForce(false);
+                                                        setShowRequestMaterialModal(true);
+                                                    }}
+                                                    className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-amber-700"
+                                                >
+                                                    <Sparkles className="h-3 w-3" /> Solicitar novo material
+                                                </button>
+                                            </div>
                                         )}
 
                                         {isSearchingRemote && searchTerm.trim().length >= 2 && (
@@ -1526,91 +1955,119 @@ export function ClientSolicitationSection() {
 
                         {/* Sidebar - Resumo da Cotação */}
                         <div className="xl:col-span-4 space-y-4">
-                            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sticky top-6 transition-all duration-200 hover:shadow-md">
-                                <h3 className="font-bold text-lg text-slate-900 mb-4">Resumo da Cotação</h3>
-                                <div className="grid grid-cols-3 gap-2 mb-4">
-                                    <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-center">
-                                        <p className="text-xs text-slate-500">Itens</p>
-                                        <p className="text-lg font-semibold text-slate-900">{items.length}</p>
+                            {/* CTA principal sticky */}
+                            <div className="sticky top-24 space-y-3">
+                                {items.length === 0 ? (
+                                    /* Empty-state consolidado: um único card com dica embutida */
+                                    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 text-center">
+                                        <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50">
+                                            <ShoppingCart className="h-7 w-7 text-slate-300" />
+                                        </div>
+                                        <h3 className="text-sm font-semibold text-slate-900">Seu carrinho está vazio</h3>
+                                        <p className="mt-1 text-xs text-slate-500">Adicione materiais pela lista ao lado para montar sua cotação.</p>
+                                        <div className="mt-4 flex gap-2 rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2.5 text-left">
+                                            <Zap className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                                            <p className="text-[11px] leading-relaxed text-amber-800">
+                                                <span className="font-semibold">Dica:</span> agrupe materiais da mesma fase (ex: elétrica e hidráulica) para aumentar seu poder de negociação.
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-center">
-                                        <p className="text-xs text-slate-500">Grupos</p>
-                                        <p className="text-lg font-semibold text-slate-900">{Object.keys(groupedItems).length}</p>
+                                ) : (
+                                <>
+                                <button
+                                    onClick={() => setStep(3)}
+                                    className="group w-full rounded-2xl bg-blue-600 px-5 py-4 text-white shadow-sm hover:bg-blue-700 transition-colors flex items-center justify-between gap-3"
+                                >
+                                    <div className="flex flex-col items-start text-left min-w-0">
+                                        <span className="text-[11px] font-semibold uppercase tracking-wider opacity-80">
+                                            Pronto para enviar
+                                        </span>
+                                        <span className="text-base font-bold truncate">
+                                            {`Analisar ${items.length} ${items.length === 1 ? 'item' : 'itens'}`}
+                                        </span>
                                     </div>
-                                    <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-center">
-                                        <p className="text-xs text-slate-500">Obra</p>
-                                        <p className="text-sm font-semibold text-slate-900 truncate">{selectedObra?.nome || '-'}</p>
+                                    <ArrowRight className="h-5 w-5 shrink-0 transition-transform group-hover:translate-x-0.5" />
+                                </button>
+
+                                {/* Itens no Carrinho */}
+                                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                                        <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                                            <ShoppingCart className="w-4 h-4 text-blue-600" />
+                                            Carrinho
+                                        </h3>
+                                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums transition-all duration-300 ${cartBump ? "scale-125 bg-emerald-100 text-emerald-700" : "scale-100 bg-slate-100 text-slate-600"}`}>
+                                            {items.length}
+                                        </span>
+                                    </div>
+
+                                    <div className="max-h-[420px] overflow-y-auto">
+                                        {renderCartGroups()}
                                     </div>
                                 </div>
 
-                                <button
-                                    onClick={() => items.length > 0 && setStep(3)}
-                                    disabled={items.length === 0}
-                                    className="w-full py-3 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                >
-                                    Analisar Lista
-                                    <ArrowRight className="w-4 h-4" />
-                                </button>
-                                {items.length === 0 && (
-                                    <p className="mt-2 text-[11px] text-slate-500 text-center">Adicione pelo menos 1 item para avançar.</p>
+                                {/* Dica do Especialista (pílula sutil) */}
+                                <div className="rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2.5 flex gap-2">
+                                    <Zap className="h-3.5 w-3.5 text-amber-600 mt-0.5 shrink-0" />
+                                    <p className="text-[11px] leading-relaxed text-amber-800">
+                                        <span className="font-semibold">Dica:</span> agrupe materiais da mesma fase (ex: elétrica e hidráulica) para aumentar seu poder de negociação.
+                                    </p>
+                                </div>
+                                </>
                                 )}
-                            </div>
-
-                            {/* Itens no Carrinho */}
-                            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:shadow-md">
-                                <h3 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
-                                    <ShoppingCart className="w-4 h-4 text-blue-600" />
-                                    Itens no Carrinho ({items.length})
-                                </h3>
-
-                                {items.length === 0 ? (
-                                    <div className="text-center py-6">
-                                        <ShoppingCart className="w-10 h-10 mx-auto text-slate-200 mb-2" />
-                                        <p className="text-sm text-slate-400">Seu carrinho está vazio.</p>
-                                        <p className="text-xs text-slate-400">Adicione materiais na área principal.</p>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
-                                        {items.map(item => (
-                                            <div key={item.id} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-medium text-slate-700 truncate">{item.descricao}</p>
-                                                    <p className="text-xs text-slate-400">{item.categoria}</p>
-                                                </div>
-                                                <div className="flex items-center gap-2 ml-2">
-                                                    <input
-                                                        type="number"
-                                                        min={1}
-                                                        value={item.quantidade}
-                                                        onChange={e => updateItemQuantity(item.id, Number(e.target.value))}
-                                                        className="w-14 text-center text-sm border border-slate-200 rounded px-1 py-0.5"
-                                                    />
-                                                    <span className="text-xs text-slate-500">{item.unidade}</span>
-                                                    <button
-                                                        onClick={() => handleRemoveItem(item.id)}
-                                                        className="p-1 text-slate-400 hover:text-red-500"
-                                                    >
-                                                        <Trash2 className="w-3 h-3" />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Dica do Especialista */}
-                            <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 transition-all duration-200 hover:border-amber-300">
-                                <h4 className="font-semibold text-amber-800 text-sm flex items-center gap-2">
-                                    <Zap className="w-4 h-4" />
-                                    Dica do Especialista
-                                </h4>
-                                <p className="text-xs text-amber-700 mt-1">
-                                    Agrupar materiais da mesma fase (ex: elétrica e hidráulica) pode aumentar seu poder de negociação com fornecedores especializados.
-                                </p>
                             </div>
                         </div>
                     </div>
+
+                    {/* Carrinho mobile: botão flutuante + bottom-sheet */}
+                    {items.length > 0 && (
+                        <button
+                            onClick={() => setMobileCartOpen(true)}
+                            className="xl:hidden fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-white shadow-lg shadow-blue-600/30 transition-transform active:scale-95"
+                        >
+                            <ShoppingCart className="h-5 w-5" />
+                            <span className="text-sm font-semibold">{items.length} {items.length === 1 ? 'item' : 'itens'}</span>
+                            <span className="ml-1 rounded-full bg-white/20 px-2 py-0.5 text-xs font-bold">Ver carrinho</span>
+                        </button>
+                    )}
+
+                    {mobileCartOpen && createPortal(
+                        <div className="xl:hidden fixed inset-0 z-[70]">
+                            <div className="absolute inset-0 bg-slate-900/40" onClick={() => setMobileCartOpen(false)} />
+                            <div className="absolute inset-x-0 bottom-0 flex max-h-[85vh] flex-col rounded-t-3xl bg-white shadow-2xl">
+                                <div className="mx-auto mt-2 h-1.5 w-10 rounded-full bg-slate-200" />
+                                <div className="flex items-center justify-between border-b border-slate-100 px-5 pb-3 pt-3">
+                                    <h3 className="flex items-center gap-2 text-base font-bold text-slate-900">
+                                        <ShoppingCart className="h-5 w-5 text-blue-600" />
+                                        Carrinho
+                                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{items.length}</span>
+                                    </h3>
+                                    <button onClick={() => setMobileCartOpen(false)} aria-label="Fechar carrinho" className="rounded-lg p-2 text-slate-400 hover:bg-slate-100">
+                                        <X className="h-5 w-5" />
+                                    </button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto overscroll-contain">
+                                    {items.length === 0 ? (
+                                        <div className="px-4 py-12 text-center">
+                                            <ShoppingCart className="mx-auto mb-2 h-8 w-8 text-slate-200" />
+                                            <p className="text-xs text-slate-400">Carrinho vazio.</p>
+                                        </div>
+                                    ) : renderCartGroups()}
+                                </div>
+                                <div className="border-t border-slate-100 p-4" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+                                    <button
+                                        onClick={() => { setMobileCartOpen(false); setStep(3); }}
+                                        disabled={items.length === 0}
+                                        className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3.5 text-white shadow-sm transition-colors hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400"
+                                    >
+                                        <span className="text-sm font-bold">Analisar {items.length} {items.length === 1 ? 'item' : 'itens'}</span>
+                                        <ArrowRight className="h-4 w-4 transition-transform group-enabled:group-hover:translate-x-0.5" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>,
+                        document.body
+                    )}
 
                 </div>
             )}
@@ -1656,6 +2113,24 @@ export function ClientSolicitationSection() {
                     {isLoadingMoreRemote && filteredMaterials.length > 0 && (
                         <div className="px-4 py-3 text-xs text-slate-500 border-t border-slate-100">Carregando mais resultados...</div>
                     )}
+                </div>,
+                document.body
+            )}
+
+            {/* Snackbar: desfazer remoção de item */}
+            {lastRemoved && createPortal(
+                <div className="fixed bottom-4 left-4 z-[9999] flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white shadow-lg">
+                    <Trash2 className="h-4 w-4 text-slate-400" />
+                    <span className="max-w-[200px] truncate">
+                        <span className="font-semibold">{lastRemoved.item.descricao}</span> removido
+                    </span>
+                    <button
+                        onClick={undoRemove}
+                        className="ml-1 inline-flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20"
+                    >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        Desfazer
+                    </button>
                 </div>,
                 document.body
             )}
@@ -1891,6 +2366,122 @@ export function ClientSolicitationSection() {
                                     Adicionar
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showRequestMaterialModal && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4">
+                    <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                            <div className="flex items-center gap-2">
+                                <div className="rounded-lg bg-amber-100 p-2 text-amber-700"><Sparkles className="h-4 w-4" /></div>
+                                <div>
+                                    <h3 className="text-base font-semibold text-slate-900">Solicitar novo material</h3>
+                                    <p className="text-xs text-slate-500">Será enviado para análise do administrador.</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowRequestMaterialModal(false)}
+                                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                                aria-label="Fechar"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-3 px-5 py-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700">Nome do material *</label>
+                                <input
+                                    value={requestMaterialForm.nome}
+                                    onChange={(e) => setRequestMaterialForm((p) => ({ ...p, nome: e.target.value }))}
+                                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                                    placeholder="Ex.: Cimento branco estrutural 25kg"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700">Unidade</label>
+                                    <select
+                                        value={requestMaterialForm.unidade}
+                                        onChange={(e) => setRequestMaterialForm((p) => ({ ...p, unidade: e.target.value }))}
+                                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                                    >
+                                        {unidades.map((u) => <option key={u} value={u}>{u}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700">Grupo sugerido</label>
+                                    <select
+                                        value={requestMaterialForm.grupo_sugerido}
+                                        onChange={(e) => setRequestMaterialForm((p) => ({ ...p, grupo_sugerido: e.target.value }))}
+                                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                                    >
+                                        <option value="">Selecione...</option>
+                                        {availableGroups.map((g) => <option key={g} value={g}>{g}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700">Descrição (opcional)</label>
+                                <textarea
+                                    value={requestMaterialForm.descricao}
+                                    onChange={(e) => setRequestMaterialForm((p) => ({ ...p, descricao: e.target.value }))}
+                                    rows={3}
+                                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                                    placeholder="Especificações, marca, dimensões, etc."
+                                />
+                            </div>
+
+                            {requestMaterialSimilares.length > 0 && (
+                                <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-3">
+                                    <p className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-violet-700">
+                                        <Sparkles className="h-3.5 w-3.5" /> Encontramos materiais já cadastrados parecidos
+                                    </p>
+                                    <ul className="space-y-1">
+                                        {requestMaterialSimilares.slice(0, 5).map((s) => (
+                                            <li key={s.id} className="flex items-center justify-between rounded-md bg-white px-2 py-1.5 text-xs">
+                                                <div className="min-w-0">
+                                                    <p className="truncate font-semibold text-slate-800">{s.nome}</p>
+                                                    <p className="text-[11px] text-slate-500">Unidade: {s.unidade} · {Math.round((s.similarity || 0) * 100)}% similar</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        setSearchTerm(s.nome);
+                                                        setShowRequestMaterialModal(false);
+                                                    }}
+                                                    className="ml-2 rounded-md border border-violet-200 px-2 py-0.5 text-[11px] font-semibold text-violet-700 hover:bg-violet-50"
+                                                >
+                                                    Usar este
+                                                </button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                    <p className="mt-2 text-[11px] text-violet-700">
+                                        Se nenhum atende, clique em "Enviar mesmo assim" abaixo.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
+                            <button
+                                onClick={() => setShowRequestMaterialModal(false)}
+                                className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                                disabled={requestMaterialSubmitting}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={submitNewMaterialRequest}
+                                disabled={requestMaterialSubmitting || !requestMaterialForm.nome.trim()}
+                                className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                            >
+                                {requestMaterialSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                                {requestMaterialForce && requestMaterialSimilares.length > 0 ? "Enviar mesmo assim" : "Enviar solicitação"}
+                            </button>
                         </div>
                     </div>
                 </div>

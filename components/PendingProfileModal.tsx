@@ -62,6 +62,8 @@ export default function PendingProfileModal({
         cidade: '',
         estado: '',
         endereco: '',
+        numero: '',
+        complemento: '',
         bairro: '',
         cep: ''
     });
@@ -584,6 +586,30 @@ export default function PendingProfileModal({
                                             name="endereco"
                                             value={fornecedorData.endereco}
                                             onChange={handleFornecedorChange}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Número</label>
+                                        <input
+                                            type="text"
+                                            name="numero"
+                                            value={fornecedorData.numero || ''}
+                                            onChange={handleFornecedorChange}
+                                            placeholder="123"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Complemento</label>
+                                        <input
+                                            type="text"
+                                            name="complemento"
+                                            value={fornecedorData.complemento || ''}
+                                            onChange={handleFornecedorChange}
+                                            placeholder="Sala, andar, bloco..."
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                                         />
                                     </div>

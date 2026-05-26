@@ -29,6 +29,7 @@
     "date-fns": "^4.1.0",
     "ioredis": "^5.8.2",
     "lucide-react": "^0.562.0",
+    "marked": "^18.0.4",
     "next": "^15.5.12",
     "qrcode": "^1.5.4",
     "react": "19.2.0",

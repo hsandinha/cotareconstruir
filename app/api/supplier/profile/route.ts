@@ -221,6 +221,10 @@ export async function PUT(request: NextRequest) {
                 cidade: company.cidade || null,
                 estado: company.estado || null,
                 regioes_atendimento: preferences?.regioesAtendimento || null,
+                apenas_materiais_ativos:
+                    typeof preferences?.apenasMateriaisAtivos === 'boolean'
+                        ? preferences.apenasMateriaisAtivos
+                        : undefined,
                 updated_at: new Date().toISOString()
             };
 

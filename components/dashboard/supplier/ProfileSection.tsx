@@ -8,6 +8,7 @@ import { useSupplierAccessContext } from "./SupplierAccessContext";
 import { formatCepBr, formatCnpjBr, formatPhoneBr, isValidCNPJ } from "../../../lib/utils";
 import { useToast } from "@/components/ToastProvider";
 import { SupplierVerificationSection } from "./VerificationSection";
+import { SupplierApiKeysSection } from "./SupplierApiKeysSection";
 import {
     Building2, User, MapPin, Phone, Mail, FileText, Briefcase, Save, Loader2,
     Search, CheckCircle2, AlertCircle, Package, Plus, X, Shield, ChevronDown, ChevronUp
@@ -65,6 +66,7 @@ export function SupplierProfileSection() {
     const [preferences, setPreferences] = useState({
         regioesAtendimento: "",
         categoriasMateriais: "",
+        apenasMateriaisAtivos: false,
     });
 
     // Calcular completude do perfil
@@ -139,6 +141,7 @@ export function SupplierProfileSection() {
                         ? f.regioes_atendimento.join(", ")
                         : (f?.regioes_atendimento || up?.operating_regions || ""),
                     categoriasMateriais: up?.operating_categories || "",
+                    apenasMateriaisAtivos: !!f?.apenas_materiais_ativos,
                 });
                 setSupplierGroups(sg || []);
                 setAvailableGroups(ag || []);
@@ -598,8 +601,32 @@ export function SupplierProfileSection() {
                             placeholder="Ex: Centro, Copacabana, Rio de Janeiro"
                         />
                     </div>
+
+                    <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <label className="flex items-start gap-3 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={preferences.apenasMateriaisAtivos}
+                                onChange={(e) => setPreferences({ ...preferences, apenasMateriaisAtivos: e.target.checked })}
+                                className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span className="flex-1">
+                                <span className="block text-sm font-semibold text-slate-900">
+                                    Receber apenas cotações com meus materiais ativos
+                                </span>
+                                <span className="mt-1 block text-xs text-slate-500">
+                                    Quando ativado, você receberá apenas cotações que contenham pelo menos
+                                    um material da sua lista marcada como ativa. Itens da cotação que você
+                                    não tem ativos serão exibidos com o aviso "Inativo". Quando desativado,
+                                    você recebe todas as cotações dos grupos que atende.
+                                </span>
+                            </span>
+                        </label>
+                    </div>
                 </div>
             </div>
+
+            <SupplierApiKeysSection />
 
             {/* Grupos de Insumo */}
             <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden" data-tour="perfil-grupos">

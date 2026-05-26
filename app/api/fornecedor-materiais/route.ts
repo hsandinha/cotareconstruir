@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { userHasSupplierAccess } from '@/lib/supplierAccessServer';
+import { findSimilarMateriais, pickProbableDuplicate } from '@/lib/materialSimilarity';
+import { SupplierMaterialsServiceError, upsertSupplierMaterials } from '@/lib/supplierMaterialsService';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
@@ -64,171 +66,81 @@ export async function POST(req: NextRequest) {
         }
 
         if (action === 'upsert') {
-            // Upsert preço e estoque (configurar material)
-            const { data, error } = await supabaseAdmin
-                .from('fornecedor_materiais')
-                .upsert({
-                    fornecedor_id,
-                    material_id,
-                    preco: preco ?? 0,
-                    estoque: estoque ?? 0,
-                    ativo: ativo !== undefined ? ativo : true,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'fornecedor_id,material_id' })
-                .select()
-                .single();
+            const result = await upsertSupplierMaterials(supabaseAdmin, {
+                fornecedorId: fornecedor_id,
+                items: [{ material_id, preco, estoque, ativo }],
+            });
 
-            if (error) {
-                console.error('Erro ao upsert fornecedor_materiais:', error);
-                return NextResponse.json({ error: error.message }, { status: 500 });
+            if (result.accepted_count === 0) {
+                const firstError = result.results.find((item: any) => item.status === 'rejected') as any;
+                return NextResponse.json({ error: firstError?.error || 'Nenhum material válido encontrado' }, { status: 400 });
             }
 
-            return NextResponse.json({ success: true, data });
+            return NextResponse.json({ success: true, data: result.data?.[0], result });
         }
 
         if (action === 'bulk_upsert') {
             const rawItems = Array.isArray(body.items) ? body.items : [];
-            if (rawItems.length === 0) {
-                return NextResponse.json({ error: 'items é obrigatório' }, { status: 400 });
-            }
+            const result = await upsertSupplierMaterials(supabaseAdmin, {
+                fornecedorId: fornecedor_id,
+                items: rawItems,
+            });
 
-            if (rawItems.length > 3000) {
-                return NextResponse.json({ error: 'Limite de 3000 linhas por importação' }, { status: 400 });
-            }
-
-            const dedupedByMaterial = new Map<string, {
-                fornecedor_id: string;
-                material_id: string;
-                preco: number;
-                estoque: number;
-                ativo: boolean;
-                updated_at: string;
-            }>();
-            const nowIso = new Date().toISOString();
-
-            for (const raw of rawItems) {
-                const currentMaterialId = typeof raw?.material_id === 'string' ? raw.material_id.trim() : '';
-                if (!currentMaterialId) continue;
-
-                const precoValue = Number(raw?.preco);
-                const estoqueValue = Number(raw?.estoque);
-                const ativoValue = typeof raw?.ativo === 'boolean' ? raw.ativo : true;
-
-                dedupedByMaterial.set(currentMaterialId, {
-                    fornecedor_id,
-                    material_id: currentMaterialId,
-                    preco: Number.isFinite(precoValue) && precoValue >= 0 ? precoValue : 0,
-                    estoque: Number.isFinite(estoqueValue) && estoqueValue >= 0 ? Math.trunc(estoqueValue) : 0,
-                    ativo: ativoValue,
-                    updated_at: nowIso,
-                });
-            }
-
-            const rows = Array.from(dedupedByMaterial.values());
-            if (rows.length === 0) {
-                return NextResponse.json({ error: 'Nenhuma linha válida para importar' }, { status: 400 });
-            }
-
-            const materialIds = rows.map((row) => row.material_id);
-            const { data: existingMaterials, error: existingMaterialsError } = await supabaseAdmin
-                .from('materiais')
-                .select('id')
-                .in('id', materialIds);
-
-            if (existingMaterialsError) {
-                console.error('Erro ao validar materiais da importação:', existingMaterialsError);
-                return NextResponse.json({ error: existingMaterialsError.message }, { status: 500 });
-            }
-
-            const existingIds = new Set((existingMaterials || []).map((item: any) => item.id));
-            const validRows = rows.filter((row) => existingIds.has(row.material_id));
-            const skippedRows = rows.length - validRows.length;
-
-            if (validRows.length === 0) {
-                return NextResponse.json({ error: 'Nenhum material válido encontrado na planilha' }, { status: 400 });
-            }
-
-            const { data, error } = await supabaseAdmin
-                .from('fornecedor_materiais')
-                .upsert(validRows, { onConflict: 'fornecedor_id,material_id' })
-                .select();
-
-            if (error) {
-                console.error('Erro ao importar fornecedor_materiais:', error);
-                return NextResponse.json({ error: error.message }, { status: 500 });
+            if (result.accepted_count === 0) {
+                return NextResponse.json({ error: 'Nenhum material válido encontrado na planilha', result }, { status: 400 });
             }
 
             return NextResponse.json({
+                ...result,
                 success: true,
-                updated_count: data?.length || validRows.length,
-                skipped_count: skippedRows,
-                data: data || [],
             });
         }
 
         if (action === 'toggle_ativo') {
-            // Check if record exists
-            const { data: existing } = await supabaseAdmin
-                .from('fornecedor_materiais')
-                .select('id')
-                .eq('fornecedor_id', fornecedor_id)
-                .eq('material_id', material_id)
-                .single();
+            const result = await upsertSupplierMaterials(supabaseAdmin, {
+                fornecedorId: fornecedor_id,
+                items: [{ material_id, ativo }],
+            });
 
-            if (existing) {
-                // Update existing
-                const { data, error } = await supabaseAdmin
-                    .from('fornecedor_materiais')
-                    .update({ ativo, updated_at: new Date().toISOString() })
-                    .eq('fornecedor_id', fornecedor_id)
-                    .eq('material_id', material_id)
-                    .select()
-                    .single();
-
-                if (error) {
-                    console.error('Erro ao atualizar status:', error);
-                    return NextResponse.json({ error: error.message }, { status: 500 });
-                }
-
-                return NextResponse.json({ success: true, data });
-            } else {
-                // Insert new record (e.g., inactivating a never-configured material)
-                const { data, error } = await supabaseAdmin
-                    .from('fornecedor_materiais')
-                    .insert({
-                        fornecedor_id,
-                        material_id,
-                        preco: 0,
-                        estoque: 0,
-                        ativo,
-                        updated_at: new Date().toISOString()
-                    })
-                    .select()
-                    .single();
-
-                if (error) {
-                    console.error('Erro ao inserir material inativo:', error);
-                    return NextResponse.json({ error: error.message }, { status: 500 });
-                }
-
-                return NextResponse.json({ success: true, data });
+            if (result.accepted_count === 0) {
+                const firstError = result.results.find((item: any) => item.status === 'rejected') as any;
+                return NextResponse.json({ error: firstError?.error || 'Erro ao alterar status', result }, { status: 400 });
             }
+
+            return NextResponse.json({ success: true, data: result.data?.[0], result });
         }
 
         if (action === 'request_material') {
-            const { nome, unidade, descricao, grupo_sugerido } = body;
+            const { nome, unidade, descricao, grupo_sugerido, force } = body;
             if (!nome) {
                 return NextResponse.json({ error: 'Nome do material é obrigatório' }, { status: 400 });
+            }
+
+            // IA / similaridade: verifica se já existe material parecido cadastrado
+            const similares = await findSimilarMateriais(supabaseAdmin, String(nome), { limit: 5, threshold: 0.3 });
+            const provavel = pickProbableDuplicate(similares, 0.78);
+
+            if (provavel && !force) {
+                return NextResponse.json({
+                    success: false,
+                    duplicate: true,
+                    suggestion: provavel,
+                    similares,
+                    message: `Encontramos um material parecido já cadastrado: "${provavel.nome}". Use-o ou confirme para enviar mesmo assim.`,
+                }, { status: 409 });
             }
 
             const { data, error } = await supabaseAdmin
                 .from('solicitacoes_materiais')
                 .insert({
                     fornecedor_id,
+                    solicitante_user_id: user.id,
+                    tipo_solicitante: 'fornecedor',
                     nome,
                     unidade: unidade || 'unid',
                     descricao,
                     grupo_sugerido,
+                    similares,
                     status: 'pendente'
                 })
                 .select()
@@ -239,12 +151,15 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: error.message }, { status: 500 });
             }
 
-            return NextResponse.json({ success: true, data });
+            return NextResponse.json({ success: true, data, similares });
         }
 
         return NextResponse.json({ error: 'Ação inválida' }, { status: 400 });
     } catch (error: any) {
         console.error('Erro na API fornecedor-materiais:', error);
+        if (error instanceof SupplierMaterialsServiceError) {
+            return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+        }
         return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
     }
 }

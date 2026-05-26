@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseAuth';
-import { Search, Edit2, Trash2, X, Save, Package, CreditCard, Tags, UserPlus, UserCheck, RefreshCw, Mail, Plus, Eye, MapPin, Phone, Building2, FileText, Globe, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Search, Edit2, Trash2, X, Save, Package, CreditCard, Tags, UserPlus, UserCheck, RefreshCw, Mail, Plus, Eye, MapPin, Phone, Building2, FileText, Globe, ArrowUpDown, ArrowUp, ArrowDown, Download } from 'lucide-react';
 import { useToast } from '@/components/ToastProvider';
 import { useConfirmModal } from '@/components/ConfirmModal';
 
@@ -1012,6 +1012,89 @@ export default function FornecedoresManagement() {
         </th>
     );
 
+    const downloadFornecedoresCSV = () => {
+        const list = filteredFornecedores.length > 0 ? filteredFornecedores : fornecedores;
+        if (list.length === 0) {
+            showToast('error', 'Nenhum fornecedor para exportar');
+            return;
+        }
+
+        const headers = [
+            'Código', 'Razão Social', 'Nome Fantasia', 'CNPJ', 'Inscrição Estadual',
+            'Grupos de Insumo', 'Contato', 'Email', 'Telefone', 'WhatsApp',
+            'CEP', 'Endereço', 'Número', 'Complemento', 'Bairro', 'Cidade', 'Estado',
+            'Regiões de Atendimento', 'Prazo Entrega Padrão (dias)',
+            'Status', 'Ativo', 'Verificado', 'Cartão Crédito',
+            'Rating', 'Avaliações', 'Tem Conta', 'Último Login', 'Cadastrado em'
+        ];
+
+        const escape = (val: unknown): string => {
+            if (val === null || val === undefined) return '';
+            const s = String(val).replace(/"/g, '""');
+            return /[",;\n\r]/.test(s) ? `"${s}"` : s;
+        };
+
+        const formatDate = (val: unknown): string => {
+            if (!val) return '';
+            try {
+                const d = new Date(val as string);
+                if (Number.isNaN(d.getTime())) return '';
+                return d.toLocaleString('pt-BR');
+            } catch {
+                return '';
+            }
+        };
+
+        const rows = list.map((f) => [
+            f.codigo,
+            f.razaoSocial,
+            f.nomeFantasia,
+            f.cnpj,
+            f.inscricaoEstadual,
+            f.grupoInsumos,
+            f.contato,
+            f.email,
+            f.fone,
+            f.whatsapp,
+            f.cep,
+            f.endereco,
+            f.numero,
+            f.complemento,
+            f.bairro,
+            f.cidade,
+            f.estado,
+            formatRegioesAtendimento(f.regioesAtendimento),
+            f.prazoEntregaPadrao,
+            f.status,
+            f.ativo ? 'Sim' : 'Não',
+            f.isVerified ? 'Sim' : 'Não',
+            f.cartaoCredito ? 'Sim' : 'Não',
+            f.rating,
+            f.reviewCount,
+            f.hasUserAccount ? 'Sim' : 'Não',
+            formatDate(f.lastLoginAt),
+            formatDate(f.createdAt),
+        ]);
+
+        const csv = [headers, ...rows]
+            .map((row) => row.map(escape).join(';'))
+            .join('\r\n');
+
+        // BOM para Excel reconhecer UTF-8
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const stamp = new Date().toISOString().slice(0, 10);
+        a.href = url;
+        a.download = `fornecedores-${stamp}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showToast('success', `${list.length} fornecedor(es) exportado(s)`);
+    };
+
     if (loading) {
         return <div className="flex items-center justify-center py-12">Carregando fornecedores...</div>;
     }
@@ -1024,13 +1107,25 @@ export default function FornecedoresManagement() {
                     <h2 className="text-2xl font-bold text-slate-900">Gestão de Fornecedores</h2>
                     <p className="text-sm text-slate-600">Gerencie todos os fornecedores cadastrados</p>
                 </div>
-                <button
-                    onClick={() => openModal()}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors font-medium"
-                >
-                    <Plus className="w-5 h-5" />
-                    Novo Fornecedor
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => downloadFornecedoresCSV()}
+                        disabled={filteredFornecedores.length === 0}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={searchQuery ? 'Baixar lista filtrada (CSV)' : 'Baixar lista completa (CSV)'}
+                    >
+                        <Download className="w-5 h-5" />
+                        Baixar lista
+                    </button>
+                    <button
+                        onClick={() => openModal()}
+                        className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors font-medium"
+                    >
+                        <Plus className="w-5 h-5" />
+                        Novo Fornecedor
+                    </button>
+                </div>
             </div>
 
             {/* Search */}
@@ -1573,45 +1668,45 @@ export default function FornecedoresManagement() {
                                 {saving ? 'Processando atualização...' : 'A alteração de email redefine a senha para 123456 quando houver atualização de login.'}
                             </p>
                             <div className="flex flex-wrap items-center justify-end gap-3">
-                            <button
-                                type="button"
-                                onClick={() => setIsMultiEmpresaEmailModalOpen(false)}
-                                disabled={saving}
-                                className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
-                            >
-                                Cancelar
-                            </button>
-                            {(editingFornecedor.linkedFornecedoresCount || 0) > 1 ? (
-                                <>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsMultiEmpresaEmailModalOpen(false)}
+                                    disabled={saving}
+                                    className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                                >
+                                    Cancelar
+                                </button>
+                                {(editingFornecedor.linkedFornecedoresCount || 0) > 1 ? (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveEmailOnlyCurrentFornecedor}
+                                            disabled={saving}
+                                            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                        >
+                                            Somente esta empresa
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveEmailForAllLinkedFornecedores}
+                                            disabled={saving}
+                                            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                                        >
+                                            {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                            Atualizar login e empresas vinculadas
+                                        </button>
+                                    </>
+                                ) : (
                                     <button
                                         type="button"
-                                        onClick={handleSaveEmailOnlyCurrentFornecedor}
-                                        disabled={saving}
-                                        className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                                    >
-                                        Somente esta empresa
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={handleSaveEmailForAllLinkedFornecedores}
+                                        onClick={handleConfirmFornecedorEmailChange}
                                         disabled={saving}
                                         className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
                                     >
                                         {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                        Atualizar login e empresas vinculadas
+                                        Atualizar login e salvar
                                     </button>
-                                </>
-                            ) : (
-                                <button
-                                    type="button"
-                                    onClick={handleConfirmFornecedorEmailChange}
-                                    disabled={saving}
-                                    className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-                                >
-                                    {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                    Atualizar login e salvar
-                                </button>
-                            )}
+                                )}
                             </div>
                         </div>
                     </div>

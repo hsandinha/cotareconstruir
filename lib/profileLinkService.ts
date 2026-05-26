@@ -44,6 +44,8 @@ export interface FornecedorMinimalData {
     cidade?: string;
     estado?: string;
     endereco?: string;
+    numero?: string;
+    complemento?: string;
     bairro?: string;
     cep?: string;
 }

@@ -426,6 +426,202 @@ export interface Database {
                     grupo_id?: string;
                 };
             };
+            fornecedor_fabricante: {
+                Row: {
+                    fornecedor_id: string;
+                    fabricante_id: string;
+                };
+                Insert: {
+                    fornecedor_id: string;
+                    fabricante_id: string;
+                };
+                Update: {
+                    fornecedor_id?: string;
+                    fabricante_id?: string;
+                };
+            };
+            fornecedor_materiais: {
+                Row: {
+                    id: string;
+                    fornecedor_id: string;
+                    material_id: string;
+                    preco: number;
+                    preco_promocional: number | null;
+                    estoque: number;
+                    estoque_minimo: number;
+                    marca: string | null;
+                    fabricante_id: string | null;
+                    codigo_sku: string | null;
+                    descricao: string | null;
+                    ativo: boolean;
+                    created_at: string;
+                    updated_at: string;
+                };
+                Insert: {
+                    id?: string;
+                    fornecedor_id: string;
+                    material_id: string;
+                    preco: number;
+                    preco_promocional?: number | null;
+                    estoque?: number;
+                    estoque_minimo?: number;
+                    marca?: string | null;
+                    fabricante_id?: string | null;
+                    codigo_sku?: string | null;
+                    descricao?: string | null;
+                    ativo?: boolean;
+                    created_at?: string;
+                    updated_at?: string;
+                };
+                Update: {
+                    id?: string;
+                    fornecedor_id?: string;
+                    material_id?: string;
+                    preco?: number;
+                    preco_promocional?: number | null;
+                    estoque?: number;
+                    estoque_minimo?: number;
+                    marca?: string | null;
+                    fabricante_id?: string | null;
+                    codigo_sku?: string | null;
+                    descricao?: string | null;
+                    ativo?: boolean;
+                    created_at?: string;
+                    updated_at?: string;
+                };
+            };
+            fornecedor_api_keys: {
+                Row: {
+                    id: string;
+                    fornecedor_id: string;
+                    name: string;
+                    key_prefix: string;
+                    key_hash: string;
+                    scopes: string[];
+                    last_used_at: string | null;
+                    expires_at: string | null;
+                    revoked_at: string | null;
+                    created_by: string | null;
+                    created_at: string;
+                    updated_at: string;
+                };
+                Insert: {
+                    id?: string;
+                    fornecedor_id: string;
+                    name: string;
+                    key_prefix: string;
+                    key_hash: string;
+                    scopes?: string[];
+                    last_used_at?: string | null;
+                    expires_at?: string | null;
+                    revoked_at?: string | null;
+                    created_by?: string | null;
+                    created_at?: string;
+                    updated_at?: string;
+                };
+                Update: {
+                    id?: string;
+                    fornecedor_id?: string;
+                    name?: string;
+                    key_prefix?: string;
+                    key_hash?: string;
+                    scopes?: string[];
+                    last_used_at?: string | null;
+                    expires_at?: string | null;
+                    revoked_at?: string | null;
+                    created_by?: string | null;
+                    created_at?: string;
+                    updated_at?: string;
+                };
+            };
+            fornecedor_estoque_movimentacoes: {
+                Row: {
+                    id: string;
+                    fornecedor_id: string;
+                    material_id: string;
+                    fornecedor_material_id: string | null;
+                    tipo: 'entrada' | 'saida' | 'ajuste' | 'reserva' | 'baixa_reserva' | 'cancelamento_reserva';
+                    quantidade: number;
+                    estoque_anterior: number;
+                    estoque_atual: number;
+                    referencia_externa: string | null;
+                    pedido_id: string | null;
+                    observacao: string | null;
+                    created_at: string;
+                };
+                Insert: {
+                    id?: string;
+                    fornecedor_id: string;
+                    material_id: string;
+                    fornecedor_material_id?: string | null;
+                    tipo: 'entrada' | 'saida' | 'ajuste' | 'reserva' | 'baixa_reserva' | 'cancelamento_reserva';
+                    quantidade: number;
+                    estoque_anterior?: number;
+                    estoque_atual?: number;
+                    referencia_externa?: string | null;
+                    pedido_id?: string | null;
+                    observacao?: string | null;
+                    created_at?: string;
+                };
+                Update: {
+                    id?: string;
+                    fornecedor_id?: string;
+                    material_id?: string;
+                    fornecedor_material_id?: string | null;
+                    tipo?: 'entrada' | 'saida' | 'ajuste' | 'reserva' | 'baixa_reserva' | 'cancelamento_reserva';
+                    quantidade?: number;
+                    estoque_anterior?: number;
+                    estoque_atual?: number;
+                    referencia_externa?: string | null;
+                    pedido_id?: string | null;
+                    observacao?: string | null;
+                    created_at?: string;
+                };
+            };
+            fornecedor_webhook_endpoints: {
+                Row: {
+                    id: string;
+                    fornecedor_id: string;
+                    url: string;
+                    description: string | null;
+                    events: string[];
+                    secret_hash: string;
+                    secret_prefix: string;
+                    ativo: boolean;
+                    last_delivery_at: string | null;
+                    last_delivery_status: number | null;
+                    created_at: string;
+                    updated_at: string;
+                };
+                Insert: {
+                    id?: string;
+                    fornecedor_id: string;
+                    url: string;
+                    description?: string | null;
+                    events?: string[];
+                    secret_hash: string;
+                    secret_prefix: string;
+                    ativo?: boolean;
+                    last_delivery_at?: string | null;
+                    last_delivery_status?: number | null;
+                    created_at?: string;
+                    updated_at?: string;
+                };
+                Update: {
+                    id?: string;
+                    fornecedor_id?: string;
+                    url?: string;
+                    description?: string | null;
+                    events?: string[];
+                    secret_hash?: string;
+                    secret_prefix?: string;
+                    ativo?: boolean;
+                    last_delivery_at?: string | null;
+                    last_delivery_status?: number | null;
+                    created_at?: string;
+                    updated_at?: string;
+                };
+            };
             ofertas: {
                 Row: {
                     id: string;
@@ -648,6 +844,10 @@ export type Fornecedor = Database['public']['Tables']['fornecedores']['Row'];
 export type Cliente = Database['public']['Tables']['clientes']['Row'];
 export type Obra = Database['public']['Tables']['obras']['Row'];
 export type Oferta = Database['public']['Tables']['ofertas']['Row'];
+export type FornecedorMaterial = Database['public']['Tables']['fornecedor_materiais']['Row'];
+export type FornecedorApiKey = Database['public']['Tables']['fornecedor_api_keys']['Row'];
+export type FornecedorEstoqueMovimentacao = Database['public']['Tables']['fornecedor_estoque_movimentacoes']['Row'];
+export type FornecedorWebhookEndpoint = Database['public']['Tables']['fornecedor_webhook_endpoints']['Row'];
 export type Notificacao = Database['public']['Tables']['notificacoes']['Row'];
 export type AuditLog = Database['public']['Tables']['audit_logs']['Row'];
 
@@ -656,6 +856,7 @@ export type ServicoFase = Database['public']['Tables']['servico_fase']['Row'];
 export type ServicoGrupo = Database['public']['Tables']['servico_grupo']['Row'];
 export type MaterialGrupo = Database['public']['Tables']['material_grupo']['Row'];
 export type FornecedorGrupo = Database['public']['Tables']['fornecedor_grupo']['Row'];
+export type FornecedorFabricante = Database['public']['Tables']['fornecedor_fabricante']['Row'];
 
 // Tipos para views
 export type OfertaCompleta = Database['public']['Views']['ofertas_completas']['Row'];
@@ -671,6 +872,10 @@ export type MaterialInsert = Database['public']['Tables']['materiais']['Insert']
 export type FornecedorInsert = Database['public']['Tables']['fornecedores']['Insert'];
 export type ObraInsert = Database['public']['Tables']['obras']['Insert'];
 export type OfertaInsert = Database['public']['Tables']['ofertas']['Insert'];
+export type FornecedorMaterialInsert = Database['public']['Tables']['fornecedor_materiais']['Insert'];
+export type FornecedorApiKeyInsert = Database['public']['Tables']['fornecedor_api_keys']['Insert'];
+export type FornecedorEstoqueMovimentacaoInsert = Database['public']['Tables']['fornecedor_estoque_movimentacoes']['Insert'];
+export type FornecedorWebhookEndpointInsert = Database['public']['Tables']['fornecedor_webhook_endpoints']['Insert'];
 
 // Tipos com relacionamentos expandidos (para queries com joins)
 export type ServicoComRelacoes = Servico & {

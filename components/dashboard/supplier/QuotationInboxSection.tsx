@@ -9,6 +9,131 @@ import { ChatInterface } from "@/components/ChatInterface";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSupplierAccessContext } from "./SupplierAccessContext";
 
+type LossReason = {
+    category: string;
+    severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+    text: string;
+};
+
+type LossReasonResponse = {
+    outcome: 'lost' | 'won' | 'open' | 'no_winner' | 'not_responded';
+    reasons: LossReason[] | string[];
+    suggestions?: string[];
+    summary?: {
+        myTotal: number;
+        marketMinTotal: number;
+        marketAvgTotal: number;
+        competitorsCount: number;
+    };
+    message?: string;
+};
+
+function severityBadge(sev: LossReason['severity']): string {
+    switch (sev) {
+        case 'critical': return 'bg-red-100 text-red-800 border-red-200';
+        case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
+        case 'medium': return 'bg-amber-100 text-amber-800 border-amber-200';
+        case 'low': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        case 'info':
+        default: return 'bg-blue-100 text-blue-800 border-blue-200';
+    }
+}
+
+function LossReasonCard({ cotacaoId, fornecedorId, accessToken }: { cotacaoId: string; fornecedorId: string | null; accessToken?: string }) {
+    const [loading, setLoading] = useState(true);
+    const [data, setData] = useState<LossReasonResponse | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        const load = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const headers = await getAuthHeaders(accessToken);
+                const supplierQuery = fornecedorId ? `&fornecedor_id=${encodeURIComponent(fornecedorId)}` : '';
+                const res = await fetch(`/api/propostas/loss-reason?cotacao_id=${encodeURIComponent(cotacaoId)}${supplierQuery}`, { headers });
+                if (!res.ok) {
+                    const errJson = await res.json().catch(() => ({}));
+                    if (!cancelled) setError(errJson.error || 'Não foi possível carregar a análise.');
+                    return;
+                }
+                const json: LossReasonResponse = await res.json();
+                if (!cancelled) setData(json);
+            } catch (e: any) {
+                if (!cancelled) setError(e?.message || 'Falha ao consultar análise.');
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        };
+        load();
+        return () => { cancelled = true; };
+    }, [cotacaoId, fornecedorId, accessToken]);
+
+    if (loading) {
+        return (
+            <div className="bg-white border border-gray-200 rounded-lg p-4 text-sm text-gray-500">
+                Analisando motivos da perda…
+            </div>
+        );
+    }
+    if (error) {
+        return (
+            <div className="bg-white border border-red-200 rounded-lg p-4 text-sm text-red-600">
+                {error}
+            </div>
+        );
+    }
+    if (!data) return null;
+
+    const reasonItems: LossReason[] = Array.isArray(data.reasons) && data.reasons.length > 0 && typeof data.reasons[0] === 'string'
+        ? (data.reasons as string[]).map((t) => ({ category: 'Análise', severity: 'info', text: t }))
+        : (data.reasons as LossReason[]);
+
+    return (
+        <div className="bg-white border border-red-200 rounded-lg overflow-hidden">
+            <div className="px-4 py-3 border-b border-red-100 bg-red-50/60 flex items-center justify-between">
+                <div>
+                    <h4 className="text-sm font-semibold text-red-900">Por que você não foi escolhido</h4>
+                    <p className="text-xs text-red-700/80 mt-0.5">
+                        Análise comparativa anonimizada — nunca identificamos o concorrente.
+                    </p>
+                </div>
+                {data.summary && data.summary.competitorsCount > 0 && (
+                    <div className="text-right">
+                        <div className="text-[10px] uppercase tracking-wide text-red-700/70">Concorrentes</div>
+                        <div className="text-sm font-bold text-red-900">{data.summary.competitorsCount}</div>
+                    </div>
+                )}
+            </div>
+            <div className="p-4 space-y-3">
+                {reasonItems.length === 0 && (
+                    <p className="text-sm text-gray-600">Sem dados suficientes para gerar uma análise.</p>
+                )}
+                {reasonItems.map((r, idx) => (
+                    <div key={idx} className="flex items-start gap-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border whitespace-nowrap ${severityBadge(r.severity)}`}>
+                            {r.category}
+                        </span>
+                        <p className="text-sm text-gray-800 leading-snug">{r.text}</p>
+                    </div>
+                ))}
+
+                {data.suggestions && data.suggestions.length > 0 && (
+                    <div className="pt-3 mt-2 border-t border-gray-100">
+                        <div className="text-xs font-semibold text-gray-700 mb-2">Sugestões para a próxima cotação</div>
+                        <ul className="space-y-1 text-sm text-gray-700 list-disc list-inside">
+                            {data.suggestions.map((s, i) => (
+                                <li key={i}>{s}</li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 export function SupplierQuotationInboxSection() {
     const { user, profile, session, initialized } = useAuth();
     const { activeSupplierId, requiresSelection } = useSupplierAccessContext();
@@ -26,6 +151,8 @@ export function SupplierQuotationInboxSection() {
         categories: [] as string[]
     });
     const [statusFilter, setStatusFilter] = useState<"all" | "received" | "responded" | "won" | "lost">("all");
+    const [filterOnlyActiveItems, setFilterOnlyActiveItems] = useState(false);
+    const [inactiveItemsModal, setInactiveItemsModal] = useState<{ cotacaoId: string; items: any[] } | null>(null);
     const deepLinkHandledRef = useRef<string | null>(null);
 
     const openChat = (context: { recipientName: string; recipientId: string; roomId: string; roomTitle?: string }) => {
@@ -102,6 +229,23 @@ export function SupplierQuotationInboxSection() {
             let items = data.map((doc: any) => {
                 const obra = doc._obra;
                 const cliente = doc._cliente;
+
+                // Processar items para contar ativos e inativos
+                const allItems = (doc.cotacao_itens || []).map((item: any) => ({
+                    id: item.id,
+                    descricao: item.nome,
+                    quantidade: item.quantidade,
+                    unidade: item.unidade,
+                    observacao: item.observacao,
+                    grupo: item.grupo,
+                    fase_nome: item.fase_nome,
+                    servico_nome: item.servico_nome,
+                    _inativo_para_fornecedor: !!item._inativo_para_fornecedor,
+                }));
+
+                const inactiveItems = allItems.filter((item: any) => item._inativo_para_fornecedor);
+                const activeItems = allItems.filter((item: any) => !item._inativo_para_fornecedor);
+
                 return {
                     id: doc.id,
                     numero: doc.numero || null,
@@ -126,16 +270,10 @@ export function SupplierQuotationInboxSection() {
                     receivedAt: doc.created_at ? new Date(doc.created_at).toLocaleString() : "N/A",
                     deadline: doc.data_validade ? new Date(doc.data_validade).toLocaleDateString('pt-BR') : "Sem prazo",
                     itemsCount: doc.cotacao_itens?.length || 0,
-                    items: (doc.cotacao_itens || []).map((item: any) => ({
-                        id: item.id,
-                        descricao: item.nome,
-                        quantidade: item.quantidade,
-                        unidade: item.unidade,
-                        observacao: item.observacao,
-                        grupo: item.grupo,
-                        fase_nome: item.fase_nome,
-                        servico_nome: item.servico_nome
-                    })),
+                    inactiveItemsCount: inactiveItems.length,
+                    activeItemsCount: activeItems.length,
+                    items: allItems,
+                    inactiveItems: inactiveItems,
                     urgency: "Média",
                     _proposta_status: doc._proposta_status || null,
                     _closed_with_me: !!doc._closed_with_me,
@@ -156,6 +294,11 @@ export function SupplierQuotationInboxSection() {
                 });
             }
 
+            // Filtrar por itens ativos se configurado
+            if (filterOnlyActiveItems) {
+                items = items.filter((item: any) => item.activeItemsCount > 0);
+            }
+
             setQuotations(items);
             return items; // Retorna os items processados
         } catch (err) {
@@ -165,7 +308,7 @@ export function SupplierQuotationInboxSection() {
         } finally {
             setLoading(false);
         }
-    }, [session, activeSupplierId, requiresSelection]);
+    }, [session, activeSupplierId, requiresSelection, filterOnlyActiveItems]);
 
     useEffect(() => {
         if (!initialized || !user) return;
@@ -408,6 +551,7 @@ export function SupplierQuotationInboxSection() {
                     <SupplierQuotationResponseSection
                         quotation={selectedQuotation}
                         fornecedorId={activeSupplierId}
+                        filterOnlyActiveItems={filterOnlyActiveItems}
                         onBack={() => {
                             setSelectedQuotation(null);
                         }}
@@ -521,6 +665,14 @@ export function SupplierQuotationInboxSection() {
                         )}
                     </div>
 
+                    {selectedUnifiedStatus === 'lost' && (
+                        <LossReasonCard
+                            cotacaoId={selectedQuotation.id}
+                            fornecedorId={fornecedorId}
+                            accessToken={session?.access_token}
+                        />
+                    )}
+
                     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                         <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
                             <h4 className="text-sm font-semibold text-gray-900">Itens do Pedido</h4>
@@ -565,6 +717,7 @@ export function SupplierQuotationInboxSection() {
             <SupplierQuotationResponseSection
                 quotation={selectedQuotation}
                 fornecedorId={activeSupplierId}
+                filterOnlyActiveItems={filterOnlyActiveItems}
                 onBack={() => {
                     setSelectedQuotation(null);
                     fetchQuotations();
@@ -625,6 +778,24 @@ export function SupplierQuotationInboxSection() {
                     >
                         Perdeu ({lostClosedCount})
                     </button>
+                    <div className="flex items-center gap-2 pl-4 border-l border-gray-200">
+                        <input
+                            type="checkbox"
+                            id="filterOnlyActiveItems"
+                            checked={filterOnlyActiveItems}
+                            onChange={() => {
+                                setFilterOnlyActiveItems(!filterOnlyActiveItems);
+                                // Será chamado fetchQuotations automaticamente via useEffect
+                            }}
+                            className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                        />
+                        <label
+                            htmlFor="filterOnlyActiveItems"
+                            className="text-xs font-medium text-gray-700 cursor-pointer"
+                        >
+                            Apenas materiais ativos
+                        </label>
+                    </div>
                 </div>
             </div>
 

@@ -438,7 +438,8 @@ function ClienteDashboardContent() {
             {/* Main Content */}
             <div className="section-shell py-10">
 
-                {/* Stats Cards */}
+                {/* Stats Cards — ocultos na Nova Cotação (modo foco) */}
+                {tab !== "cotacao" && (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                     <div className="card-elevated p-6" data-tour="cliente-stat-perfis">
                         <div className="flex items-center">
@@ -496,6 +497,7 @@ function ClienteDashboardContent() {
                         </div>
                     </div>
                 </div>
+                )}
 
                 {/* Main Content Area */}
                 <div className="card-elevated">

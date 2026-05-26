@@ -66,10 +66,7 @@ export function SupplierMaterialsSection() {
     const [filterGrupo, setFilterGrupo] = useState<string>("all");
     const [filterStatus, setFilterStatus] = useState<"all" | "active" | "inactive" | "pending">("all");
 
-    // Edição inline
-    const [editingMaterial, setEditingMaterial] = useState<string | null>(null);
-    const [editPreco, setEditPreco] = useState("");
-    const [editEstoque, setEditEstoque] = useState("");
+    // Edição inline (removida: preço é informado na cotação)
 
     // Modal de solicitação
     const [showRequestModal, setShowRequestModal] = useState(false);
@@ -77,6 +74,8 @@ export function SupplierMaterialsSection() {
     const [requestMaterialDesc, setRequestMaterialDesc] = useState("");
     const [requestGrupo, setRequestGrupo] = useState("");
     const [sendingRequest, setSendingRequest] = useState(false);
+    const [requestSimilares, setRequestSimilares] = useState<Array<{ id: string; nome: string; unidade: string; similarity: number }>>([]);
+    const [requestForce, setRequestForce] = useState(false);
     const [importingSpreadsheet, setImportingSpreadsheet] = useState(false);
     const [exportingSpreadsheet, setExportingSpreadsheet] = useState(false);
     const spreadsheetInputRef = useRef<HTMLInputElement | null>(null);
@@ -326,63 +325,6 @@ export function SupplierMaterialsSection() {
         setSortConfig({ key, direction });
     };
 
-    const startEditing = (materialId: string) => {
-        const current = fornecedorMateriais.get(materialId);
-        setEditingMaterial(materialId);
-        setEditPreco(current?.preco?.toString() || "");
-        setEditEstoque(current?.estoque?.toString() || "");
-    };
-
-    const cancelEditing = () => {
-        setEditingMaterial(null);
-        setEditPreco("");
-        setEditEstoque("");
-    };
-
-    const saveEditing = async () => {
-        if (!fornecedorId || !editingMaterial) return;
-
-        try {
-            const headers = await getAuthHeaders(session?.access_token);
-            const res = await fetch('/api/fornecedor-materiais', {
-                method: 'POST',
-                headers,
-                credentials: 'include',
-                body: JSON.stringify({
-                    action: 'upsert',
-                    fornecedor_id: fornecedorId,
-                    material_id: editingMaterial,
-                    preco: parseFloat(editPreco) || 0,
-                    estoque: parseInt(editEstoque) || 0,
-                    ativo: true
-                })
-            });
-
-            if (!res.ok) {
-                const json = await res.json();
-                throw new Error(json.error || 'Erro ao salvar');
-            }
-
-            // Atualiza o mapa local
-            setFornecedorMateriais(prev => {
-                const newMap = new Map(prev);
-                newMap.set(editingMaterial, {
-                    materialId: editingMaterial,
-                    preco: parseFloat(editPreco) || 0,
-                    estoque: parseInt(editEstoque) || 0,
-                    ativo: true,
-                    updatedAt: new Date().toISOString()
-                });
-                return newMap;
-            });
-
-            cancelEditing();
-        } catch (error) {
-            console.error("Erro ao salvar:", error);
-            showToast("error", "Erro ao salvar. Tente novamente.");
-        }
-    };
-
     const toggleAtivoMaterial = async (materialId: string, novoAtivo: boolean) => {
         if (!fornecedorId) return;
 
@@ -444,13 +386,20 @@ export function SupplierMaterialsSection() {
                     nome: requestMaterialName,
                     unidade: 'unid',
                     descricao: requestMaterialDesc,
-                    grupo_sugerido: requestGrupo
+                    grupo_sugerido: requestGrupo,
+                    force: requestForce,
                 })
             });
 
+            const json = await res.json();
+            if (res.status === 409 && json?.duplicate) {
+                setRequestSimilares(json.similares || []);
+                setRequestForce(true);
+                showToast("info", json.message || "Encontramos material parecido. Confirme para enviar mesmo assim.");
+                return;
+            }
             if (!res.ok) {
-                const json = await res.json();
-                throw new Error(json.error || 'Erro ao enviar solicitação');
+                throw new Error(json?.error || 'Erro ao enviar solicitação');
             }
 
             showToast("success", "Solicitação enviada com sucesso! O administrador irá analisar.");
@@ -458,6 +407,8 @@ export function SupplierMaterialsSection() {
             setRequestMaterialName("");
             setRequestMaterialDesc("");
             setRequestGrupo("");
+            setRequestSimilares([]);
+            setRequestForce(false);
         } catch (error) {
             console.error("Erro ao enviar solicitação:", error);
             showToast("error", "Erro ao enviar solicitação. Tente novamente.");
@@ -801,28 +752,6 @@ export function SupplierMaterialsSection() {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     Unidade
                                 </th>
-                                <th
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                                    onClick={() => handleSort('preco')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Preço (R$)
-                                        {sortConfig?.key === 'preco' && (
-                                            sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-4 w-4" /> : <ArrowDownIcon className="h-4 w-4" />
-                                        )}
-                                    </div>
-                                </th>
-                                <th
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                                    onClick={() => handleSort('estoque')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Estoque
-                                        {sortConfig?.key === 'estoque' && (
-                                            sortConfig.direction === 'asc' ? <ArrowUpIcon className="h-4 w-4" /> : <ArrowDownIcon className="h-4 w-4" />
-                                        )}
-                                    </div>
-                                </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     Status
                                 </th>
@@ -844,14 +773,13 @@ export function SupplierMaterialsSection() {
                                 ))
                             ) : materiaisFiltrados.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                                    <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
                                         Nenhum material encontrado
                                     </td>
                                 </tr>
                             ) : (
                                 materiaisFiltrados.map((material) => {
                                     const config = fornecedorMateriais.get(material.id);
-                                    const isEditing = editingMaterial === material.id;
                                     const isConfigured = !!config;
                                     const isInativo = config?.ativo === false;
                                     const isAtivo = isConfigured && !isInativo;
@@ -882,38 +810,6 @@ export function SupplierMaterialsSection() {
                                                 {material.unidade}
                                             </td>
                                             <td className="px-6 py-4">
-                                                {isEditing ? (
-                                                    <input
-                                                        type="number"
-                                                        value={editPreco}
-                                                        onChange={(e) => setEditPreco(e.target.value)}
-                                                        className="w-24 px-2 py-1 border border-blue-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                                                        step="0.01"
-                                                        min="0"
-                                                        autoFocus
-                                                    />
-                                                ) : (
-                                                    <span className={`text-sm ${isAtivo ? 'font-medium text-gray-900' : 'text-gray-400'}`}>
-                                                        {isConfigured && !isInativo ? `R$ ${config.preco.toFixed(2)}` : '-'}
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                {isEditing ? (
-                                                    <input
-                                                        type="number"
-                                                        value={editEstoque}
-                                                        onChange={(e) => setEditEstoque(e.target.value)}
-                                                        className="w-20 px-2 py-1 border border-blue-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                                                        min="0"
-                                                    />
-                                                ) : (
-                                                    <span className={`text-sm ${isAtivo ? 'font-medium text-gray-900' : 'text-gray-400'}`}>
-                                                        {isConfigured && !isInativo ? config.estoque : '-'}
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className="px-6 py-4">
                                                 {isInativo ? (
                                                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
                                                         <X className="h-3.5 w-3.5" />
@@ -932,52 +828,25 @@ export function SupplierMaterialsSection() {
                                                 )}
                                             </td>
                                             <td className="px-6 py-4 text-right">
-                                                {isEditing ? (
-                                                    <div className="flex items-center justify-end gap-2">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    {isAtivo ? (
                                                         <button
-                                                            onClick={saveEditing}
-                                                            className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
-                                                            title="Salvar"
+                                                            onClick={() => toggleAtivoMaterial(material.id, false)}
+                                                            className="px-3 py-1.5 bg-white text-red-600 text-xs font-medium rounded-lg border border-red-200 hover:bg-red-50 transition-colors"
+                                                            title="Não ofereço este material"
                                                         >
-                                                            <CheckIcon className="h-4 w-4" />
+                                                            Inativar
                                                         </button>
+                                                    ) : (
                                                         <button
-                                                            onClick={cancelEditing}
-                                                            className="p-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
-                                                            title="Cancelar"
+                                                            onClick={() => toggleAtivoMaterial(material.id, true)}
+                                                            className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors"
+                                                            title={isInativo ? 'Reativar material' : 'Ativar para receber cotações'}
                                                         >
-                                                            <X className="h-4 w-4" />
+                                                            Ativar
                                                         </button>
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex items-center justify-end gap-2">
-                                                        {!isInativo && (
-                                                            <button
-                                                                onClick={() => startEditing(material.id)}
-                                                                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                                                            >
-                                                                {isAtivo ? 'Editar' : 'Configurar'}
-                                                            </button>
-                                                        )}
-                                                        {isInativo ? (
-                                                            <button
-                                                                onClick={() => toggleAtivoMaterial(material.id, true)}
-                                                                className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors"
-                                                                title="Reativar material"
-                                                            >
-                                                                Ativar
-                                                            </button>
-                                                        ) : (
-                                                            <button
-                                                                onClick={() => toggleAtivoMaterial(material.id, false)}
-                                                                className="px-3 py-1.5 bg-white text-red-600 text-xs font-medium rounded-lg border border-red-200 hover:bg-red-50 transition-colors"
-                                                                title="Não ofereço este material"
-                                                            >
-                                                                Inativar
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                )}
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -1049,6 +918,25 @@ export function SupplierMaterialsSection() {
                                     ))}
                                 </select>
                             </div>
+
+                            {requestSimilares.length > 0 && (
+                                <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-3">
+                                    <p className="mb-2 text-xs font-semibold text-violet-700">
+                                        Materiais já cadastrados parecidos (sugestões da IA):
+                                    </p>
+                                    <ul className="space-y-1">
+                                        {requestSimilares.slice(0, 5).map((s) => (
+                                            <li key={s.id} className="rounded-md bg-white px-2 py-1.5 text-xs">
+                                                <p className="font-semibold text-slate-800">{s.nome}</p>
+                                                <p className="text-[11px] text-slate-500">Unidade: {s.unidade} · {Math.round((s.similarity || 0) * 100)}% similar</p>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                    <p className="mt-2 text-[11px] text-violet-700">
+                                        Se nenhum atende, clique em "Enviar mesmo assim" abaixo.
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
@@ -1064,7 +952,7 @@ export function SupplierMaterialsSection() {
                                 className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <Send className="h-4 w-4" />
-                                {sendingRequest ? 'Enviando...' : 'Enviar Solicitação'}
+                                {sendingRequest ? 'Enviando...' : (requestForce && requestSimilares.length > 0 ? 'Enviar mesmo assim' : 'Enviar Solicitação')}
                             </button>
                         </div>
                     </div>

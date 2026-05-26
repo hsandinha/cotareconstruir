@@ -72,22 +72,26 @@ interface StatCardProps {
 
 const StatCard = ({ title, value, icon, trend, color }: StatCardProps) => {
     const colorStyles = {
-        blue: 'bg-blue-50 text-blue-600',
-        indigo: 'bg-indigo-50 text-indigo-600',
-        violet: 'bg-violet-50 text-violet-600',
-        emerald: 'bg-emerald-50 text-emerald-600',
-    };
+        blue: { chip: 'bg-blue-50 text-blue-600', bar: 'bg-blue-500', ring: 'group-hover:ring-blue-200' },
+        indigo: { chip: 'bg-indigo-50 text-indigo-600', bar: 'bg-indigo-500', ring: 'group-hover:ring-indigo-200' },
+        violet: { chip: 'bg-violet-50 text-violet-600', bar: 'bg-violet-500', ring: 'group-hover:ring-violet-200' },
+        emerald: { chip: 'bg-emerald-50 text-emerald-600', bar: 'bg-emerald-500', ring: 'group-hover:ring-emerald-200' },
+    } as const;
+    const styles = colorStyles[color];
 
     return (
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-300">
-            <div className="flex items-start justify-between">
-                <div>
-                    <p className="text-sm font-medium text-slate-500 mb-1">{title}</p>
-                    <h3 className="text-3xl font-bold text-slate-900">{value}</h3>
-                    {trend && <p className="text-xs text-slate-400 mt-2">{trend}</p>}
-                </div>
-                <div className={`p-3 rounded-xl ${colorStyles[color]}`}>
+        <div className={`group relative overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 ring-1 ring-transparent ${styles.ring}`}>
+            <div className={`absolute inset-x-0 top-0 h-1 ${styles.bar}`} aria-hidden />
+            <div className="flex items-start gap-4 p-5">
+                <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${styles.chip} transition-transform duration-300 group-hover:scale-105`}>
                     {icon}
+                </div>
+                <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{title}</p>
+                    <h3 className="mt-1 text-3xl font-bold tracking-tight text-slate-900 tabular-nums">{value.toLocaleString('pt-BR')}</h3>
+                    {trend && (
+                        <p className="mt-1.5 text-xs text-slate-500">{trend}</p>
+                    )}
                 </div>
             </div>
         </div>
@@ -216,6 +220,8 @@ export default function ConstructionManagement() {
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [searchQuery, setSearchQuery] = useState('');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false); // For mobile or details panel
+    const [treeMode, setTreeMode] = useState<'auto' | 'all' | 'none'>('auto');
+    const [treeNonce, setTreeNonce] = useState(0);
 
     // Data State - Agora usando Firestore
     const [fases, setFases] = useState<Fase[]>([]);
@@ -602,117 +608,151 @@ export default function ConstructionManagement() {
 
             {/* Hierarchical View - Tree Structure */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                    <div>
+                <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/50">
+                    <div className="min-w-0">
                         <h3 className="text-lg font-bold text-slate-900">Estrutura Hierárquica</h3>
                         <p className="text-sm text-slate-500">Navegue por Fases {'>'} Serviços {'>'} Grupos {'>'} Materiais</p>
                     </div>
-                    <div className="flex gap-2">
-                        <button onClick={() => setActiveTab('fases')} className="text-sm text-blue-600 hover:underline">Gerenciar Fases</button>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                        <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
+                            <button
+                                type="button"
+                                onClick={() => { setTreeMode('all'); setTreeNonce((n) => n + 1); }}
+                                className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                title="Expandir todos os itens"
+                            >
+                                <ChevronDown className="w-3.5 h-3.5" /> Expandir tudo
+                            </button>
+                            <span className="h-4 w-px bg-slate-200" aria-hidden />
+                            <button
+                                type="button"
+                                onClick={() => { setTreeMode('none'); setTreeNonce((n) => n + 1); }}
+                                className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                title="Recolher todos os itens"
+                            >
+                                <ChevronRight className="w-3.5 h-3.5" /> Recolher
+                            </button>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('fases')}
+                            className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                        >
+                            Gerenciar Fases <ArrowUpRight className="w-3.5 h-3.5" />
+                        </button>
                     </div>
                 </div>
 
                 <div className="p-4 bg-slate-50/20 min-h-[400px]">
-                    {filteredFases.map((fase) => {
-                        const faseServicos = servicosByFaseId.get(fase.id) || [];
+                    {(() => {
+                        const treeAutoOpen = treeMode === 'all' ? true : treeMode === 'none' ? false : !!searchQuery;
+                        return filteredFases.map((fase) => {
+                            const faseServicos = servicosByFaseId.get(fase.id) || [];
 
-                        // Filter logic for deep search
-                        if (searchQuery) {
-                            const hasMatchingService = faseServicos.some(s => {
-                                const sGrupos = s.gruposInsumoIds.map(id => grupoById.get(id)).filter(Boolean) as GrupoInsumo[];
-                                const hasMatchingGroup = sGrupos.some(g => {
-                                    const gMateriais = materiaisByGrupoId.get(g.id) || [];
-                                    return filterItem(g.nome, searchQuery) || gMateriais.some(m => filterItem(m.nome, searchQuery));
+                            // Filter logic for deep search
+                            if (searchQuery) {
+                                const hasMatchingService = faseServicos.some(s => {
+                                    const sGrupos = s.gruposInsumoIds.map(id => grupoById.get(id)).filter(Boolean) as GrupoInsumo[];
+                                    const hasMatchingGroup = sGrupos.some(g => {
+                                        const gMateriais = materiaisByGrupoId.get(g.id) || [];
+                                        return filterItem(g.nome, searchQuery) || gMateriais.some(m => filterItem(m.nome, searchQuery));
+                                    });
+                                    return filterItem(s.nome, searchQuery) || hasMatchingGroup;
                                 });
-                                return filterItem(s.nome, searchQuery) || hasMatchingGroup;
-                            });
-                            if (!filterItem(fase.nome, searchQuery) && !hasMatchingService) return null;
-                        }
+                                if (!filterItem(fase.nome, searchQuery) && !hasMatchingService) return null;
+                            }
 
-                        return (
-                            <TreeItem
-                                key={fase.id}
-                                title={`${fase.cronologia}. ${fase.nome}`}
-                                count={faseServicos.length}
-                                level={0}
-                                icon={Layers}
-                                defaultOpen={!!searchQuery}
-                            >
-                                {faseServicos.map(servico => {
-                                    const servicoGrupos = servico.gruposInsumoIds.map(id => grupoById.get(id)).filter(Boolean) as GrupoInsumo[];
+                            return (
+                                <TreeItem
+                                    key={`${fase.id}-${treeNonce}`}
+                                    title={`${fase.cronologia}. ${fase.nome}`}
+                                    count={faseServicos.length}
+                                    level={0}
+                                    icon={Layers}
+                                    defaultOpen={treeAutoOpen}
+                                >
+                                    {faseServicos.map(servico => {
+                                        const servicoGrupos = servico.gruposInsumoIds.map(id => grupoById.get(id)).filter(Boolean) as GrupoInsumo[];
 
-                                    // Filter logic
-                                    if (searchQuery) {
-                                        const hasMatchingGroup = servicoGrupos.some(g => {
-                                            const gMateriais = materiaisByGrupoId.get(g.id) || [];
-                                            return filterItem(g.nome, searchQuery) || gMateriais.some(m => filterItem(m.nome, searchQuery));
-                                        });
-                                        if (!filterItem(servico.nome, searchQuery) && !hasMatchingGroup) return null;
-                                    }
+                                        // Filter logic
+                                        if (searchQuery) {
+                                            const hasMatchingGroup = servicoGrupos.some(g => {
+                                                const gMateriais = materiaisByGrupoId.get(g.id) || [];
+                                                return filterItem(g.nome, searchQuery) || gMateriais.some(m => filterItem(m.nome, searchQuery));
+                                            });
+                                            if (!filterItem(servico.nome, searchQuery) && !hasMatchingGroup) return null;
+                                        }
 
-                                    return (
-                                        <TreeItem
-                                            key={servico.id}
-                                            title={servico.nome}
-                                            count={servicoGrupos.length}
-                                            level={1}
-                                            icon={Wrench}
-                                            defaultOpen={!!searchQuery}
-                                        >
-                                            {servicoGrupos.length > 0 ? (
-                                                servicoGrupos.map(grupo => {
-                                                    const grupoMateriais = materiaisByGrupoId.get(grupo.id) || [];
+                                        return (
+                                            <TreeItem
+                                                key={servico.id}
+                                                title={servico.nome}
+                                                count={servicoGrupos.length}
+                                                level={1}
+                                                icon={Wrench}
+                                                defaultOpen={treeAutoOpen}
+                                            >
+                                                {servicoGrupos.length > 0 ? (
+                                                    servicoGrupos.map(grupo => {
+                                                        const grupoMateriais = materiaisByGrupoId.get(grupo.id) || [];
 
-                                                    // Filter logic
-                                                    if (searchQuery) {
-                                                        const hasMatchingMaterial = grupoMateriais.some(m => filterItem(m.nome, searchQuery));
-                                                        if (!filterItem(grupo.nome, searchQuery) && !hasMatchingMaterial) return null;
-                                                    }
+                                                        // Filter logic
+                                                        if (searchQuery) {
+                                                            const hasMatchingMaterial = grupoMateriais.some(m => filterItem(m.nome, searchQuery));
+                                                            if (!filterItem(grupo.nome, searchQuery) && !hasMatchingMaterial) return null;
+                                                        }
 
-                                                    return (
-                                                        <TreeItem
-                                                            key={grupo.id}
-                                                            title={grupo.nome}
-                                                            count={grupoMateriais.length}
-                                                            level={2}
-                                                            icon={Boxes}
-                                                            defaultOpen={!!searchQuery}
-                                                        >
-                                                            {grupoMateriais.length > 0 ? (
-                                                                <div className="pl-16 pr-4 py-2 grid grid-cols-1 gap-2">
-                                                                    {grupoMateriais.map(material => {
-                                                                        if (searchQuery && !filterItem(material.nome, searchQuery)) return null;
-                                                                        return (
-                                                                            <div key={material.id} className="flex items-center justify-between p-2 bg-white rounded border border-slate-100 hover:border-blue-200 transition-colors">
-                                                                                <div className="flex items-center gap-2">
-                                                                                    <Package className="w-3 h-3 text-emerald-500" />
-                                                                                    <span className="text-sm text-slate-700">{material.nome}</span>
+                                                        return (
+                                                            <TreeItem
+                                                                key={grupo.id}
+                                                                title={grupo.nome}
+                                                                count={grupoMateriais.length}
+                                                                level={2}
+                                                                icon={Boxes}
+                                                                defaultOpen={treeAutoOpen}
+                                                            >
+                                                                {grupoMateriais.length > 0 ? (
+                                                                    <div className="pl-16 pr-4 py-2 grid grid-cols-1 gap-2">
+                                                                        {grupoMateriais.map(material => {
+                                                                            if (searchQuery && !filterItem(material.nome, searchQuery)) return null;
+                                                                            return (
+                                                                                <div key={material.id} className="flex items-center justify-between p-2 bg-white rounded border border-slate-100 hover:border-blue-200 transition-colors">
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <Package className="w-3 h-3 text-emerald-500" />
+                                                                                        <span className="text-sm text-slate-700">{material.nome}</span>
+                                                                                    </div>
+                                                                                    <span className="text-xs text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">
+                                                                                        {material.unidade}
+                                                                                    </span>
                                                                                 </div>
-                                                                                <span className="text-xs text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">
-                                                                                    {material.unidade}
-                                                                                </span>
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            ) : (
-                                                                <div className="pl-16 py-2 text-xs text-slate-400 italic">Nenhum material vinculado a este grupo.</div>
-                                                            )}
-                                                        </TreeItem>
-                                                    );
-                                                })
-                                            ) : (
-                                                <div className="pl-12 py-2 text-xs text-slate-400 italic">Nenhum grupo de insumo vinculado.</div>
-                                            )}
-                                        </TreeItem>
-                                    );
-                                })}
-                                {faseServicos.length === 0 && (
-                                    <div className="pl-8 py-2 text-sm text-slate-400 italic">Nenhum serviço cadastrado nesta fase.</div>
-                                )}
-                            </TreeItem>
-                        );
-                    })}
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="ml-16 my-2 inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700 border border-amber-100">
+                                                                        <AlertCircle className="w-3 h-3" /> Sem materiais
+                                                                    </div>
+                                                                )}
+                                                            </TreeItem>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <div className="ml-12 my-2 inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700 border border-amber-100">
+                                                        <AlertCircle className="w-3 h-3" /> Sem grupos vinculados
+                                                    </div>
+                                                )}
+                                            </TreeItem>
+                                        );
+                                    })}
+                                    {faseServicos.length === 0 && (
+                                        <div className="ml-8 my-2 inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700 border border-amber-100">
+                                            <AlertCircle className="w-3 h-3" /> Nenhum serviço nesta fase
+                                        </div>
+                                    )}
+                                </TreeItem>
+                            );
+                        });
+                    })()}
                 </div>
             </div>
         </div>
@@ -1543,7 +1583,7 @@ export default function ConstructionManagement() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50/50 p-4 md:p-8 font-sans text-slate-900">
+        <div className="font-sans text-slate-900">
             {loading && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm">
                     <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
@@ -1563,78 +1603,88 @@ export default function ConstructionManagement() {
                 </div>
             )}
 
-            <div className="max-w-7xl mx-auto space-y-8">
+            <div className="space-y-6">
                 {/* Header */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                     <div>
                         <div className="flex items-center gap-2">
-                            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Gestão da Obra</h1>
-                            <div title="Conectado ao Firestore">
-                                <Database className="w-6 h-6 text-green-600" />
+                            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">Gestão da Obra</h1>
+                            <div title="Conectado ao Supabase" className="inline-flex h-6 w-6 items-center justify-center">
+                                <Database className="w-5 h-5 text-emerald-600" />
                             </div>
                         </div>
-                        <p className="text-slate-500 mt-1">Configure a estrutura, serviços e materiais do projeto.</p>
+                        <p className="text-sm text-slate-500 mt-1">Configure a estrutura, serviços e materiais do projeto.</p>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={loadData}
-                            className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                            title="Recarregar dados"
-                        >
-                            <RefreshCw className="w-5 h-5 text-slate-600" />
-                        </button>
-                        <div className="relative group">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 group-focus-within:text-blue-500 transition-colors" />
+                    <div className="flex items-center gap-2">
+                        <div className="relative w-full md:w-72">
+                            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                             <input
-                                type="text"
+                                type="search"
                                 placeholder="Buscar em toda a obra..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-10 pr-4 py-3 w-full md:w-80 bg-white border border-slate-200 rounded-xl shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                                className="pl-9 pr-3 py-2 w-full bg-white border border-slate-200 rounded-lg text-sm shadow-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 outline-none transition-all"
                             />
                         </div>
+                        <button
+                            onClick={loadData}
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors"
+                            title="Recarregar dados"
+                            aria-label="Recarregar dados"
+                        >
+                            <RefreshCw className="w-4 h-4" />
+                        </button>
                     </div>
                 </div>
 
-                {/* Navigation */}
-                <div className="flex flex-wrap gap-2 bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
-                    <TabButton
-                        active={activeTab === 'overview'}
-                        onClick={() => setActiveTab('overview')}
-                        icon={<LayoutDashboard className="w-4 h-4" />}
-                        label="Visão Geral"
-                    />
-                    <TabButton
-                        active={activeTab === 'vinculos'}
-                        onClick={() => setActiveTab('vinculos')}
-                        icon={<ArrowUpRight className="w-4 h-4" />}
-                        label="Vínculos"
-                    />
-                    <div className="w-px h-8 bg-slate-200 mx-2 self-center hidden md:block" />
-                    <TabButton
-                        active={activeTab === 'fases'}
-                        onClick={() => setActiveTab('fases')}
-                        icon={<Layers className="w-4 h-4" />}
-                        label="Fases"
-                    />
-                    <TabButton
-                        active={activeTab === 'servicos'}
-                        onClick={() => setActiveTab('servicos')}
-                        icon={<Wrench className="w-4 h-4" />}
-                        label="Serviços"
-                    />
-                    <TabButton
-                        active={activeTab === 'grupos'}
-                        onClick={() => setActiveTab('grupos')}
-                        icon={<Boxes className="w-4 h-4" />}
-                        label="Grupos"
-                    />
-                    <TabButton
-                        active={activeTab === 'materiais'}
-                        onClick={() => setActiveTab('materiais')}
-                        icon={<Package className="w-4 h-4" />}
-                        label="Materiais"
-                    />
+                {/* Segmented Navigation */}
+                <div className="border-b border-slate-200">
+                    <nav
+                        className="flex items-center gap-0.5 overflow-x-auto -mb-px scrollbar-hide"
+                        style={{ WebkitOverflowScrolling: 'touch' }}
+                        aria-label="Seções da Gestão da Obra"
+                    >
+                        {([
+                            { id: 'overview' as TabType, label: 'Visão Geral', icon: LayoutDashboard, group: 1 as const },
+                            { id: 'vinculos' as TabType, label: 'Vínculos', icon: ArrowUpRight, group: 1 as const },
+                            { id: 'fases' as TabType, label: 'Fases', icon: Layers, count: fases.length, group: 2 as const },
+                            { id: 'servicos' as TabType, label: 'Serviços', icon: Wrench, count: servicos.length, group: 2 as const },
+                            { id: 'grupos' as TabType, label: 'Grupos', icon: Boxes, count: grupos.length, group: 2 as const },
+                            { id: 'materiais' as TabType, label: 'Materiais', icon: Package, count: materiais.length, group: 2 as const },
+                        ]).map((tab, idx, arr) => {
+                            const active = activeTab === tab.id;
+                            const Icon = tab.icon;
+                            const prev = arr[idx - 1];
+                            const needsSeparator = prev && prev.group !== tab.group;
+                            return (
+                                <div key={tab.id} className="flex items-center">
+                                    {needsSeparator && <span className="mx-2 h-5 w-px bg-slate-200" aria-hidden />}
+                                    <button
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={active}
+                                        onClick={() => setActiveTab(tab.id)}
+                                        className={`relative inline-flex items-center gap-2 px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${active
+                                            ? 'text-blue-700'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                            }`}
+                                    >
+                                        <Icon className={`w-4 h-4 ${active ? 'text-blue-600' : 'text-slate-400'}`} />
+                                        <span>{tab.label}</span>
+                                        {tab.count !== undefined && (
+                                            <span className={`ml-0.5 inline-flex min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-semibold leading-none h-[18px] ${active ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
+                                                }`}>
+                                                {tab.count}
+                                            </span>
+                                        )}
+                                        {active && (
+                                            <span className="absolute left-2 right-2 -bottom-px h-0.5 rounded-full bg-blue-600" aria-hidden />
+                                        )}
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </nav>
                 </div>
 
                 {/* Content Area */}

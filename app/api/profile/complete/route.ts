@@ -14,6 +14,36 @@ function removeUndefined(obj: any): any {
     return result;
 }
 
+function friendlyDbError(error: any): { message: string; status: number } {
+    const code = error?.code;
+    const detail = (error?.details || error?.message || '') as string;
+
+    if (code === '23505') {
+        // unique_violation
+        if (/fornecedores_cnpj/i.test(detail) || /cnpj/i.test(detail)) {
+            return {
+                message: 'Já existe um fornecedor cadastrado com este CNPJ. Verifique se você já possui acesso ou contate o administrador para vincular sua conta.',
+                status: 409,
+            };
+        }
+        if (/email/i.test(detail)) {
+            return {
+                message: 'Já existe um cadastro com este e-mail.',
+                status: 409,
+            };
+        }
+        if (/cpf_cnpj|cpf/i.test(detail)) {
+            return {
+                message: 'Já existe um cadastro com este CPF/CNPJ.',
+                status: 409,
+            };
+        }
+        return { message: 'Registro duplicado: ' + detail, status: 409 };
+    }
+
+    return { message: error?.message || 'Erro ao completar cadastro', status: 500 };
+}
+
 export async function POST(request: NextRequest) {
     try {
         const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
@@ -124,10 +154,12 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: true, clienteId: newCliente.id });
 
         } else if (type === 'fornecedor') {
-            // Verificar se email já está em uso
+            const cnpjDigits = data.cnpj ? String(data.cnpj).replace(/\D/g, '') : null;
+
+            // 1) Tentar vincular por email já cadastrado
             const { data: existingFornecedores } = await supabaseAdmin
                 .from('fornecedores')
-                .select('id')
+                .select('id, user_id')
                 .eq('email', data.email)
                 .limit(1);
 
@@ -152,6 +184,53 @@ export async function POST(request: NextRequest) {
                 return NextResponse.json({ success: true, fornecedorId });
             }
 
+            // 2) Tentar vincular por CNPJ existente (órfão ou já do mesmo usuário)
+            if (cnpjDigits) {
+                const { data: byCnpj } = await supabaseAdmin
+                    .from('fornecedores')
+                    .select('id, user_id')
+                    .eq('cnpj', cnpjDigits)
+                    .limit(1);
+
+                if (byCnpj && byCnpj.length > 0) {
+                    const existing = byCnpj[0];
+                    if (existing.user_id && existing.user_id !== user.id) {
+                        return NextResponse.json(
+                            {
+                                error:
+                                    'Já existe um fornecedor cadastrado com este CNPJ vinculado a outro usuário. Contate o administrador para vincular sua conta.',
+                            },
+                            { status: 409 }
+                        );
+                    }
+
+                    // Vincular registro órfão (ou já do mesmo user) e atualizar dados
+                    await supabaseAdmin
+                        .from('fornecedores')
+                        .update({
+                            user_id: user.id,
+                            razao_social: data.razaoSocial || data.razao_social || undefined,
+                            telefone: data.telefone || undefined,
+                            cep: data.cep ? String(data.cep).replace(/\D/g, '') : undefined,
+                            logradouro: data.endereco || data.logradouro || undefined,
+                            numero: data.numero || undefined,
+                            complemento: data.complemento || undefined,
+                            bairro: data.bairro || undefined,
+                            cidade: data.cidade || undefined,
+                            estado: data.estado || undefined,
+                            updated_at: new Date().toISOString(),
+                        })
+                        .eq('id', existing.id);
+
+                    await supabaseAdmin
+                        .from('users')
+                        .update({ fornecedor_id: existing.id })
+                        .eq('id', user.id);
+
+                    return NextResponse.json({ success: true, fornecedorId: existing.id });
+                }
+            }
+
             // Criar novo fornecedor
             const cleanData = removeUndefined(data);
 
@@ -159,7 +238,7 @@ export async function POST(request: NextRequest) {
             const fornecedorData = {
                 razao_social: data.razaoSocial || data.razao_social || null,
                 nome_fantasia: data.nomeFantasia || data.nome_fantasia || null,
-                cnpj: data.cnpj ? data.cnpj.replace(/\D/g, '') : null,
+                cnpj: cnpjDigits,
                 email: data.email || null,
                 telefone: data.telefone || null,
                 cep: data.cep ? data.cep.replace(/\D/g, '') : null,
@@ -205,6 +284,7 @@ export async function POST(request: NextRequest) {
 
     } catch (error: any) {
         console.error('Erro ao completar cadastro:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        const { message, status } = friendlyDbError(error);
+        return NextResponse.json({ error: message }, { status });
     }
 }

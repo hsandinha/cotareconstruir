@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { startSessionMonitoring, stopSessionMonitoring } from "../../lib/sessionManager";
 import { validatePassword } from "@/lib/validation";
 import { PasswordStrengthIndicator } from "@/components/PasswordStrength";
+import IdleSessionModal from "@/components/IdleSessionModal";
 
 export default function DashboardLayout({
     children,
@@ -132,6 +133,7 @@ export default function DashboardLayout({
     return (
         <>
             {children}
+            <IdleSessionModal />
 
             {mustChangePassword && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
@@ -179,13 +181,12 @@ export default function DashboardLayout({
                                     type="password"
                                     value={confirmPassword}
                                     onChange={(e) => setConfirmPassword(e.target.value)}
-                                    className={`mt-1 w-full rounded-lg border px-4 py-3 text-sm focus:outline-none focus:ring-2 transition-all ${
-                                        confirmPassword && newPassword !== confirmPassword
+                                    className={`mt-1 w-full rounded-lg border px-4 py-3 text-sm focus:outline-none focus:ring-2 transition-all ${confirmPassword && newPassword !== confirmPassword
                                             ? "border-red-300 focus:border-red-500 focus:ring-red-500/20"
                                             : confirmPassword && newPassword === confirmPassword
                                                 ? "border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500/20"
                                                 : "border-slate-200 focus:border-blue-500 focus:ring-blue-500/20"
-                                    }`}
+                                        }`}
                                     placeholder="Confirme sua nova senha"
                                     required
                                     minLength={8}
