@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveSupplierAccess } from '@/lib/supplierAccessServer';
+import { notifyClientNewProposal } from '@/lib/whatsappService';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
             // Verify cotação exists and is open
             const { data: cotacao } = await supabaseAdmin
                 .from('cotacoes')
-                .select('id, status, user_id')
+                .select('id, status, user_id, numero')
                 .eq('id', cotacao_id)
                 .single();
 
@@ -312,6 +313,20 @@ export async function POST(req: NextRequest) {
                         lida: false,
                         link: `/dashboard/cliente?tab=pedidos&cotacaoId=${encodeURIComponent(cotacao_id)}`
                     });
+
+                const { data: clientUser } = await supabaseAdmin
+                    .from('users')
+                    .select('telefone')
+                    .eq('id', cotacao.user_id)
+                    .single();
+
+                if (clientUser?.telefone) {
+                    await notifyClientNewProposal(
+                        clientUser.telefone,
+                        String(cotacao.numero || cotacao_id),
+                        supplierName
+                    );
+                }
             }
 
             return NextResponse.json({ success: true, data: proposta });

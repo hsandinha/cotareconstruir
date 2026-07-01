@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { notifySupplierOrderApproved } from '@/lib/whatsappService';
 
 async function getAuthUser(req: NextRequest) {
     if (!supabaseAdmin) return null;
@@ -340,6 +341,33 @@ export async function POST(req: NextRequest) {
             const selectedProposalIds = new Set<string>();
             const processedSupplierKeys = new Set<string>();
 
+            const supplierIds = [...new Set(itemsBySupplier.map((g: any) => g.supplierId).filter(Boolean))];
+            const { data: supplierContacts } = supplierIds.length > 0
+                ? await supabaseAdmin
+                    .from('fornecedores')
+                    .select('id, user_id, telefone')
+                    .in('id', supplierIds)
+                : { data: [] as any[] };
+
+            const supplierUserIds = (supplierContacts || [])
+                .map((s: any) => s.user_id)
+                .filter(Boolean);
+
+            const { data: supplierUserContacts } = supplierUserIds.length > 0
+                ? await supabaseAdmin
+                    .from('users')
+                    .select('id, telefone')
+                    .in('id', supplierUserIds)
+                : { data: [] as any[] };
+
+            const supplierUserPhoneMap = new Map((supplierUserContacts || []).map((u: any) => [u.id, u.telefone]));
+            const supplierPhoneMap = new Map(
+                (supplierContacts || []).map((s: any) => [
+                    s.id,
+                    s.telefone || (s.user_id ? supplierUserPhoneMap.get(s.user_id) : null)
+                ])
+            );
+
             // Buscar numero da cotação para usar no pedido (mesma rastreabilidade)
             const { data: cotacaoData } = await supabaseAdmin
                 .from('cotacoes')
@@ -459,6 +487,15 @@ export async function POST(req: NextRequest) {
                             lida: false,
                             link: `/dashboard/fornecedor?tab=vendas-cotacoes&pedidoId=${encodeURIComponent(orderData.id)}&cotacaoId=${encodeURIComponent(cotacaoId)}`
                         });
+                }
+
+                const supplierPhone = supplierPhoneMap.get(supplierId);
+                if (supplierPhone) {
+                    await notifySupplierOrderApproved(
+                        supplierPhone,
+                        pedidoNumero,
+                        clientDetails.name || 'Cliente'
+                    );
                 }
             }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveSupplierAccess } from '@/lib/supplierAccessServer';
+import { notifySupplierNewQuotation } from '@/lib/whatsappService';
 
 function extractTaxesFromObservacoes(observacoes: string | null | undefined) {
     if (!observacoes) return 0;
@@ -684,6 +685,40 @@ export async function POST(req: NextRequest) {
                                 await supabaseAdmin
                                     .from('cotacao_convites')
                                     .upsert(conviteRows, { onConflict: 'cotacao_id,fornecedor_id', ignoreDuplicates: true });
+
+                                const invitedIds = [...invitedSupplierIds];
+                                const cotacaoNumero = String(createdCotacoes?.[0]?.numero || createdCotacoes?.[0]?.id || '').trim();
+                                if (invitedIds.length > 0) {
+                                    const { data: supplierContacts } = await supabaseAdmin
+                                        .from('fornecedores')
+                                        .select('id, user_id, telefone')
+                                        .in('id', invitedIds);
+
+                                    const userIds = (supplierContacts || [])
+                                        .map((s: any) => s.user_id)
+                                        .filter(Boolean);
+
+                                    let userPhoneMap = new Map<string, string>();
+                                    if (userIds.length > 0) {
+                                        const { data: userContacts } = await supabaseAdmin
+                                            .from('users')
+                                            .select('id, telefone')
+                                            .in('id', userIds);
+                                        userPhoneMap = new Map((userContacts || []).map((u: any) => [u.id, u.telefone]));
+                                    }
+
+                                    await Promise.allSettled(
+                                        (supplierContacts || []).map(async (supplier: any) => {
+                                            const phone = supplier.telefone || (supplier.user_id ? userPhoneMap.get(supplier.user_id) : null);
+                                            if (!phone) return;
+                                            await notifySupplierNewQuotation(
+                                                phone,
+                                                cotacaoNumero || 'nova',
+                                                obra.nome || 'Obra sem nome'
+                                            );
+                                        })
+                                    );
+                                }
                             }
                         } catch (inviteErr) {
                             console.error('Erro ao persistir convites de cotação:', inviteErr);
