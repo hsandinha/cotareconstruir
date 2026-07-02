@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { notifySupplierOrderApproved } from '@/lib/whatsappService';
+import { notifySupplierOrderApprovedEmail } from '@/lib/emailService';
 
 async function getAuthUser(req: NextRequest) {
     if (!supabaseAdmin) return null;
@@ -345,7 +346,7 @@ export async function POST(req: NextRequest) {
             const { data: supplierContacts } = supplierIds.length > 0
                 ? await supabaseAdmin
                     .from('fornecedores')
-                    .select('id, user_id, telefone')
+                    .select('id, user_id, telefone, email')
                     .in('id', supplierIds)
                 : { data: [] as any[] };
 
@@ -356,15 +357,22 @@ export async function POST(req: NextRequest) {
             const { data: supplierUserContacts } = supplierUserIds.length > 0
                 ? await supabaseAdmin
                     .from('users')
-                    .select('id, telefone')
+                    .select('id, telefone, email')
                     .in('id', supplierUserIds)
                 : { data: [] as any[] };
 
             const supplierUserPhoneMap = new Map((supplierUserContacts || []).map((u: any) => [u.id, u.telefone]));
+            const supplierUserEmailMap = new Map((supplierUserContacts || []).map((u: any) => [u.id, u.email]));
             const supplierPhoneMap = new Map(
                 (supplierContacts || []).map((s: any) => [
                     s.id,
                     s.telefone || (s.user_id ? supplierUserPhoneMap.get(s.user_id) : null)
+                ])
+            );
+            const supplierEmailMap = new Map(
+                (supplierContacts || []).map((s: any) => [
+                    s.id,
+                    s.email || (s.user_id ? supplierUserEmailMap.get(s.user_id) : null)
                 ])
             );
 
@@ -493,6 +501,14 @@ export async function POST(req: NextRequest) {
                 if (supplierPhone) {
                     await notifySupplierOrderApproved(
                         supplierPhone,
+                        pedidoNumero,
+                        clientDetails.name || 'Cliente'
+                    );
+                }
+                const supplierEmail = supplierEmailMap.get(supplierId);
+                if (supplierEmail) {
+                    await notifySupplierOrderApprovedEmail(
+                        supplierEmail,
                         pedidoNumero,
                         clientDetails.name || 'Cliente'
                     );

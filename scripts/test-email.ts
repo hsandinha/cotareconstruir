@@ -31,11 +31,11 @@ async function main() {
     const type = (getArg('type') || 'recadastro') as EmailType;
     const dryRun = hasFlag('dry-run');
 
-    const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@Comprareconstruir.com.br';
-    const fromName = process.env.SENDGRID_FROM_NAME || 'Cota Reconstruir';
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@comprareconstruir.com.br';
+    const fromName = process.env.RESEND_FROM_NAME || 'Compra e Construir';
 
-    if (!process.env.SENDGRID_API_KEY && !dryRun) {
-        throw new Error('SENDGRID_API_KEY não está configurada no ambiente (.env.local)');
+    if (!process.env.RESEND_API_KEY && !dryRun) {
+        throw new Error('RESEND_API_KEY não está configurada no ambiente (.env.local)');
     }
 
     let subject: string;

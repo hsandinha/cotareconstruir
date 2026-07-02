@@ -20,8 +20,7 @@
     "incremental": true,
     "moduleDetection": "force",
     "types": [
-      "jest",
-      "@testing-library/jest-dom"
+      "jest"
     ],
     "plugins": [
       {

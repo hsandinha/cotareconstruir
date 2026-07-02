@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveSupplierAccess } from '@/lib/supplierAccessServer';
 import { notifyClientNewProposal } from '@/lib/whatsappService';
+import { notifyClientNewProposalEmail } from '@/lib/emailService';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
@@ -316,14 +317,22 @@ export async function POST(req: NextRequest) {
 
                 const { data: clientUser } = await supabaseAdmin
                     .from('users')
-                    .select('telefone')
+                    .select('telefone, email')
                     .eq('id', cotacao.user_id)
                     .single();
 
+                const cotacaoNumeroProposta = String(cotacao.numero || cotacao_id);
                 if (clientUser?.telefone) {
                     await notifyClientNewProposal(
                         clientUser.telefone,
-                        String(cotacao.numero || cotacao_id),
+                        cotacaoNumeroProposta,
+                        supplierName
+                    );
+                }
+                if (clientUser?.email) {
+                    await notifyClientNewProposalEmail(
+                        clientUser.email,
+                        cotacaoNumeroProposta,
                         supplierName
                     );
                 }

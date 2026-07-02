@@ -111,7 +111,7 @@ Equipe Cota Reconstruir
 
     console.log('📧 Enviando credenciais:', { email, whatsapp, message });
 
-    // TODO: Implementar envio real via SendGrid ou outro serviço
+    // TODO: Implementar envio real via Resend ou outro serviço
     // await sendEmail(email, 'Suas credenciais de acesso', message);
     // if (whatsapp) await sendWhatsApp(whatsapp, message);
 }

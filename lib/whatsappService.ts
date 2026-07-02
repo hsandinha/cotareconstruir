@@ -66,7 +66,7 @@ export async function sendWhatsAppTemplate({ to, templateName, language = 'pt_BR
  * Envia mensagem genérica via Meta Cloud API
  */
 async function sendWhatsAppMessage(payload: any): Promise<WhatsAppSendResult> {
-    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    const accessToken = process.env.WHATSAPP_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
     const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
 
     if (!accessToken || !phoneNumberId) {
@@ -111,7 +111,7 @@ async function sendWhatsAppMessage(payload: any): Promise<WhatsAppSendResult> {
  * Marca mensagem como lida
  */
 export async function markAsRead(messageId: string): Promise<void> {
-    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    const accessToken = process.env.WHATSAPP_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
     const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
 
     if (!accessToken || !phoneNumberId) return;
@@ -233,32 +233,53 @@ export function parseWebhookStatuses(body: any): WhatsAppStatusUpdate[] {
 // ============================================================
 
 /**
- * Notifica fornecedor sobre nova cotação recebida
+ * Monta os parâmetros do corpo (variáveis {{1}}, {{2}}) de um template.
+ */
+function bodyParams(...values: string[]): any[] {
+    return [
+        {
+            type: 'body',
+            parameters: values.map((text) => ({ type: 'text', text })),
+        },
+    ];
+}
+
+/**
+ * Notifica fornecedor sobre nova cotação recebida.
+ * Template: nova_cotacao_fornecedor — {{1}} = número da cotação, {{2}} = obra.
  */
 export async function notifySupplierNewQuotation(phone: string, cotacaoNumero: string, obraNome: string): Promise<WhatsAppSendResult> {
-    return sendWhatsAppText({
+    return sendWhatsAppTemplate({
         to: phone,
-        text: `🔔 *Nova Cotação Recebida!*\n\nCotação #${cotacaoNumero}\nObra: ${obraNome}\n\nAcesse a plataforma para enviar sua proposta:\nhttps://Comprareconstruir.com.br/login`
+        templateName: 'nova_cotacao_fornecedor',
+        language: 'pt_BR',
+        components: bodyParams(cotacaoNumero, obraNome),
     });
 }
 
 /**
- * Notifica cliente sobre nova proposta recebida
+ * Notifica cliente sobre nova proposta recebida.
+ * Template: nova_proposta_cliente — {{1}} = número da cotação, {{2}} = fornecedor.
  */
 export async function notifyClientNewProposal(phone: string, cotacaoNumero: string, supplierName: string): Promise<WhatsAppSendResult> {
-    return sendWhatsAppText({
+    return sendWhatsAppTemplate({
         to: phone,
-        text: `📋 *Nova Proposta Recebida!*\n\nUm fornecedor enviou uma proposta para a Cotação #${cotacaoNumero}.\n\nAcesse o mapa comparativo na plataforma:\nhttps://Comprareconstruir.com.br/login`
+        templateName: 'nova_proposta_cliente',
+        language: 'pt_BR',
+        components: bodyParams(cotacaoNumero, supplierName),
     });
 }
 
 /**
- * Notifica fornecedor sobre pedido aprovado
+ * Notifica fornecedor sobre pedido aprovado.
+ * Template: pedido_aprovado_fornecedor — {{1}} = número do pedido, {{2}} = cliente.
  */
 export async function notifySupplierOrderApproved(phone: string, pedidoNumero: string, clientName: string): Promise<WhatsAppSendResult> {
-    return sendWhatsAppText({
+    return sendWhatsAppTemplate({
         to: phone,
-        text: `✅ *Pedido Aprovado!*\n\nPedido #${pedidoNumero}\nCliente: ${clientName}\n\nAcesse a plataforma para confirmar e preparar o envio:\nhttps://Comprareconstruir.com.br/login`
+        templateName: 'pedido_aprovado_fornecedor',
+        language: 'pt_BR',
+        components: bodyParams(pedidoNumero, clientName),
     });
 }
 

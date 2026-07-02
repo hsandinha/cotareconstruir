@@ -55,29 +55,6 @@ export function verifyMercadoPagoSignature(
 }
 
 /**
- * Verificar assinatura SendGrid
- */
-export function verifySendGridSignature(
-    payload: string,
-    signature: string,
-    publicKey: string,
-    timestamp: string
-): boolean {
-    try {
-        const crypto = require('crypto');
-
-        // SendGrid usa ECDSA
-        const verifier = crypto.createVerify('sha256');
-        verifier.update(timestamp + payload);
-
-        return verifier.verify(publicKey, signature, 'base64');
-    } catch (error) {
-        console.error('SendGrid signature verification failed:', error);
-        return false;
-    }
-}
-
-/**
  * Tipos de eventos de webhook
  */
 export enum WebhookEvent {

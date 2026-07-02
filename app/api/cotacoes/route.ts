@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveSupplierAccess } from '@/lib/supplierAccessServer';
 import { notifySupplierNewQuotation } from '@/lib/whatsappService';
+import { notifySupplierNewQuotationEmail } from '@/lib/emailService';
 
 function extractTaxesFromObservacoes(observacoes: string | null | undefined) {
     if (!observacoes) return 0;
@@ -691,7 +692,7 @@ export async function POST(req: NextRequest) {
                                 if (invitedIds.length > 0) {
                                     const { data: supplierContacts } = await supabaseAdmin
                                         .from('fornecedores')
-                                        .select('id, user_id, telefone')
+                                        .select('id, user_id, telefone, email')
                                         .in('id', invitedIds);
 
                                     const userIds = (supplierContacts || [])
@@ -699,23 +700,27 @@ export async function POST(req: NextRequest) {
                                         .filter(Boolean);
 
                                     let userPhoneMap = new Map<string, string>();
+                                    let userEmailMap = new Map<string, string>();
                                     if (userIds.length > 0) {
                                         const { data: userContacts } = await supabaseAdmin
                                             .from('users')
-                                            .select('id, telefone')
+                                            .select('id, telefone, email')
                                             .in('id', userIds);
                                         userPhoneMap = new Map((userContacts || []).map((u: any) => [u.id, u.telefone]));
+                                        userEmailMap = new Map((userContacts || []).map((u: any) => [u.id, u.email]));
                                     }
 
                                     await Promise.allSettled(
                                         (supplierContacts || []).map(async (supplier: any) => {
                                             const phone = supplier.telefone || (supplier.user_id ? userPhoneMap.get(supplier.user_id) : null);
-                                            if (!phone) return;
-                                            await notifySupplierNewQuotation(
-                                                phone,
-                                                cotacaoNumero || 'nova',
-                                                obra.nome || 'Obra sem nome'
-                                            );
+                                            const email = supplier.email || (supplier.user_id ? userEmailMap.get(supplier.user_id) : null);
+                                            const obraNome = obra.nome || 'Obra sem nome';
+                                            if (phone) {
+                                                await notifySupplierNewQuotation(phone, cotacaoNumero || 'nova', obraNome);
+                                            }
+                                            if (email) {
+                                                await notifySupplierNewQuotationEmail(email, cotacaoNumero || 'nova', obraNome);
+                                            }
                                         })
                                     );
                                 }

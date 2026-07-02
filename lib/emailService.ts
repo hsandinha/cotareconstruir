@@ -1,7 +1,9 @@
 /**
- * Email Service usando SendGrid
+ * Email Service usando Resend
  * Gerencia envio de emails transacionais
  */
+
+import { Resend } from 'resend';
 
 interface EmailOptions {
     to: string;
@@ -41,59 +43,37 @@ function getEmailAssetsBaseUrl(): string {
 }
 
 /**
- * Envia email usando SendGrid API
+ * Envia email usando Resend API
  */
 export async function sendEmail(options: EmailOptions): Promise<SendEmailResult> {
     try {
-        const apiKey = process.env.SENDGRID_API_KEY;
-        const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@Comprareconstruir.com.br';
-        const fromName = process.env.SENDGRID_FROM_NAME || 'Cota Reconstruir';
+        const apiKey = process.env.RESEND_API_KEY;
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@comprareconstruir.com.br';
+        const fromName = process.env.RESEND_FROM_NAME || 'Compra e Construir';
+        const replyTo = process.env.EMAIL_REPLY_TO;
 
         if (!apiKey) {
-            throw new Error('SENDGRID_API_KEY não configurada');
+            throw new Error('RESEND_API_KEY não configurada');
         }
 
-        const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                personalizations: [
-                    {
-                        to: [{ email: options.to }],
-                        subject: options.subject,
-                    },
-                ],
-                from: {
-                    email: fromEmail,
-                    name: fromName,
-                },
-                content: [
-                    ...(options.text ? [{
-                        type: 'text/plain',
-                        value: options.text,
-                    }] : []),
-                    {
-                        type: 'text/html',
-                        value: options.html,
-                    },
-                ],
-            }),
+        const resend = new Resend(apiKey);
+
+        const { data, error } = await resend.emails.send({
+            from: `${fromName} <${fromEmail}>`,
+            to: [options.to],
+            subject: options.subject,
+            html: options.html,
+            ...(options.text ? { text: options.text } : {}),
+            ...(replyTo ? { replyTo } : {}),
         });
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.errors?.[0]?.message || 'Erro ao enviar email');
+        if (error) {
+            throw new Error(error.message || 'Erro ao enviar email');
         }
-
-        // SendGrid retorna 202 Accepted com header X-Message-Id
-        const messageId = response.headers.get('x-message-id');
 
         return {
             success: true,
-            messageId: messageId || 'sent',
+            messageId: data?.id || 'sent',
         };
 
     } catch (error: any) {
@@ -425,4 +405,139 @@ export function getPasswordChangedEmailTemplate(name: string): { subject: string
         `,
         text: `Olá ${name},\n\n✅ Sua senha foi alterada com sucesso.\n\nData/Hora: ${new Date().toLocaleString('pt-BR')}\n\nSe você não realizou esta alteração, entre em contato:\nsuporte@Comprareconstruir.com.br\n\nEquipe Cota Reconstruir`,
     };
+}
+
+// ============================================================
+// EMAILS DE EVENTOS (cotação / proposta / pedido)
+// ============================================================
+
+/**
+ * Monta um email de notificação de evento com cabeçalho, corpo e botão de acesso.
+ */
+function buildEventEmail(options: {
+    subject: string;
+    heading: string;
+    intro: string;
+    details: Array<{ label: string; value: string }>;
+    ctaLabel: string;
+    ctaUrl: string;
+}): { subject: string; html: string; text: string } {
+    const baseUrl = getEmailAssetsBaseUrl();
+    const logoUrl = `${baseUrl}/logo.png`;
+
+    const detailsHtml = options.details
+        .map(
+            (d) => `
+            <tr>
+                <td style="padding:6px 0;font-size:14px;color:#6b7280;">${escapeHtml(d.label)}</td>
+                <td style="padding:6px 0;font-size:14px;color:#111827;font-weight:700;text-align:right;">${escapeHtml(d.value)}</td>
+            </tr>`
+        )
+        .join('');
+
+    const html = `
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+        <head>
+            <meta charSet="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>${escapeHtml(options.subject)}</title>
+        </head>
+        <body style="margin:0;padding:0;background-color:#f3f4f6;">
+            <div style="width:100%;padding:24px 12px;">
+                <div style="max-width:560px;margin:0 auto;background-color:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
+                    <div style="padding:28px 28px 20px 28px;text-align:center;background:linear-gradient(180deg,#fff7ed 0%,#ffffff 100%);border-bottom:1px solid #fed7aa;">
+                        <img src="${logoUrl}" alt="Comprar & Construir" style="height:80px;width:auto;max-width:100%;display:inline-block;" />
+                    </div>
+                    <div style="padding:24px 28px 28px 28px;color:#111827;font-family:Arial,sans-serif;">
+                        <h1 style="margin:0 0 12px 0;font-size:20px;color:#9a3412;">${escapeHtml(options.heading)}</h1>
+                        <p style="margin:0 0 16px 0;font-size:14px;line-height:22px;">${escapeHtml(options.intro)}</p>
+                        <table style="width:100%;border-collapse:collapse;margin:0 0 22px 0;border-top:1px solid #f1f5f9;border-bottom:1px solid #f1f5f9;">
+                            ${detailsHtml}
+                        </table>
+                        <div style="text-align:center;margin:0 0 8px 0;">
+                            <a href="${options.ctaUrl}" style="display:inline-block;background-color:#ea580c;color:#ffffff;text-decoration:none;font-weight:700;padding:13px 28px;border-radius:8px;font-size:15px;">${escapeHtml(options.ctaLabel)}</a>
+                        </div>
+                        <p style="margin:16px 0 0 0;font-size:12px;line-height:20px;color:#6b7280;text-align:center;">
+                            Se o botão não funcionar, acesse: <a href="${options.ctaUrl}" style="color:#2563eb;">${options.ctaUrl}</a>
+                        </p>
+                    </div>
+                    <div style="text-align:center;padding:16px;color:#9ca3af;font-size:12px;font-family:Arial,sans-serif;">
+                        © ${new Date().getFullYear()} Compra e Construir. Este é um email automático.
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+    `;
+
+    const text = [
+        options.heading,
+        '',
+        options.intro,
+        '',
+        ...options.details.map((d) => `${d.label}: ${d.value}`),
+        '',
+        `${options.ctaLabel}: ${options.ctaUrl}`,
+        '',
+        'Compra e Construir',
+    ].join('\n');
+
+    return { subject: options.subject, html, text };
+}
+
+const PLATFORM_LOGIN_URL = 'https://comprareconstruir.com/login';
+
+/**
+ * Envia email ao fornecedor sobre nova cotação recebida.
+ */
+export async function notifySupplierNewQuotationEmail(email: string, cotacaoNumero: string, obraNome: string): Promise<SendEmailResult> {
+    const tpl = buildEventEmail({
+        subject: `Nova cotação recebida — #${cotacaoNumero}`,
+        heading: 'Você recebeu uma nova cotação',
+        intro: 'Uma nova cotação foi enviada para a sua empresa na Compra e Construir. Acesse a plataforma para analisar os itens e enviar sua proposta.',
+        details: [
+            { label: 'Cotação', value: `#${cotacaoNumero}` },
+            { label: 'Obra', value: obraNome },
+        ],
+        ctaLabel: 'Acessar plataforma',
+        ctaUrl: PLATFORM_LOGIN_URL,
+    });
+    return sendEmail({ to: email, subject: tpl.subject, html: tpl.html, text: tpl.text });
+}
+
+/**
+ * Envia email ao cliente sobre nova proposta recebida.
+ */
+export async function notifyClientNewProposalEmail(email: string, cotacaoNumero: string, supplierName: string): Promise<SendEmailResult> {
+    const tpl = buildEventEmail({
+        subject: `Nova proposta recebida — cotação #${cotacaoNumero}`,
+        heading: 'Você recebeu uma nova proposta',
+        intro: 'Um fornecedor enviou uma proposta para a sua cotação. Acesse o mapa comparativo na plataforma para avaliar e decidir.',
+        details: [
+            { label: 'Cotação', value: `#${cotacaoNumero}` },
+            { label: 'Fornecedor', value: supplierName },
+        ],
+        ctaLabel: 'Ver proposta',
+        ctaUrl: PLATFORM_LOGIN_URL,
+    });
+    return sendEmail({ to: email, subject: tpl.subject, html: tpl.html, text: tpl.text });
+}
+
+/**
+ * Envia email ao fornecedor sobre pedido aprovado.
+ */
+export async function notifySupplierOrderApprovedEmail(email: string, pedidoNumero: string, clientName: string): Promise<SendEmailResult> {
+    const tpl = buildEventEmail({
+        subject: `Pedido aprovado — #${pedidoNumero}`,
+        heading: 'Seu pedido foi aprovado',
+        intro: 'Boas notícias! Um pedido foi aprovado para a sua empresa. Acesse a plataforma para confirmar e preparar o envio.',
+        details: [
+            { label: 'Pedido', value: `#${pedidoNumero}` },
+            { label: 'Cliente', value: clientName },
+        ],
+        ctaLabel: 'Acessar plataforma',
+        ctaUrl: PLATFORM_LOGIN_URL,
+    });
+    return sendEmail({ to: email, subject: tpl.subject, html: tpl.html, text: tpl.text });
 }
