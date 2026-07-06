@@ -292,15 +292,23 @@ export async function POST(req: NextRequest) {
             }
 
             // 3. Create notification for the client
+            // A identidade do fornecedor só é revelada ao cliente após o
+            // fechamento do pedido; até lá, ele aparece como "Fornecedor N"
+            // (N = ordem de chegada das propostas nesta cotação).
             if (cotacao.user_id) {
-                // Get fornecedor name
-                const { data: fornecedor } = await supabaseAdmin
-                    .from('fornecedores')
-                    .select('nome_fantasia, razao_social')
-                    .eq('id', fornecedorId)
-                    .single();
+                const { data: propostasDaCotacao } = await supabaseAdmin
+                    .from('propostas')
+                    .select('fornecedor_id, created_at')
+                    .eq('cotacao_id', cotacao_id)
+                    .order('created_at', { ascending: true });
 
-                const supplierName = fornecedor?.nome_fantasia || fornecedor?.razao_social || 'Um fornecedor';
+                const supplierOrder: string[] = [];
+                for (const p of propostasDaCotacao || []) {
+                    if (!supplierOrder.includes(p.fornecedor_id)) {
+                        supplierOrder.push(p.fornecedor_id);
+                    }
+                }
+                const supplierLabel = `Fornecedor ${supplierOrder.indexOf(fornecedorId) + 1}`;
 
                 await supabaseAdmin
                     .from('notificacoes')
@@ -308,8 +316,8 @@ export async function POST(req: NextRequest) {
                         user_id: cotacao.user_id,
                         titulo: existing && existing.length > 0 ? 'Proposta Atualizada' : 'Nova Proposta Recebida',
                         mensagem: existing && existing.length > 0
-                            ? `${supplierName} atualizou os valores da proposta.`
-                            : `${supplierName} enviou uma proposta para sua cotação.`,
+                            ? `${supplierLabel} atualizou os valores da proposta.`
+                            : `${supplierLabel} enviou uma proposta para sua cotação.`,
                         tipo: 'success',
                         lida: false,
                         link: `/dashboard/cliente?tab=pedidos&cotacaoId=${encodeURIComponent(cotacao_id)}`
@@ -326,14 +334,14 @@ export async function POST(req: NextRequest) {
                     await notifyClientNewProposal(
                         clientUser.telefone,
                         cotacaoNumeroProposta,
-                        supplierName
+                        supplierLabel
                     );
                 }
                 if (clientUser?.email) {
                     await notifyClientNewProposalEmail(
                         clientUser.email,
                         cotacaoNumeroProposta,
-                        supplierName
+                        supplierLabel
                     );
                 }
             }
