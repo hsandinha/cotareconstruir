@@ -586,148 +586,161 @@ export async function POST(req: NextRequest) {
 
             let suppliersNotified = 0;
             try {
-                if (obra.cidade) {
-                    const cityName = obra.cidade.toLowerCase();
-                    const createdGroupIds = [...new Set(createdCotacoes.map((c: any) => c.group_id).filter(Boolean))];
+                const cityName = (obra.cidade || '').toLowerCase();
+                const createdGroupIds = [...new Set(createdCotacoes.map((c: any) => c.group_id).filter(Boolean))];
 
-                    const [suppliersRes, supplierGroupRes] = await Promise.all([
-                        supabaseAdmin
-                            .from('fornecedores')
-                            .select('id, regioes_atendimento, apenas_materiais_ativos')
-                            .eq('status', 'active'),
-                        createdGroupIds.length > 0
-                            ? supabaseAdmin
-                                .from('fornecedor_grupo')
-                                .select('fornecedor_id, grupo_id')
-                                .in('grupo_id', createdGroupIds)
-                            : Promise.resolve({ data: [], error: null } as any),
-                    ]);
+                const [suppliersRes, supplierGroupRes] = await Promise.all([
+                    supabaseAdmin
+                        .from('fornecedores')
+                        .select('id, regioes_atendimento, apenas_materiais_ativos')
+                        .in('status', ['active', 'pending']),
+                    createdGroupIds.length > 0
+                        ? supabaseAdmin
+                            .from('fornecedor_grupo')
+                            .select('fornecedor_id, grupo_id')
+                            .in('grupo_id', createdGroupIds)
+                        : Promise.resolve({ data: [], error: null } as any),
+                ]);
 
-                    if (!suppliersRes.error && !supplierGroupRes.error) {
-                        const supplierToGroupIds = new Map<string, Set<string>>();
-                        for (const row of (supplierGroupRes.data || [])) {
-                            const set = supplierToGroupIds.get(row.fornecedor_id) || new Set<string>();
-                            set.add(row.grupo_id);
-                            supplierToGroupIds.set(row.fornecedor_id, set);
+                if (!suppliersRes.error && !supplierGroupRes.error) {
+                    const supplierToGroupIds = new Map<string, Set<string>>();
+                    for (const row of (supplierGroupRes.data || [])) {
+                        const set = supplierToGroupIds.get(row.fornecedor_id) || new Set<string>();
+                        set.add(row.grupo_id);
+                        supplierToGroupIds.set(row.fornecedor_id, set);
+                    }
+
+                    const matchedSupplierIds = new Set<string>();
+                    const supplierApenasAtivos = new Map<string, boolean>();
+                    for (const supplier of (suppliersRes.data || [])) {
+                        supplierApenasAtivos.set(supplier.id, !!supplier.apenas_materiais_ativos);
+
+                        // Região só restringe quando o fornecedor a preencheu;
+                        // regioes_atendimento vazio/null = atende qualquer cidade
+                        // (mesma visibilidade do inbox do fornecedor).
+                        const rawRegioes = supplier.regioes_atendimento;
+                        const regioes: string[] = Array.isArray(rawRegioes)
+                            ? rawRegioes.map((r: string) => String(r || '').toLowerCase()).filter(Boolean)
+                            : typeof rawRegioes === 'string'
+                                ? rawRegioes.split(',').map((r: string) => r.trim().toLowerCase()).filter(Boolean)
+                                : [];
+                        const inRegion = regioes.length === 0 || !cityName
+                            || regioes.some((r: string) => r.includes(cityName));
+                        if (!inRegion) continue;
+
+                        const groups = supplierToGroupIds.get(supplier.id);
+                        if (createdGroupIds.length > 0 && (!groups || groups.size === 0)) {
+                            continue;
                         }
 
-                        const matchedSupplierIds = new Set<string>();
-                        const supplierApenasAtivos = new Map<string, boolean>();
-                        for (const supplier of (suppliersRes.data || [])) {
-                            supplierApenasAtivos.set(supplier.id, !!supplier.apenas_materiais_ativos);
-                            const inRegion = supplier.regioes_atendimento?.some((r: string) => r.toLowerCase().includes(cityName));
-                            if (!inRegion) continue;
-
-                            const groups = supplierToGroupIds.get(supplier.id);
-                            if (createdGroupIds.length > 0 && (!groups || groups.size === 0)) {
-                                continue;
-                            }
-
-                            if (createdGroupIds.length === 0) {
-                                matchedSupplierIds.add(supplier.id);
-                                continue;
-                            }
-
-                            const hasMatchingGroup = createdGroupIds.some((groupId: string) => groups?.has(groupId));
-                            if (hasMatchingGroup) {
-                                matchedSupplierIds.add(supplier.id);
-                            }
+                        if (createdGroupIds.length === 0) {
+                            matchedSupplierIds.add(supplier.id);
+                            continue;
                         }
 
-                        // Para fornecedores que optaram por "apenas materiais ativos",
-                        // restringe os convites a cotações que contenham AO MENOS
-                        // 1 material ativo da lista deles.
-                        const optInSupplierIds = [...matchedSupplierIds].filter(
-                            (sid) => supplierApenasAtivos.get(sid)
-                        );
-                        const activeMaterialsBySupplier = new Map<string, Set<string>>();
-                        if (optInSupplierIds.length > 0) {
-                            const { data: fmRows } = await supabaseAdmin
-                                .from('fornecedor_materiais')
-                                .select('fornecedor_id, material_id, ativo')
-                                .in('fornecedor_id', optInSupplierIds)
-                                .eq('ativo', true);
-                            for (const row of (fmRows || [])) {
-                                const set = activeMaterialsBySupplier.get(row.fornecedor_id) || new Set<string>();
-                                set.add(row.material_id);
-                                activeMaterialsBySupplier.set(row.fornecedor_id, set);
-                            }
+                        const hasMatchingGroup = createdGroupIds.some((groupId: string) => groups?.has(groupId));
+                        if (hasMatchingGroup) {
+                            matchedSupplierIds.add(supplier.id);
                         }
+                    }
 
-                        // Persist invites: link each created cotacao with each matching supplier
-                        // (by group). This powers the admin "Acompanhamento de Pedidos" view.
-                        try {
-                            const conviteRows: Array<{ cotacao_id: string; fornecedor_id: string }> = [];
-                            const invitedSupplierIds = new Set<string>();
-                            for (const cot of createdCotacoes) {
-                                if (!cot.group_id) continue;
-                                const cotMaterialIds = (cot.cotacao_itens_material_ids
-                                    || (Array.isArray((cot as any)._materialIds) ? (cot as any)._materialIds : [])) as string[];
-                                for (const supplierId of matchedSupplierIds) {
-                                    const groups = supplierToGroupIds.get(supplierId);
-                                    if (!groups || !groups.has(cot.group_id)) continue;
+                    // Para fornecedores que optaram por "apenas materiais ativos",
+                    // restringe os convites a cotações que contenham AO MENOS
+                    // 1 material ativo da lista deles.
+                    const optInSupplierIds = [...matchedSupplierIds].filter(
+                        (sid) => supplierApenasAtivos.get(sid)
+                    );
+                    const activeMaterialsBySupplier = new Map<string, Set<string>>();
+                    if (optInSupplierIds.length > 0) {
+                        const { data: fmRows } = await supabaseAdmin
+                            .from('fornecedor_materiais')
+                            .select('fornecedor_id, material_id, ativo')
+                            .in('fornecedor_id', optInSupplierIds)
+                            .eq('ativo', true);
+                        for (const row of (fmRows || [])) {
+                            const set = activeMaterialsBySupplier.get(row.fornecedor_id) || new Set<string>();
+                            set.add(row.material_id);
+                            activeMaterialsBySupplier.set(row.fornecedor_id, set);
+                        }
+                    }
 
-                                    // Se o fornecedor optou por receber só dos ativos,
-                                    // verifica se pelo menos 1 item desta cotação está ativo
-                                    if (supplierApenasAtivos.get(supplierId)) {
-                                        const activeSet = activeMaterialsBySupplier.get(supplierId);
-                                        const hasAny = cotMaterialIds.some(
-                                            (mid: string) => mid && activeSet?.has(mid)
-                                        );
-                                        if (!hasAny) continue;
-                                    }
+                    // Persist invites: link each created cotacao with each matching supplier
+                    // (by group). This powers the admin "Acompanhamento de Pedidos" view.
+                    try {
+                        const conviteRows: Array<{ cotacao_id: string; fornecedor_id: string }> = [];
+                        const invitedSupplierIds = new Set<string>();
+                        const supplierCotacaoNumero = new Map<string, string>();
+                        for (const cot of createdCotacoes) {
+                            if (!cot.group_id) continue;
+                            const cotMaterialIds = (cot.cotacao_itens_material_ids
+                                || (Array.isArray((cot as any)._materialIds) ? (cot as any)._materialIds : [])) as string[];
+                            for (const supplierId of matchedSupplierIds) {
+                                const groups = supplierToGroupIds.get(supplierId);
+                                if (!groups || !groups.has(cot.group_id)) continue;
 
-                                    conviteRows.push({ cotacao_id: cot.id, fornecedor_id: supplierId });
-                                    invitedSupplierIds.add(supplierId);
-                                }
-                            }
-                            suppliersNotified = invitedSupplierIds.size;
-                            if (conviteRows.length > 0) {
-                                await supabaseAdmin
-                                    .from('cotacao_convites')
-                                    .upsert(conviteRows, { onConflict: 'cotacao_id,fornecedor_id', ignoreDuplicates: true });
-
-                                const invitedIds = [...invitedSupplierIds];
-                                const cotacaoNumero = String(createdCotacoes?.[0]?.numero || createdCotacoes?.[0]?.id || '').trim();
-                                if (invitedIds.length > 0) {
-                                    const { data: supplierContacts } = await supabaseAdmin
-                                        .from('fornecedores')
-                                        .select('id, user_id, telefone, email')
-                                        .in('id', invitedIds);
-
-                                    const userIds = (supplierContacts || [])
-                                        .map((s: any) => s.user_id)
-                                        .filter(Boolean);
-
-                                    let userPhoneMap = new Map<string, string>();
-                                    let userEmailMap = new Map<string, string>();
-                                    if (userIds.length > 0) {
-                                        const { data: userContacts } = await supabaseAdmin
-                                            .from('users')
-                                            .select('id, telefone, email')
-                                            .in('id', userIds);
-                                        userPhoneMap = new Map((userContacts || []).map((u: any) => [u.id, u.telefone]));
-                                        userEmailMap = new Map((userContacts || []).map((u: any) => [u.id, u.email]));
-                                    }
-
-                                    await Promise.allSettled(
-                                        (supplierContacts || []).map(async (supplier: any) => {
-                                            const phone = supplier.telefone || (supplier.user_id ? userPhoneMap.get(supplier.user_id) : null);
-                                            const email = supplier.email || (supplier.user_id ? userEmailMap.get(supplier.user_id) : null);
-                                            const obraNome = obra.nome || 'Obra sem nome';
-                                            if (phone) {
-                                                await notifySupplierNewQuotation(phone, cotacaoNumero || 'nova', obraNome);
-                                            }
-                                            if (email) {
-                                                await notifySupplierNewQuotationEmail(email, cotacaoNumero || 'nova', obraNome);
-                                            }
-                                        })
+                                // Se o fornecedor optou por receber só dos ativos,
+                                // verifica se pelo menos 1 item desta cotação está ativo
+                                if (supplierApenasAtivos.get(supplierId)) {
+                                    const activeSet = activeMaterialsBySupplier.get(supplierId);
+                                    const hasAny = cotMaterialIds.some(
+                                        (mid: string) => mid && activeSet?.has(mid)
                                     );
+                                    if (!hasAny) continue;
+                                }
+
+                                conviteRows.push({ cotacao_id: cot.id, fornecedor_id: supplierId });
+                                invitedSupplierIds.add(supplierId);
+                                if (!supplierCotacaoNumero.has(supplierId)) {
+                                    supplierCotacaoNumero.set(supplierId, String(cot.numero || cot.id || '').trim());
                                 }
                             }
-                        } catch (inviteErr) {
-                            console.error('Erro ao persistir convites de cotação:', inviteErr);
                         }
+                        suppliersNotified = invitedSupplierIds.size;
+                        if (conviteRows.length > 0) {
+                            await supabaseAdmin
+                                .from('cotacao_convites')
+                                .upsert(conviteRows, { onConflict: 'cotacao_id,fornecedor_id', ignoreDuplicates: true });
+
+                            const invitedIds = [...invitedSupplierIds];
+                            if (invitedIds.length > 0) {
+                                const { data: supplierContacts } = await supabaseAdmin
+                                    .from('fornecedores')
+                                    .select('id, user_id, telefone, email')
+                                    .in('id', invitedIds);
+
+                                const userIds = (supplierContacts || [])
+                                    .map((s: any) => s.user_id)
+                                    .filter(Boolean);
+
+                                let userPhoneMap = new Map<string, string>();
+                                let userEmailMap = new Map<string, string>();
+                                if (userIds.length > 0) {
+                                    const { data: userContacts } = await supabaseAdmin
+                                        .from('users')
+                                        .select('id, telefone, email')
+                                        .in('id', userIds);
+                                    userPhoneMap = new Map((userContacts || []).map((u: any) => [u.id, u.telefone]));
+                                    userEmailMap = new Map((userContacts || []).map((u: any) => [u.id, u.email]));
+                                }
+
+                                await Promise.allSettled(
+                                    (supplierContacts || []).map(async (supplier: any) => {
+                                        const phone = supplier.telefone || (supplier.user_id ? userPhoneMap.get(supplier.user_id) : null);
+                                        const email = supplier.email || (supplier.user_id ? userEmailMap.get(supplier.user_id) : null);
+                                        const obraNome = obra.nome || 'Obra sem nome';
+                                        const cotacaoNumero = supplierCotacaoNumero.get(supplier.id) || 'nova';
+                                        if (phone) {
+                                            await notifySupplierNewQuotation(phone, cotacaoNumero, obraNome);
+                                        }
+                                        if (email) {
+                                            await notifySupplierNewQuotationEmail(email, cotacaoNumero, obraNome);
+                                        }
+                                    })
+                                );
+                            }
+                        }
+                    } catch (inviteErr) {
+                        console.error('Erro ao persistir convites de cotação:', inviteErr);
                     }
                 }
             } catch (notifyErr) {
