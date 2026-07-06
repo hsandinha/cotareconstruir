@@ -155,7 +155,7 @@ const email = process.argv[2];
 if (!email) {
     console.error('❌ Erro: Email não fornecido');
     console.error('   Usage: node scripts/fix-admin-role.mjs <email>');
-    console.error('   Exemplo: node scripts/fix-admin-role.mjs admin@Comprareconstruir.com.br');
+    console.error('   Exemplo: node scripts/fix-admin-role.mjs admin@comprareconstruir.com');
     process.exit(1);
 }
 

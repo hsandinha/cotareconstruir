@@ -48,7 +48,7 @@ function getEmailAssetsBaseUrl(): string {
 export async function sendEmail(options: EmailOptions): Promise<SendEmailResult> {
     try {
         const apiKey = process.env.RESEND_API_KEY;
-        const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@comprareconstruir.com.br';
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@comprareconstruir.com';
         const fromName = process.env.RESEND_FROM_NAME || 'Compra e Construir';
         const replyTo = process.env.EMAIL_REPLY_TO;
 
@@ -393,7 +393,7 @@ export function getPasswordChangedEmailTemplate(name: string): { subject: string
                         </div>
                         <p><strong>Data/Hora:</strong> ${new Date().toLocaleString('pt-BR')}</p>
                         <p>Se você não realizou esta alteração, entre em contato com nossa equipe imediatamente:</p>
-                        <p>📧 Email: suporte@Comprareconstruir.com.br<br>
+                        <p>📧 Email: suporte@comprareconstruir.com<br>
                         📱 WhatsApp: (11) 99999-9999</p>
                     </div>
                     <div class="footer">
@@ -403,7 +403,7 @@ export function getPasswordChangedEmailTemplate(name: string): { subject: string
             </body>
             </html>
         `,
-        text: `Olá ${name},\n\n✅ Sua senha foi alterada com sucesso.\n\nData/Hora: ${new Date().toLocaleString('pt-BR')}\n\nSe você não realizou esta alteração, entre em contato:\nsuporte@Comprareconstruir.com.br\n\nEquipe Cota Reconstruir`,
+        text: `Olá ${name},\n\n✅ Sua senha foi alterada com sucesso.\n\nData/Hora: ${new Date().toLocaleString('pt-BR')}\n\nSe você não realizou esta alteração, entre em contato:\nsuporte@comprareconstruir.com\n\nEquipe Cota Reconstruir`,
     };
 }
 

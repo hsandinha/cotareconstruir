@@ -167,7 +167,7 @@ const email = process.argv[2];
 if (!email) {
     console.error('❌ Erro: Email do administrador não fornecido');
     console.error('   Usage: node scripts/debug-admin-login.mjs <email-do-admin>');
-    console.error('   Exemplo: node scripts/debug-admin-login.mjs admin@Comprareconstruir.com.br');
+    console.error('   Exemplo: node scripts/debug-admin-login.mjs admin@comprareconstruir.com');
     process.exit(1);
 }
 

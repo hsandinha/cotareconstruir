@@ -31,7 +31,7 @@ async function main() {
     const type = (getArg('type') || 'recadastro') as EmailType;
     const dryRun = hasFlag('dry-run');
 
-    const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@comprareconstruir.com.br';
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@comprareconstruir.com';
     const fromName = process.env.RESEND_FROM_NAME || 'Compra e Construir';
 
     if (!process.env.RESEND_API_KEY && !dryRun) {

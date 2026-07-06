@@ -1267,7 +1267,7 @@ export function ClientSolicitationSection() {
             if (selectedObra?.cidade && result.suppliers_notified > 0) {
                 try {
                     await sendEmail({
-                        to: 'admin@Comprareconstruir.com.br',
+                        to: 'admin@comprareconstruir.com',
                         subject: `Nova cotação em ${selectedObra.cidade} - Cota Reconstruir`,
                         html: `
                             <h1>Nova cotação criada!</h1>

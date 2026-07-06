@@ -29,7 +29,7 @@ const GRAPH_API = 'https://graph.facebook.com/v21.0';
 const ACCESS_TOKEN = process.env.WHATSAPP_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
 const WABA_ID = process.env.WHATSAPP_WABA_ID || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 
-const PLATFORM_URL = 'https://comprareconstruir.com.br/login';
+const PLATFORM_URL = 'https://comprareconstruir.com/login';
 
 if (!ACCESS_TOKEN || !WABA_ID) {
     console.error('❌ Configure WHATSAPP_TOKEN e WHATSAPP_WABA_ID no .env.local');

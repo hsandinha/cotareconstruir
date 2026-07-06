@@ -58,7 +58,7 @@ export function Footer() {
             <div className="space-y-3 text-sm text-slate-400">
               <div className="flex items-center space-x-3">
                 <FontAwesomeIcon icon={faEnvelope} className="text-blue-400" />
-                <span>contato@Comprareconstruir.com</span>
+                <span>contato@comprareconstruir.com</span>
               </div>
               <div className="flex items-center space-x-3">
                 <FontAwesomeIcon icon={faPhone} className="text-blue-400" />
