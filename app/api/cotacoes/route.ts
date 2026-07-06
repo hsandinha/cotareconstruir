@@ -727,13 +727,15 @@ export async function POST(req: NextRequest) {
                                     (supplierContacts || []).map(async (supplier: any) => {
                                         const phone = supplier.telefone || (supplier.user_id ? userPhoneMap.get(supplier.user_id) : null);
                                         const email = supplier.email || (supplier.user_id ? userEmailMap.get(supplier.user_id) : null);
-                                        const obraNome = obra.nome || 'Obra sem nome';
+                                        const obraLocal = obra.bairro
+                                            ? `no bairro ${obra.bairro}`
+                                            : (obra.cidade || 'localização não informada');
                                         const cotacaoNumero = supplierCotacaoNumero.get(supplier.id) || 'nova';
                                         if (phone) {
-                                            await notifySupplierNewQuotation(phone, cotacaoNumero, obraNome);
+                                            await notifySupplierNewQuotation(phone, cotacaoNumero, obraLocal);
                                         }
                                         if (email) {
-                                            await notifySupplierNewQuotationEmail(email, cotacaoNumero, obraNome);
+                                            await notifySupplierNewQuotationEmail(email, cotacaoNumero, obraLocal);
                                         }
                                     })
                                 );
