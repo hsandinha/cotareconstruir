@@ -346,7 +346,7 @@ export async function POST(req: NextRequest) {
             const { data: supplierContacts } = supplierIds.length > 0
                 ? await supabaseAdmin
                     .from('fornecedores')
-                    .select('id, user_id, telefone, email')
+                    .select('id, user_id, whatsapp, telefone, email')
                     .in('id', supplierIds)
                 : { data: [] as any[] };
 
@@ -366,7 +366,7 @@ export async function POST(req: NextRequest) {
             const supplierPhoneMap = new Map(
                 (supplierContacts || []).map((s: any) => [
                     s.id,
-                    s.telefone || (s.user_id ? supplierUserPhoneMap.get(s.user_id) : null)
+                    s.whatsapp || s.telefone || (s.user_id ? supplierUserPhoneMap.get(s.user_id) : null)
                 ])
             );
             const supplierEmailMap = new Map(

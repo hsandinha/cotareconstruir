@@ -705,7 +705,7 @@ export async function POST(req: NextRequest) {
                             if (invitedIds.length > 0) {
                                 const { data: supplierContacts } = await supabaseAdmin
                                     .from('fornecedores')
-                                    .select('id, user_id, telefone, email')
+                                    .select('id, user_id, whatsapp, telefone, email')
                                     .in('id', invitedIds);
 
                                 const userIds = (supplierContacts || [])
@@ -725,7 +725,7 @@ export async function POST(req: NextRequest) {
 
                                 await Promise.allSettled(
                                     (supplierContacts || []).map(async (supplier: any) => {
-                                        const phone = supplier.telefone || (supplier.user_id ? userPhoneMap.get(supplier.user_id) : null);
+                                        const phone = supplier.whatsapp || supplier.telefone || (supplier.user_id ? userPhoneMap.get(supplier.user_id) : null);
                                         const email = supplier.email || (supplier.user_id ? userEmailMap.get(supplier.user_id) : null);
                                         const obraLocal = obra.bairro
                                             ? `no bairro ${obra.bairro}`
