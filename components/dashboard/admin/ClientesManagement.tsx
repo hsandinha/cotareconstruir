@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { Search, Plus, Edit2, Trash2, X, Save, Building2, UserPlus, UserCheck, RefreshCw, Mail, Briefcase, Layers, ChevronDown, ChevronRight, MapPin, Calendar } from 'lucide-react';
 import { useToast } from '@/components/ToastProvider';
 import { useConfirmModal } from '@/components/ConfirmModal';
+import { formatPhoneBr } from '@/lib/utils';
 
 // Helper para obter headers com token
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -58,6 +59,7 @@ interface Cliente {
     estado: string;
     cep: string;
     ativo: boolean;
+    status?: 'pending' | 'active' | 'suspended';
     obras?: number;
     createdAt?: any;
     updatedAt?: any;
@@ -142,7 +144,7 @@ export default function ClientesManagement() {
                 cidade: data.municipio || '',
                 estado: data.uf || '',
                 cep: data.cep || '',
-                telefone: data.ddd_telefone_1 ? `(${data.ddd_telefone_1.slice(0, 2)}) ${data.ddd_telefone_1.slice(2)}` : prev.telefone
+                telefone: data.ddd_telefone_1 ? formatPhoneBr(data.ddd_telefone_1) : prev.telefone
             }));
             showToast('success', 'Dados preenchidos pelo CNPJ');
         } catch (error) {
@@ -199,7 +201,8 @@ export default function ClientesManagement() {
                 cidade: c.cidade || '',
                 estado: c.estado || '',
                 cep: c.cep || '',
-                ativo: c.ativo !== false,
+                ativo: c.status !== 'suspended',
+                status: c.status || undefined,
                 createdAt: c.created_at,
                 updatedAt: c.updated_at
             })) as Cliente[];
@@ -273,7 +276,9 @@ export default function ClientesManagement() {
                 bairro: formData.bairro || null,
                 cidade: formData.cidade || null,
                 estado: formData.estado || null,
-                ativo: formData.ativo !== false,
+                status: formData.ativo === false
+                    ? 'suspended'
+                    : (formData.status === 'pending' ? 'pending' : 'active'),
                 updated_at: new Date().toISOString()
             };
 
@@ -332,9 +337,10 @@ export default function ClientesManagement() {
             }
             loadClientes();
             closeModal();
-        } catch (error) {
+        } catch (error: any) {
             console.error('Erro ao salvar cliente:', error);
-            showToast('error', 'Erro ao salvar cliente');
+            const msg = error?.message || error?.details || 'Erro desconhecido';
+            showToast('error', `Erro ao salvar cliente: ${msg}`);
         }
     };
 
@@ -665,7 +671,8 @@ export default function ClientesManagement() {
                                     <input
                                         type="text"
                                         value={formData.telefone || ''}
-                                        onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
+                                        onChange={(e) => setFormData({ ...formData, telefone: formatPhoneBr(e.target.value) })}
+                                        placeholder="(00) 00000-0000"
                                         className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                                     />
                                 </div>
