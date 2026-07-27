@@ -246,9 +246,33 @@ function bodyParams(...values: string[]): any[] {
 
 /**
  * Notifica fornecedor sobre nova cotação recebida.
- * Template: nova_cotacao_fornecedor — {{1}} = número da cotação, {{2}} = obra.
+ *
+ * Com `loginRef` (token gerado por lib/quotationLink.ts) usa o template
+ * nova_cotacao_fornecedor_v2, cujo botão aponta para /login?wa=<token> —
+ * pré-preenche o email no login e abre direto a cotação após autenticar.
+ * Se o v2 falhar (ex.: ainda não aprovado pela Meta), cai no template antigo.
+ *
+ * Templates: nova_cotacao_fornecedor[_v2] — {{1}} = número da cotação, {{2}} = obra.
  */
-export async function notifySupplierNewQuotation(phone: string, cotacaoNumero: string, obraNome: string): Promise<WhatsAppSendResult> {
+export async function notifySupplierNewQuotation(phone: string, cotacaoNumero: string, obraNome: string, loginRef?: string): Promise<WhatsAppSendResult> {
+    if (loginRef) {
+        const result = await sendWhatsAppTemplate({
+            to: phone,
+            templateName: 'nova_cotacao_fornecedor_v2',
+            language: 'pt_BR',
+            components: [
+                ...bodyParams(cotacaoNumero, obraNome),
+                {
+                    type: 'button',
+                    sub_type: 'url',
+                    index: '0',
+                    parameters: [{ type: 'text', text: loginRef }],
+                },
+            ],
+        });
+        if (result.success) return result;
+        console.warn(`⚠️ WhatsApp: template v2 falhou (${result.error}), usando nova_cotacao_fornecedor`);
+    }
     return sendWhatsAppTemplate({
         to: phone,
         templateName: 'nova_cotacao_fornecedor',

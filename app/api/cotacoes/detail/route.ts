@@ -158,7 +158,7 @@ export async function GET(req: NextRequest) {
         // 1. Fetch cotação with itens
         const { data: cotacao, error: cotacaoError } = await supabaseAdmin
             .from('cotacoes')
-            .select('*, cotacao_itens(*)')
+            .select('*, cotacao_itens(*), cotacao_anexos(id, nome, url, tipo, tamanho)')
             .eq('id', cotacaoId)
             .eq('user_id', user.id)
             .single();
@@ -170,7 +170,7 @@ export async function GET(req: NextRequest) {
         // 2. Fetch propostas with itens and fornecedor data
         const { data: propostas, count: totalPropostas } = await supabaseAdmin
             .from('propostas')
-            .select('*, proposta_itens(*)', { count: 'exact' })
+            .select('*, proposta_itens(*), proposta_anexos(id, nome, url, tipo, tamanho)', { count: 'exact' })
             .eq('cotacao_id', cotacaoId)
             .order('valor_total', { ascending: true });
 

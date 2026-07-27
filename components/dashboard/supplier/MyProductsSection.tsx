@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
+import { textIncludesTerm } from "@/lib/materialSearch";
 import { useSupplierAccessContext } from "./SupplierAccessContext";
 import { Search, CheckIcon, X, TagIcon } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
@@ -150,11 +151,11 @@ export function SupplierMyProductsSection() {
     // Filtrar por busca
     const produtosFiltrados = useMemo(() => {
         if (!searchTerm) return produtos;
-        const term = searchTerm.toLowerCase();
+        // Busca sem diferenciar maiúsculas/minúsculas nem acentos
         return produtos.filter(
             (p) =>
-                p.materialNome.toLowerCase().includes(term) ||
-                p.materialUnidade.toLowerCase().includes(term)
+                textIncludesTerm(p.materialNome, searchTerm) ||
+                textIncludesTerm(p.materialUnidade, searchTerm)
         );
     }, [produtos, searchTerm]);
 

@@ -236,6 +236,7 @@ export function SupplierQuotationInboxSection() {
                     descricao: item.nome,
                     quantidade: item.quantidade,
                     unidade: item.unidade,
+                    fabricante: item.fabricante || null,
                     observacao: item.observacao,
                     grupo: item.grupo,
                     fase_nome: item.fase_nome,
@@ -252,6 +253,10 @@ export function SupplierQuotationInboxSection() {
                     user_id: doc.user_id,
                     obra_id: doc.obra_id,
                     status: doc.status,
+                    // Observações gerais do cliente (sem o marcador interno [GRUPO=...])
+                    observacoesCliente: String(doc.observacoes || '').replace(/^\[GRUPO=[^\]]*\]\s*/i, '').trim() || null,
+                    // Anexos do cliente (projetos, detalhes, especificações)
+                    anexos: doc.cotacao_anexos || [],
                     clientCode: cliente?.nome || ("Cliente " + (doc.user_id ? doc.user_id.substring(0, 5) : "Anon")),
                     locationRaw: obra?.cidade || "",
                     location: obra ? `${obra.bairro || ''}, ${obra.cidade || ''} - ${obra.estado || ''}` : "Não informado",

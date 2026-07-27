@@ -79,7 +79,8 @@ export async function POST(req: NextRequest) {
                 condicoes_pagamento,
                 observacoes,
                 data_validade,
-                itens
+                itens,
+                anexos
             } = body;
 
             const prazoEntregaValue = Number.isInteger(prazo_entrega) && prazo_entrega >= 0
@@ -204,6 +205,35 @@ export async function POST(req: NextRequest) {
                     await supabaseAdmin.from('propostas').delete().eq('id', proposta.id);
                 }
                 return NextResponse.json({ error: itensError.message }, { status: 500 });
+            }
+
+            // 2.05 Anexos da proposta: substitui a lista pela enviada
+            // (o formulário manda os mantidos + novos; removidos ficam de fora)
+            if (Array.isArray(anexos)) {
+                await supabaseAdmin
+                    .from('proposta_anexos')
+                    .delete()
+                    .eq('proposta_id', proposta.id);
+
+                const anexoRows = anexos
+                    .filter((a: any) => a && a.url && a.nome)
+                    .map((a: any) => ({
+                        proposta_id: proposta.id,
+                        nome: String(a.nome).slice(0, 255),
+                        url: String(a.url),
+                        tipo: a.tipo ? String(a.tipo) : null,
+                        tamanho: Number(a.tamanho) || null,
+                        uploaded_by: user.id,
+                    }));
+
+                if (anexoRows.length > 0) {
+                    const { error: anexosError } = await supabaseAdmin
+                        .from('proposta_anexos')
+                        .insert(anexoRows);
+                    if (anexosError) {
+                        console.error('Erro ao salvar anexos da proposta:', anexosError);
+                    }
+                }
             }
 
             // 2.1 If there's a linked won order still negotiable, sync pedido with updated negotiated values

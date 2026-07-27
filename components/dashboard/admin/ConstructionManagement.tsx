@@ -53,6 +53,7 @@ import {
     getFasesByGrupoInsumoId
 } from '@/lib/constructionServices';
 import { supabase } from '@/lib/supabase';
+import { textIncludesTerm } from '@/lib/materialSearch';
 import { useToast } from "@/components/ToastProvider";
 
 // --- Types ---
@@ -390,7 +391,8 @@ export default function ConstructionManagement() {
     // --- Filtering Logic ---
 
     const filterItem = useCallback((text: string, query: string) => {
-        return text.toLowerCase().includes(query.toLowerCase());
+        // Sem diferenciar maiúsculas/minúsculas nem acentos
+        return textIncludesTerm(text, query);
     }, []);
 
     const filteredFases = useMemo(() => {

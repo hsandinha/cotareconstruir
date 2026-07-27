@@ -8,12 +8,16 @@ import { sendEmail } from "../../../app/actions/email";
 import {
     buildCsv,
     downloadCsvFile,
+    downloadXlsxFile,
     getCsvRowValue,
     normalizeCsvKey,
     parseSpreadsheetFile,
     parseFlexibleNumber
 } from "@/lib/csvSpreadsheet";
 import { useToast } from "@/components/ToastProvider";
+import { normalizeSearchText, expandTermWithSynonyms } from "@/lib/materialSearch";
+import { AttachmentsField } from "@/components/AttachmentsField";
+import { uploadAnexos } from "@/lib/anexos";
 import {
     Package, Plus, Trash2, ShoppingCart, Building2, Send, Search, Check,
     AlertCircle, Loader2, ChevronRight, Sparkles, ArrowRight, X, Tag,
@@ -99,6 +103,8 @@ interface CartItem {
     faseNome?: string;
     servicoNome?: string;
     materialId?: string;
+    /** Material sem cadastro no catálogo — solicitação de aprovação enviada ao admin, mas segue na cotação normalmente */
+    novoMaterial?: boolean;
 }
 
 interface Obra {
@@ -145,6 +151,14 @@ export function ClientSolicitationSection() {
     const [grupos, setGrupos] = useState<GrupoInsumo[]>([]);
     const [materiais, setMateriais] = useState<Material[]>([]);
     const [availableGroups, setAvailableGroups] = useState<string[]>([]);
+    // Sinônimos de materiais (ex: bacia = vaso sanitário) para expandir a busca
+    const [synonymGroups, setSynonymGroups] = useState<string[][]>([]);
+    // Fabricantes cadastrados pelo admin, para o cliente escolher por item
+    const [manufacturers, setManufacturers] = useState<string[]>([]);
+    // Observação geral da cotação (exibida aos fornecedores)
+    const [observacoesGerais, setObservacoesGerais] = useState("");
+    // Anexos da cotação (projetos, detalhes, especificações)
+    const [anexosFiles, setAnexosFiles] = useState<File[]>([]);
 
     // Estados de navegação por fases
     const [expandedFases, setExpandedFases] = useState<Set<string>>(new Set());
@@ -172,6 +186,17 @@ export function ClientSolicitationSection() {
     const [downloadingTemplate, setDownloadingTemplate] = useState(false);
     const [importMenuOpen, setImportMenuOpen] = useState(false);
     const importMenuRef = useRef<HTMLDivElement | null>(null);
+    // Linhas importadas cujo grupo não pôde ser resolvido: o cliente escolhe o
+    // grupo em um modal em vez de a linha ser descartada em silêncio
+    const [groupFixRows, setGroupFixRows] = useState<Array<{
+        nome: string;
+        quantidade: number;
+        unidade: string;
+        fornecedor: string;
+        observacao: string;
+        materialId?: string;
+        grupo: string;
+    }> | null>(null);
 
     // Solicitação de novo material (envia para aprovação do admin)
     const [showRequestMaterialModal, setShowRequestMaterialModal] = useState(false);
@@ -223,7 +248,9 @@ export function ClientSolicitationSection() {
     const getSearchVariants = (term: string) => {
         const raw = term.trim().toLowerCase();
         const normalized = normalizeText(term);
-        return Array.from(new Set([raw, normalized].filter(Boolean)));
+        // Expande com os sinônimos cadastrados (ex: bacia → vaso sanitário)
+        const expanded = expandTermWithSynonyms(term, synonymGroups);
+        return Array.from(new Set([raw, normalized, ...expanded].filter(Boolean)));
     };
 
     const getRemoteSearchCacheKey = (term: string) => normalizeText(term);
@@ -458,6 +485,31 @@ export function ClientSolicitationSection() {
         }
     };
 
+    // Carregar sinônimos de materiais e fabricantes (uma vez, após autenticar)
+    useEffect(() => {
+        if (!initialized || !user) return;
+
+        supabase
+            .from('material_sinonimos')
+            .select('termos')
+            .then(({ data }) => {
+                setSynonymGroups((data || []).map((row: any) => (Array.isArray(row.termos) ? row.termos : [])));
+            });
+
+        (async () => {
+            try {
+                const headers = await getAuthHeaders();
+                const res = await fetch('/api/manufacturers', { headers, credentials: 'include' });
+                const json = await res.json();
+                if (res.ok) {
+                    setManufacturers((json.data || []).map((m: any) => String(m.name || '')).filter(Boolean));
+                }
+            } catch {
+                // Lista de fabricantes é opcional; segue sem sugestões
+            }
+        })();
+    }, [initialized, user]);
+
     // Obra selecionada
     const selectedObra = useMemo(() => {
         return obras.find(o => o.id === selectedObraId);
@@ -522,8 +574,13 @@ export function ClientSolicitationSection() {
     // Árvore de fases já filtrada pelo termo do filtro inline (modo Navegar por Fases)
     const isPhaseFilterActive = phaseFilter.trim().length > 0;
     const phaseTree = useMemo(() => {
-        const term = phaseFilter.trim().toLowerCase();
-        const active = term.length > 0;
+        // Busca sem diferenciar maiúsculas/acentos, expandida com sinônimos
+        const filterVariants = expandTermWithSynonyms(phaseFilter, synonymGroups);
+        const active = filterVariants.length > 0;
+        const matchesFilter = (nome: string) => {
+            const normalizedName = normalizeSearchText(nome);
+            return filterVariants.some(variant => normalizedName.includes(variant));
+        };
         return validEtapasForQuotation
             .map(etapa => {
                 const grupoIds = groupIdsByEtapa.get(etapa.id) || new Set<string>();
@@ -533,7 +590,7 @@ export function ClientSolicitationSection() {
                         grupo,
                         materiaisDoGrupo: materiais.filter(m =>
                             m.gruposInsumoIds.includes(grupo.id) &&
-                            (!active || m.nome.toLowerCase().includes(term))
+                            (!active || matchesFilter(m.nome))
                         ),
                     }))
                     .filter(gv => gv.materiaisDoGrupo.length > 0);
@@ -541,7 +598,7 @@ export function ClientSolicitationSection() {
                 return { etapa, gruposView, totalMateriais };
             })
             .filter(ev => !active || ev.totalMateriais > 0);
-    }, [validEtapasForQuotation, groupIdsByEtapa, grupos, materiais, phaseFilter]);
+    }, [validEtapasForQuotation, groupIdsByEtapa, grupos, materiais, phaseFilter, synonymGroups]);
 
     // Itens agrupados por categoria
     const groupedItems = useMemo(() => {
@@ -697,8 +754,9 @@ export function ClientSolicitationSection() {
     const filteredMaterials = useMemo(() => {
         if (!searchTerm) return [];
 
-        const normalizedTerm = normalizeText(searchTerm);
-        if (!normalizedTerm) return [];
+        // Variantes normalizadas do termo (inclui sinônimos cadastrados)
+        const variantTerms = expandTermWithSynonyms(searchTerm, synonymGroups);
+        if (variantTerms.length === 0) return [];
 
         const mergedMap = new Map<string, Material>();
         [...remoteMaterials, ...materiais].forEach(material => {
@@ -720,7 +778,7 @@ export function ClientSolicitationSection() {
         return searchableMaterials
             .map(material => ({
                 material,
-                score: scoreMaterialMatch(material.nome, normalizedTerm),
+                score: Math.max(...variantTerms.map(variant => scoreMaterialMatch(material.nome, variant))),
             }))
             .filter(result => result.score >= 0)
             .sort((a, b) => {
@@ -729,7 +787,7 @@ export function ClientSolicitationSection() {
             })
             .slice(0, 80)
             .map(result => result.material);
-    }, [searchTerm, materiais, remoteMaterials]);
+    }, [searchTerm, materiais, remoteMaterials, synonymGroups]);
 
     useEffect(() => {
         const trimmedTerm = searchTerm.trim();
@@ -844,42 +902,46 @@ export function ClientSolicitationSection() {
         searchTerm.trim().length > 0 &&
         (filteredMaterials.length > 0 || isSearchingRemote || isLoadingMoreRemote);
 
-    const handleDownloadClientTemplate = async () => {
+    const TEMPLATE_HEADERS = ["material", "quantidade", "unidade", "grupo", "fabricante", "observacao"];
+
+    // Monta as linhas de exemplo do modelo. Usa materiais reais do catálogo
+    // (com o grupo correto) para o exemplo já importar sem erro; se o catálogo
+    // ainda não carregou, cai nos exemplos estáticos.
+    const buildTemplateRows = () => {
+        const grupoNomeById = new Map(grupos.map(g => [g.id, g.nome]));
+        const catalogExamples = materiais
+            .filter(m => (m.gruposInsumoIds || []).length > 0 && grupoNomeById.get(m.gruposInsumoIds[0]))
+            .slice(0, 3)
+            .map((m, index) => ({
+                material: m.nome,
+                quantidade: [10, 20, 50][index] || 10,
+                unidade: m.unidade || "unid",
+                grupo: grupoNomeById.get(m.gruposInsumoIds[0]) || "",
+                fabricante: "",
+                observacao: index === 0 ? "Exemplo — substitua pelos seus materiais" : "",
+            }));
+
+        if (catalogExamples.length > 0) return catalogExamples;
+
+        const fallbackGrupo = availableGroups[0] || "";
+        return [
+            { material: "Cimento CP II 50kg", quantidade: 120, unidade: "sc", grupo: fallbackGrupo, fabricante: "", observacao: "Exemplo — substitua pelos seus materiais" },
+            { material: "Areia Média Lavada", quantidade: 20, unidade: "m³", grupo: fallbackGrupo, fabricante: "", observacao: "" },
+            { material: "Tubo PVC 100mm", quantidade: 80, unidade: "m", grupo: fallbackGrupo, fabricante: "Tigre", observacao: "" },
+        ];
+    };
+
+    const handleDownloadClientTemplate = async (format: "csv" | "xlsx" = "csv") => {
         setDownloadingTemplate(true);
         try {
-            const templateRows = [
-                {
-                    material: "Cimento CP II 50kg",
-                    quantidade: 120,
-                    unidade: "sc",
-                    fabricante: "",
-                    observacao: "Entrega em até 3 dias",
-                },
-                {
-                    material: "Areia Média Lavada",
-                    quantidade: 20,
-                    unidade: "m³",
-                    fabricante: "",
-                    observacao: "",
-                },
-                {
-                    material: "Tubo PVC 100mm",
-                    quantidade: 80,
-                    unidade: "m",
-                    fabricante: "Tigre",
-                    observacao: "",
-                },
-            ];
+            const templateRows = buildTemplateRows();
 
-            const csv = buildCsv(templateRows, [
-                "material",
-                "quantidade",
-                "unidade",
-                "fabricante",
-                "observacao",
-            ]);
-
-            downloadCsvFile("modelo_lista_materiais_cliente.csv", csv);
+            if (format === "xlsx") {
+                downloadXlsxFile("modelo_lista_materiais_cliente.xlsx", TEMPLATE_HEADERS, templateRows);
+            } else {
+                const csv = buildCsv(templateRows, TEMPLATE_HEADERS);
+                downloadCsvFile("modelo_lista_materiais_cliente.csv", csv);
+            }
         } catch (error) {
             console.error("Erro ao gerar modelo de lista:", error);
             showToast("error", "Erro ao gerar arquivo modelo.");
@@ -892,6 +954,35 @@ export function ClientSolicitationSection() {
         uploadListInputRef.current?.click();
     };
 
+    // Materiais sem cadastro importados via lista: registra solicitações para o
+    // admin em segundo plano. A aprovação NÃO bloqueia — os itens seguem na
+    // cotação normalmente e vão para os fornecedores do grupo.
+    const requestNewMaterialsApproval = async (novos: Array<{ nome: string; unidade: string; grupo: string }>) => {
+        try {
+            const headers = await getAuthHeaders();
+            await Promise.allSettled(novos.map(novo =>
+                fetch('/api/material-requests', {
+                    method: 'POST',
+                    headers,
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        nome: novo.nome,
+                        unidade: novo.unidade || 'unid',
+                        grupo_sugerido: novo.grupo || undefined,
+                        tipo_solicitante: 'cliente',
+                        force: true,
+                        contexto: {
+                            origem: 'upload_lista',
+                            obra_id: selectedObraId || null,
+                        },
+                    }),
+                })
+            ));
+        } catch (error) {
+            console.warn('Falha ao registrar solicitações de novos materiais:', error);
+        }
+    };
+
     const handleUploadClientList = async (event: ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         event.target.value = "";
@@ -899,6 +990,11 @@ export function ClientSolicitationSection() {
 
         setUploadingList(true);
         try {
+            if (materiais.length === 0 && availableGroups.length === 0) {
+                showToast("error", "O catálogo de materiais ainda está carregando. Aguarde alguns segundos e tente novamente.");
+                return;
+            }
+
             const parsedRows = await parseSpreadsheetFile(file);
             if (parsedRows.length === 0) {
                 showToast("error", "A lista está vazia ou inválida.");
@@ -928,10 +1024,16 @@ export function ClientSolicitationSection() {
             );
             const importedItems: CartItem[] = [];
             let ignoredRows = 0;
+            // Materiais sem cadastro no catálogo (deduplicados por nome)
+            const novosMateriais = new Map<string, { nome: string; unidade: string; grupo: string }>();
+
+            // Linhas com material mas sem grupo resolvível: vão para o modal de
+            // correção (o cliente escolhe o grupo) em vez de serem descartadas
+            const pendingGroupRows: NonNullable<typeof groupFixRows> = [];
 
             for (const row of parsedRows) {
                 const rawMaterialId = getCsvRowValue(row, ["material_id", "id_material", "id"]);
-                const rawMaterialName = getCsvRowValue(row, ["material", "material_nome", "descricao", "item", "nome"]);
+                const rawMaterialName = getCsvRowValue(row, ["material", "material_nome", "descricao", "item", "nome", "produto", "insumo"]);
                 const rawGroupName = getCsvRowValue(row, ["grupo", "categoria", "grupo_insumo"]);
                 const rawQuantity = getCsvRowValue(row, ["quantidade", "qtd", "qtde", "volume"]);
                 const rawUnit = getCsvRowValue(row, ["unidade", "unid", "und"]);
@@ -973,16 +1075,31 @@ export function ClientSolicitationSection() {
                 }
 
                 const description = String(rawMaterialName || matchedMaterial?.nome || "").trim();
-                if (!description || !categoryName) {
+                if (!description) {
                     ignoredRows++;
                     continue;
                 }
 
                 const parsedQty = parseFlexibleNumber(rawQuantity);
-                const quantity = Math.max(1, Math.round(parsedQty ?? 1));
+                // Preserva quantidades decimais (ex.: 20,5 m³) com 2 casas
+                const quantity = Math.max(0.01, Math.round((parsedQty ?? 1) * 100) / 100);
                 const unit = String(rawUnit || matchedMaterial?.unidade || "unid").trim() || "unid";
 
+                if (!categoryName) {
+                    pendingGroupRows.push({
+                        nome: description,
+                        quantidade: quantity,
+                        unidade: unit,
+                        fornecedor: rawFornecedor || "",
+                        observacao: rawObservacao || "",
+                        materialId: matchedMaterial?.id || undefined,
+                        grupo: "",
+                    });
+                    continue;
+                }
+
                 nextItemId += 1;
+                const isNovoMaterial = !matchedMaterial;
                 importedItems.push({
                     id: nextItemId,
                     descricao: description,
@@ -992,31 +1109,100 @@ export function ClientSolicitationSection() {
                     fornecedor: rawFornecedor || "",
                     observacao: rawObservacao || "",
                     materialId: matchedMaterial?.id || undefined,
+                    novoMaterial: isNovoMaterial || undefined,
                 });
+
+                if (isNovoMaterial) {
+                    const novoKey = normalizeCsvKey(description);
+                    if (!novosMateriais.has(novoKey)) {
+                        novosMateriais.set(novoKey, { nome: description, unidade: unit, grupo: categoryName });
+                    }
+                }
             }
 
-            if (importedItems.length === 0) {
-                showToast("error", "Nenhuma linha válida foi encontrada. Verifique se a planilha possui material e grupo válidos.");
+            if (importedItems.length === 0 && pendingGroupRows.length === 0) {
+                showToast("error", "Nenhuma linha válida foi encontrada. Verifique se a planilha tem a coluna 'material' preenchida.");
                 return;
             }
 
-            const replaceExisting = items.length > 0
-                ? window.confirm("Já existem itens no carrinho. Clique OK para substituir, ou Cancelar para adicionar junto.")
-                : true;
+            if (importedItems.length > 0) {
+                const replaceExisting = items.length > 0
+                    ? window.confirm("Já existem itens no carrinho. Clique OK para substituir, ou Cancelar para adicionar junto.")
+                    : true;
 
-            setItems((prev) => replaceExisting ? importedItems : [...prev, ...importedItems]);
-            flashCartFeedback(importedItems[importedItems.length - 1].id);
+                setItems((prev) => replaceExisting ? importedItems : [...prev, ...importedItems]);
+                flashCartFeedback(importedItems[importedItems.length - 1].id);
+            }
 
-            alert(
-                `Lista importada com sucesso: ${importedItems.length} item(ns) adicionados` +
-                (ignoredRows > 0 ? `, ${ignoredRows} linha(s) ignorada(s).` : ".")
-            );
+            // Em paralelo (sem bloquear): envia os materiais sem cadastro para
+            // aprovação do admin — eles já seguem nesta cotação normalmente.
+            if (novosMateriais.size > 0) {
+                void requestNewMaterialsApproval(Array.from(novosMateriais.values()));
+            }
+
+            // Linhas sem grupo resolvível: abre o modal para o cliente escolher
+            if (pendingGroupRows.length > 0) {
+                setGroupFixRows(pendingGroupRows);
+            }
+
+            if (importedItems.length > 0) {
+                alert(
+                    `Lista importada com sucesso: ${importedItems.length} item(ns) adicionados` +
+                    (ignoredRows > 0 ? `, ${ignoredRows} linha(s) ignorada(s) por não ter material informado.` : ".") +
+                    (novosMateriais.size > 0
+                        ? `\n\n${novosMateriais.size} material(is) sem cadastro foram enviados para aprovação do administrador. Eles seguem normalmente nesta cotação — a aprovação não bloqueia o envio.`
+                        : "") +
+                    (pendingGroupRows.length > 0
+                        ? `\n\n${pendingGroupRows.length} item(ns) precisam que você escolha o grupo de insumo — vamos mostrar agora.`
+                        : "")
+                );
+            }
         } catch (error: any) {
             console.error("Erro ao importar lista de materiais:", error);
             showToast("error", error?.message || "Erro ao importar lista.");
         } finally {
             setUploadingList(false);
         }
+    };
+
+    // Confirma o modal de correção: adiciona os itens cujo grupo foi escolhido
+    const confirmGroupFixRows = () => {
+        if (!groupFixRows) return;
+        const readyRows = groupFixRows.filter(r => r.grupo);
+        if (readyRows.length === 0) {
+            showToast("error", "Escolha o grupo de pelo menos um item, ou feche para descartar.");
+            return;
+        }
+
+        let nextItemId = Math.max(Date.now(), ...items.map(i => Number(i.id) || 0));
+        const newItems: CartItem[] = readyRows.map(r => {
+            nextItemId += 1;
+            return {
+                id: nextItemId,
+                descricao: r.nome,
+                categoria: r.grupo,
+                quantidade: r.quantidade,
+                unidade: r.unidade,
+                fornecedor: r.fornecedor,
+                observacao: r.observacao,
+                materialId: r.materialId,
+                novoMaterial: r.materialId ? undefined : true,
+            };
+        });
+        setItems(prev => [...prev, ...newItems]);
+        flashCartFeedback(newItems[newItems.length - 1].id);
+
+        // Materiais sem cadastro: solicita aprovação em paralelo (não bloqueia)
+        const novos = readyRows
+            .filter(r => !r.materialId)
+            .map(r => ({ nome: r.nome, unidade: r.unidade, grupo: r.grupo }));
+        if (novos.length > 0) {
+            void requestNewMaterialsApproval(novos);
+        }
+
+        const skipped = groupFixRows.length - readyRows.length;
+        setGroupFixRows(null);
+        showToast("success", `${newItems.length} item(ns) adicionados ao carrinho${skipped > 0 ? ` — ${skipped} sem grupo foram descartados` : ""}.`);
     };
 
     useEffect(() => {
@@ -1215,6 +1401,13 @@ export function ClientSolicitationSection() {
         ));
     };
 
+    // Atualizar fabricante escolhido para o item
+    const updateItemFabricante = (id: number, fornecedor: string) => {
+        setItems(prev => prev.map(item =>
+            item.id === id ? { ...item, fornecedor } : item
+        ));
+    };
+
     // Finalizar cotação
     const handleSubmit = async () => {
         if (!user || !selectedObraId || items.length === 0) return;
@@ -1229,6 +1422,18 @@ export function ClientSolicitationSection() {
 
         setLoading(true);
         try {
+            // Upload dos anexos (projetos, detalhes, especificações)
+            let anexos: Awaited<ReturnType<typeof uploadAnexos>> = [];
+            if (anexosFiles.length > 0) {
+                try {
+                    anexos = await uploadAnexos(anexosFiles, `cotacoes/${user.id}`);
+                } catch (uploadError: any) {
+                    showToast("error", uploadError?.message || "Erro ao enviar anexos. Tente novamente.");
+                    setLoading(false);
+                    return;
+                }
+            }
+
             // Obter headers com token de autenticação
             const headers = await getAuthHeaders();
 
@@ -1239,12 +1444,15 @@ export function ClientSolicitationSection() {
                 body: JSON.stringify({
                     action: 'create',
                     obra_id: selectedObraId,
+                    observacoes: observacoesGerais.trim() || undefined,
+                    anexos: anexos.length > 0 ? anexos : undefined,
                     itens: items.map(item => ({
                         material_id: item.materialId || null,
                         nome: item.descricao,
                         quantidade: item.quantidade,
                         unidade: item.unidade,
                         grupo: item.categoria,
+                        fabricante: item.fornecedor?.trim() || null,
                         observacao: item.observacao || null,
                         fase_nome: item.faseNome || null,
                         servico_nome: item.servicoNome || null,
@@ -1284,6 +1492,8 @@ export function ClientSolicitationSection() {
             setSuccess(true);
             setSuccessMeta({ cotacoes: cotacoesCreated, grupos: gruposCreated });
             setItems([]);
+            setObservacoesGerais("");
+            setAnexosFiles([]);
             setDraftRestored(false);
             setTimeout(() => {
                 setSuccess(false);
@@ -1579,14 +1789,27 @@ export function ClientSolicitationSection() {
                                             <div className="h-px bg-slate-100" />
                                             <button
                                                 role="menuitem"
-                                                onClick={() => { setImportMenuOpen(false); handleDownloadClientTemplate(); }}
+                                                onClick={() => { setImportMenuOpen(false); handleDownloadClientTemplate("xlsx"); }}
+                                                disabled={uploadingList || downloadingTemplate}
+                                                className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                                            >
+                                                <Download className="mt-0.5 h-4 w-4 text-emerald-600" />
+                                                <div>
+                                                    <p className="text-sm font-semibold text-slate-900">Baixar modelo Excel (recomendado)</p>
+                                                    <p className="text-[11px] text-slate-500">Planilha .xlsx pronta: material, quantidade, unidade, grupo, fabricante.</p>
+                                                </div>
+                                            </button>
+                                            <div className="h-px bg-slate-100" />
+                                            <button
+                                                role="menuitem"
+                                                onClick={() => { setImportMenuOpen(false); handleDownloadClientTemplate("csv"); }}
                                                 disabled={uploadingList || downloadingTemplate}
                                                 className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
                                             >
                                                 <Download className="mt-0.5 h-4 w-4 text-slate-600" />
                                                 <div>
-                                                    <p className="text-sm font-semibold text-slate-900">Baixar modelo</p>
-                                                    <p className="text-[11px] text-slate-500">Use o template recomendado: material, quantidade, unidade, fabricante.</p>
+                                                    <p className="text-sm font-semibold text-slate-900">Baixar modelo CSV</p>
+                                                    <p className="text-[11px] text-slate-500">Mesmo modelo em formato .csv (separado por ponto e vírgula).</p>
                                                 </div>
                                             </button>
                                         </div>
@@ -1594,7 +1817,7 @@ export function ClientSolicitationSection() {
                                     <input
                                         ref={uploadListInputRef}
                                         type="file"
-                                        accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                                        accept=".csv,.xlsx,.xls,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                                         className="hidden"
                                         onChange={handleUploadClientList}
                                     />
@@ -2176,9 +2399,16 @@ export function ClientSolicitationSection() {
                                     </div>
                                     <div className="divide-y divide-slate-100">
                                         {catItems.map(item => (
-                                            <div key={item.id} className="px-4 py-3 flex items-center justify-between">
-                                                <div>
-                                                    <p className="font-medium text-slate-900">{item.descricao}</p>
+                                            <div key={item.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <p className="font-medium text-slate-900 flex items-center gap-2 flex-wrap">
+                                                        {item.descricao}
+                                                        {item.novoMaterial && (
+                                                            <span className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-700" title="Material sem cadastro: enviado para aprovação do administrador, mas segue nesta cotação normalmente">
+                                                                Novo material — em aprovação
+                                                            </span>
+                                                        )}
+                                                    </p>
                                                     {item.faseNome && (
                                                         <p className="text-xs text-slate-500">
                                                             <Layers className="w-3 h-3 inline mr-1" />
@@ -2186,17 +2416,27 @@ export function ClientSolicitationSection() {
                                                             {item.servicoNome && ` → ${item.servicoNome}`}
                                                         </p>
                                                     )}
-                                                    {item.fornecedor && (
-                                                        <p className="text-xs text-blue-600">
-                                                            <Building2 className="w-3 h-3 inline mr-1" />
-                                                            {item.fornecedor}
-                                                        </p>
-                                                    )}
+                                                    <div className="mt-1.5 flex items-center gap-1.5">
+                                                        <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
+                                                        <select
+                                                            value={item.fornecedor || ""}
+                                                            onChange={e => updateItemFabricante(item.id, e.target.value)}
+                                                            className="max-w-[220px] rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none cursor-pointer"
+                                                        >
+                                                            <option value="">Fabricante (opcional)</option>
+                                                            {item.fornecedor && !manufacturers.includes(item.fornecedor) && (
+                                                                <option value={item.fornecedor}>{item.fornecedor}</option>
+                                                            )}
+                                                            {manufacturers.map(name => (
+                                                                <option key={name} value={name}>{name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
                                                     {item.observacao && (
-                                                        <p className="text-xs text-slate-400">{item.observacao}</p>
+                                                        <p className="mt-1 text-xs text-slate-400">{item.observacao}</p>
                                                     )}
                                                 </div>
-                                                <div className="text-right">
+                                                <div className="text-right shrink-0">
                                                     <p className="font-semibold text-slate-700">{item.quantidade}</p>
                                                     <p className="text-xs text-slate-500">{item.unidade}</p>
                                                 </div>
@@ -2206,6 +2446,36 @@ export function ClientSolicitationSection() {
                                 </div>
                             ))}
                         </div>
+                    </div>
+
+                    {/* Observações gerais da cotação (visíveis aos fornecedores) */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <label className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
+                            <MessageSquare className="w-4 h-4 text-blue-600" />
+                            Observações gerais (opcional)
+                        </label>
+                        <p className="text-xs text-slate-500 mb-3">
+                            Essas informações serão exibidas aos fornecedores junto com a cotação.
+                        </p>
+                        <textarea
+                            value={observacoesGerais}
+                            onChange={e => setObservacoesGerais(e.target.value)}
+                            rows={3}
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                            placeholder="Ex: Entregar preferencialmente pela manhã; rua estreita, sem acesso para carreta..."
+                        />
+                    </div>
+
+                    {/* Anexos da cotação (projetos, detalhes, especificações) */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <AttachmentsField
+                            label="Anexos (opcional)"
+                            description="Anexe projetos, detalhes e especificações complementares — essenciais para cotar esquadrias, marcenaria, bancadas, impermeabilização, instalações etc. Os fornecedores poderão baixar os arquivos."
+                            files={anexosFiles}
+                            onChange={setAnexosFiles}
+                            disabled={loading}
+                            onError={(message) => showToast("error", message)}
+                        />
                     </div>
 
                     {/* Botões */}
@@ -2324,14 +2594,20 @@ export function ClientSolicitationSection() {
                             <div>
                                 <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
                                     <Building2 className="w-3 h-3 inline mr-1" />
-                                    Fornecedor / Fabricante (opcional)
+                                    Fabricante (opcional)
                                 </label>
                                 <input
                                     value={form.fornecedor}
                                     onChange={e => setForm({ ...form, fornecedor: e.target.value })}
+                                    list="manufacturers-suggestions"
                                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                                     placeholder="Ex: Votorantim, Quartzolit, Tigre..."
                                 />
+                                <datalist id="manufacturers-suggestions">
+                                    {manufacturers.map(name => (
+                                        <option key={name} value={name} />
+                                    ))}
+                                </datalist>
                             </div>
 
                             {/* Observação */}
@@ -2364,6 +2640,92 @@ export function ClientSolicitationSection() {
                                 >
                                     <Plus className="w-4 h-4" />
                                     Adicionar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de correção: itens importados sem grupo de insumo */}
+            {groupFixRows && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4">
+                    <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl flex flex-col max-h-[85vh]">
+                        <div className="flex items-center justify-between border-b border-slate-200 p-5">
+                            <div>
+                                <h2 className="text-lg font-bold text-slate-900">Escolha o grupo destes itens</h2>
+                                <p className="text-sm text-slate-500">
+                                    Não conseguimos identificar o grupo de insumo destes materiais da sua lista.
+                                    Escolha o grupo para incluí-los na cotação — sem grupo não há como direcionar aos fornecedores certos.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setGroupFixRows(null)}
+                                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
+                                aria-label="Fechar"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-3 overflow-y-auto">
+                            {groupFixRows.map((row, index) => (
+                                <div key={index} className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3">
+                                    <div className="flex-1 min-w-[180px]">
+                                        <p className="text-sm font-medium text-slate-900">{row.nome}</p>
+                                        <p className="text-xs text-slate-500">
+                                            {row.quantidade} {row.unidade}
+                                            {!row.materialId && (
+                                                <span className="ml-2 inline-flex items-center rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                                                    novo material
+                                                </span>
+                                            )}
+                                        </p>
+                                    </div>
+                                    <select
+                                        value={row.grupo}
+                                        onChange={e => setGroupFixRows(prev => prev
+                                            ? prev.map((r, i) => i === index ? { ...r, grupo: e.target.value } : r)
+                                            : prev
+                                        )}
+                                        className={`rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 ${row.grupo ? 'border-slate-200 text-slate-700' : 'border-amber-300 bg-amber-50 text-amber-800'}`}
+                                    >
+                                        <option value="">Escolher grupo...</option>
+                                        {availableGroups.map(g => (
+                                            <option key={g} value={g}>{g}</option>
+                                        ))}
+                                    </select>
+                                    <button
+                                        onClick={() => setGroupFixRows(prev => {
+                                            const next = (prev || []).filter((_, i) => i !== index);
+                                            return next.length > 0 ? next : null;
+                                        })}
+                                        className="p-1.5 rounded-md text-slate-300 hover:text-red-500 hover:bg-red-50"
+                                        aria-label={`Remover ${row.nome}`}
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 border-t border-slate-200 p-5">
+                            <p className="text-xs text-slate-500">
+                                {groupFixRows.filter(r => r.grupo).length} de {groupFixRows.length} com grupo escolhido
+                            </p>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setGroupFixRows(null)}
+                                    className="rounded-xl px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                                >
+                                    Descartar
+                                </button>
+                                <button
+                                    onClick={confirmGroupFixRows}
+                                    className="flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    Adicionar ao carrinho
                                 </button>
                             </div>
                         </div>

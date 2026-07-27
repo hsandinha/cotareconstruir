@@ -10,6 +10,7 @@ import { authFetch } from "@/lib/authHeaders";
 import { Download, MessageSquare, Star, ShieldAlert } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
 import { ReportModal } from "../../ReportModal";
+import { formatPaymentTerms } from "@/lib/paymentTerms";
 
 interface ClientComparativeSectionProps {
     orderId?: string;
@@ -94,6 +95,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             descricao: item.nome,
                             quantidade: item.quantidade,
                             unidade: item.unidade,
+                            fabricante: item.fabricante || null,
                             observacao: item.observacao
                         })) || []
                     });
@@ -128,6 +130,8 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         deliveryDays: prazoEntrega,
                         validity: p.data_validade ? new Date(p.data_validade).toLocaleDateString('pt-BR') : null,
                         paymentMethod: p.condicoes_pagamento,
+                        observacoes: String(p.observacoes || '').replace(/\[IMPOSTOS=[^\]]*\]/gi, '').trim() || null,
+                        anexos: p.proposta_anexos || [],
                         items: p.proposta_itens?.map((item: any) => ({
                             itemId: item.cotacao_item_id,
                             price: item.preco_unitario,
@@ -1232,6 +1236,9 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                                 </span>
                                             )}
                                         </div>
+                                        {item.fabricante && (
+                                            <p className="text-xs text-blue-600 mt-0.5">Fabricante: {item.fabricante}</p>
+                                        )}
                                     </td>
                                     <td className="border-b border-slate-100 px-4 py-3 text-center text-slate-900 font-medium">
                                         {item.quantidade}
@@ -1336,7 +1343,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                     key={`payment-${proposal.id}`}
                                     className="border-t border-slate-100 px-4 py-3 text-center text-slate-700 text-xs"
                                 >
-                                    {proposal.paymentMethod || "-"}
+                                    {formatPaymentTerms(proposal.paymentMethod) || "-"}
                                 </td>
                             ))}
                         </tr>
@@ -1354,6 +1361,49 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                         : proposal.deliveryDays === 0
                                             ? 'Imediata'
                                             : `${proposal.deliveryDays} dias`}
+                                </td>
+                            ))}
+                        </tr>
+                        <tr className="bg-white text-sm">
+                            <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Anexos do Fornecedor</td>
+                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                            {proposals.map((proposal) => (
+                                <td
+                                    key={`anexos-${proposal.id}`}
+                                    className="border-t border-slate-100 px-4 py-3 text-center text-xs"
+                                >
+                                    {(proposal.anexos || []).length > 0 ? (
+                                        <div className="flex flex-col items-center gap-1">
+                                            {(proposal.anexos || []).map((anexo: any, index: number) => (
+                                                <a
+                                                    key={anexo.id || index}
+                                                    href={anexo.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-blue-600 hover:underline truncate max-w-[10rem]"
+                                                    title={anexo.nome}
+                                                >
+                                                    📎 {anexo.nome}
+                                                </a>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <span className="text-slate-400">-</span>
+                                    )}
+                                </td>
+                            ))}
+                        </tr>
+                        <tr className="bg-slate-50 text-sm">
+                            <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Observações do Fornecedor</td>
+                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                            {proposals.map((proposal) => (
+                                <td
+                                    key={`obs-${proposal.id}`}
+                                    className="border-t border-slate-100 px-4 py-3 text-center text-slate-600 text-xs whitespace-pre-wrap break-words max-w-[16rem]"
+                                >
+                                    {proposal.observacoes || "-"}
                                 </td>
                             ))}
                         </tr>

@@ -6,12 +6,14 @@ import { useState, useEffect, useMemo, useRef, type ChangeEvent } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
+import { textIncludesTerm } from "@/lib/materialSearch";
 import { useSupplierAccessContext } from "./SupplierAccessContext";
 import { Search, Check as CheckIcon, X, PlusCircle as PlusCircleIcon, ArrowUp as ArrowUpIcon, ArrowDown as ArrowDownIcon, Download, Upload, AlertTriangle, Send, Grid2X2 as Squares2X2Icon, CheckCircle, Clock } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
 import {
     buildCsv,
     downloadCsvFile,
+    downloadXlsxFile,
     getCsvRowValue,
     normalizeCsvKey,
     parseBooleanish,
@@ -239,11 +241,11 @@ export function SupplierMaterialsSection() {
     const materiaisFiltrados = useMemo(() => {
         let result = materiaisDisponiveis;
 
-        // Filtro por busca
+        // Filtro por busca (sem diferenciar maiúsculas/minúsculas nem acentos)
         if (searchTerm) {
             result = result.filter(m =>
-                m.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                m.descricao?.toLowerCase().includes(searchTerm.toLowerCase())
+                textIncludesTerm(m.nome, searchTerm) ||
+                textIncludesTerm(m.descricao, searchTerm)
             );
         }
 
@@ -421,7 +423,7 @@ export function SupplierMaterialsSection() {
         return grupos.find(g => g.id === grupoId)?.nome || grupoId;
     };
 
-    const handleDownloadSpreadsheet = async () => {
+    const handleDownloadSpreadsheet = async (format: "csv" | "xlsx" = "csv") => {
         if (materiaisDisponiveis.length === 0) {
             showToast("error", "Nenhum material disponível para exportar.");
             return;
@@ -442,7 +444,7 @@ export function SupplierMaterialsSection() {
                 };
             });
 
-            const csv = buildCsv(rows, [
+            const exportHeaders = [
                 "material_id",
                 "material_nome",
                 "unidade",
@@ -450,10 +452,15 @@ export function SupplierMaterialsSection() {
                 "preco",
                 "estoque",
                 "ativo",
-            ]);
+            ];
 
             const today = new Date().toISOString().slice(0, 10);
-            downloadCsvFile(`materiais_fornecedor_${today}.csv`, csv);
+            if (format === "xlsx") {
+                downloadXlsxFile(`materiais_fornecedor_${today}.xlsx`, exportHeaders, rows, "Materiais");
+            } else {
+                const csv = buildCsv(rows, exportHeaders);
+                downloadCsvFile(`materiais_fornecedor_${today}.csv`, csv);
+            }
         } catch (error) {
             console.error("Erro ao gerar planilha de materiais:", error);
             showToast("error", "Erro ao gerar planilha. Tente novamente.");
@@ -607,12 +614,20 @@ export function SupplierMaterialsSection() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2" data-tour="materiais-acoes">
                     <button
-                        onClick={handleDownloadSpreadsheet}
+                        onClick={() => handleDownloadSpreadsheet("xlsx")}
+                        disabled={exportingSpreadsheet || importingSpreadsheet || loadingMateriais}
+                        className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-medium rounded-lg hover:bg-emerald-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                        <Download className="h-4 w-4" />
+                        {exportingSpreadsheet ? "Gerando..." : "Baixar Lista (Excel)"}
+                    </button>
+                    <button
+                        onClick={() => handleDownloadSpreadsheet("csv")}
                         disabled={exportingSpreadsheet || importingSpreadsheet || loadingMateriais}
                         className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                         <Download className="h-4 w-4" />
-                        {exportingSpreadsheet ? "Gerando..." : "Baixar Lista (CSV)"}
+                        CSV
                     </button>
                     <button
                         onClick={handleImportSpreadsheetClick}
@@ -620,12 +635,12 @@ export function SupplierMaterialsSection() {
                         className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                         <Upload className="h-4 w-4" />
-                        {importingSpreadsheet ? "Importando..." : "Importar Lista (CSV/XLSX)"}
+                        {importingSpreadsheet ? "Importando..." : "Importar Lista (Excel/CSV)"}
                     </button>
                     <input
                         ref={spreadsheetInputRef}
                         type="file"
-                        accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                        accept=".csv,.xlsx,.xls,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                         className="hidden"
                         onChange={handleImportSpreadsheetFile}
                     />

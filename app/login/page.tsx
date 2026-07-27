@@ -1,15 +1,49 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseAuth";
+import { decodeLoginRef, quotationDeepLinkPath } from "@/lib/quotationLink";
 
-export default function LoginPage() {
+function LoginPageContent() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const autoRedirectRef = useRef(false);
+
+    // Token enviado nos links de notificação (WhatsApp/email): ?wa=<token>
+    const loginRef = useMemo(() => {
+        const token = searchParams?.get("wa");
+        return token ? decodeLoginRef(token) : null;
+    }, [searchParams]);
+
+    // Destino pós-login: cotação do token, ou ?redirect= definido pelo proxy
+    const nextPath = useMemo(() => {
+        if (loginRef?.cotacaoId) return quotationDeepLinkPath(loginRef.cotacaoId);
+        const redirect = searchParams?.get("redirect");
+        if (redirect && redirect.startsWith("/") && !redirect.startsWith("//")) return redirect;
+        return null;
+    }, [loginRef, searchParams]);
+
+    // Pré-preenche o email vindo do token ou de ?email=
+    useEffect(() => {
+        const prefill = loginRef?.email || searchParams?.get("email") || "";
+        if (prefill) setEmail((prev) => prev || prefill);
+    }, [loginRef, searchParams]);
+
+    // Se já existe sessão ativa e o link tem destino, entra direto na cotação
+    useEffect(() => {
+        if (!nextPath || autoRedirectRef.current) return;
+        autoRedirectRef.current = true;
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user) {
+                handleUserAuth(session.user, session).catch(() => { });
+            }
+        });
+    }, [nextPath]);
 
     const getFriendlyErrorMessage = (errorMessage: string) => {
         if (errorMessage.includes("Invalid login credentials")) {
@@ -105,12 +139,18 @@ export default function LoginPage() {
         document.cookie = `mustChangePassword=${mustChangePasswordFlag ? 'true' : 'false'}; path=/; max-age=86400; SameSite=Strict${secureFlag}`;
 
         // Redirect based on priority role
-        if (primaryRole === "admin") {
-            router.push("/dashboard/admin");
-        } else if (primaryRole === "fornecedor") {
-            router.push("/dashboard/fornecedor");
+        const roleHome = primaryRole === "admin"
+            ? "/dashboard/admin"
+            : primaryRole === "fornecedor"
+                ? "/dashboard/fornecedor"
+                : "/dashboard/cliente";
+
+        // Se o link trouxe um destino dentro da área do usuário (ex.: cotação
+        // recebida via WhatsApp), abre direto nele
+        if (nextPath && nextPath.startsWith(roleHome)) {
+            router.push(nextPath);
         } else {
-            router.push("/dashboard/cliente");
+            router.push(roleHome);
         }
 
         // Force a hard refresh to ensure state updates
@@ -255,5 +295,13 @@ export default function LoginPage() {
                 </form>
             </div>
         </div>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense fallback={null}>
+            <LoginPageContent />
+        </Suspense>
     );
 }

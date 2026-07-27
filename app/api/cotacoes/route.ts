@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { resolveSupplierAccess } from '@/lib/supplierAccessServer';
 import { notifySupplierNewQuotation } from '@/lib/whatsappService';
 import { notifySupplierNewQuotationEmail } from '@/lib/emailService';
+import { encodeLoginRef, buildQuotationLoginUrl } from '@/lib/quotationLink';
 
 function extractTaxesFromObservacoes(observacoes: string | null | undefined) {
     if (!observacoes) return 0;
@@ -161,7 +162,7 @@ export async function GET(req: NextRequest) {
         // ========================================================
         const { data, error } = await supabaseAdmin
             .from('cotacoes')
-            .select('*, cotacao_itens(*)')
+            .select('*, cotacao_itens(*), cotacao_anexos(id, nome, url, tipo, tamanho)')
             .in('status', ['enviada', 'respondida', 'fechada'])
             .order('created_at', { ascending: false });
 
@@ -250,7 +251,7 @@ export async function GET(req: NextRequest) {
         // Also check which cotações this fornecedor already responded to
         const { data: propostas, error: propostasError } = await supabaseAdmin
             .from('propostas')
-            .select('cotacao_id, status, valor_total, valor_frete, prazo_entrega, condicoes_pagamento, observacoes, proposta_itens(cotacao_item_id, preco_unitario, subtotal, quantidade)')
+            .select('cotacao_id, status, valor_total, valor_frete, prazo_entrega, condicoes_pagamento, observacoes, proposta_itens(cotacao_item_id, preco_unitario, subtotal, quantidade), proposta_anexos(id, nome, url, tipo, tamanho)')
             .eq('fornecedor_id', fornecedorId);
 
         if (propostasError) {
@@ -277,6 +278,8 @@ export async function GET(req: NextRequest) {
                     taxValue: extractTaxesFromObservacoes(p.observacoes),
                     deliveryDays: Number.isFinite(Number(p.prazo_entrega)) ? Number(p.prazo_entrega) : null,
                     paymentTerms: p.condicoes_pagamento || null,
+                    observacoes: String(p.observacoes || '').replace(/\[IMPOSTOS=[^\]]*\]/gi, '').trim() || null,
+                    anexos: p.proposta_anexos || [],
                     items: itensObject
                 }
             ];
@@ -413,7 +416,7 @@ export async function POST(req: NextRequest) {
         const { action } = body;
 
         if (action === 'create') {
-            const { obra_id, itens, observacoes } = body;
+            const { obra_id, itens, observacoes, anexos } = body;
 
             if (!obra_id) {
                 return NextResponse.json({ error: 'obra_id é obrigatório' }, { status: 400 });
@@ -500,6 +503,7 @@ export async function POST(req: NextRequest) {
                     quantidade: item.quantidade,
                     unidade: item.unidade,
                     grupo: finalGroupName,
+                    fabricante: item.fabricante || null,
                     observacao: item.observacao || null,
                     fase_nome: item.fase_nome || null,
                     servico_nome: item.servico_nome || null,
@@ -555,6 +559,7 @@ export async function POST(req: NextRequest) {
                     quantidade: item.quantidade,
                     unidade: item.unidade,
                     grupo: item.grupo,
+                    fabricante: item.fabricante,
                     observacao: item.observacao,
                     fase_nome: item.fase_nome,
                     servico_nome: item.servico_nome,
@@ -582,6 +587,31 @@ export async function POST(req: NextRequest) {
                         .map((it: any) => it.material_id)
                         .filter(Boolean),
                 });
+            }
+
+            // Anexos do cliente (projetos, detalhes, especificações): replica os
+            // metadados em cada cotação criada (o arquivo no storage é único).
+            if (Array.isArray(anexos) && anexos.length > 0) {
+                const anexoRows = createdCotacoes.flatMap((cot: any) =>
+                    anexos
+                        .filter((a: any) => a && a.url && a.nome)
+                        .map((a: any) => ({
+                            cotacao_id: cot.id,
+                            nome: String(a.nome).slice(0, 255),
+                            url: String(a.url),
+                            tipo: a.tipo ? String(a.tipo) : null,
+                            tamanho: Number(a.tamanho) || null,
+                            uploaded_by: user.id,
+                        }))
+                );
+                if (anexoRows.length > 0) {
+                    const { error: anexosError } = await supabaseAdmin
+                        .from('cotacao_anexos')
+                        .insert(anexoRows);
+                    if (anexosError) {
+                        console.error('Erro ao salvar anexos da cotação:', anexosError);
+                    }
+                }
             }
 
             let suppliersNotified = 0;
@@ -670,6 +700,7 @@ export async function POST(req: NextRequest) {
                         const conviteRows: Array<{ cotacao_id: string; fornecedor_id: string }> = [];
                         const invitedSupplierIds = new Set<string>();
                         const supplierCotacaoNumero = new Map<string, string>();
+                        const supplierCotacaoId = new Map<string, string>();
                         for (const cot of createdCotacoes) {
                             if (!cot.group_id) continue;
                             const cotMaterialIds = (cot.cotacao_itens_material_ids
@@ -692,6 +723,7 @@ export async function POST(req: NextRequest) {
                                 invitedSupplierIds.add(supplierId);
                                 if (!supplierCotacaoNumero.has(supplierId)) {
                                     supplierCotacaoNumero.set(supplierId, String(cot.numero || cot.id || '').trim());
+                                    supplierCotacaoId.set(supplierId, String(cot.id));
                                 }
                             }
                         }
@@ -727,15 +759,19 @@ export async function POST(req: NextRequest) {
                                     (supplierContacts || []).map(async (supplier: any) => {
                                         const phone = supplier.whatsapp || supplier.telefone || (supplier.user_id ? userPhoneMap.get(supplier.user_id) : null);
                                         const email = supplier.email || (supplier.user_id ? userEmailMap.get(supplier.user_id) : null);
+                                        // Email de login (conta de acesso) para pré-preencher a tela de login
+                                        const loginEmail = (supplier.user_id ? userEmailMap.get(supplier.user_id) : null) || supplier.email || null;
                                         const obraLocal = obra.bairro
                                             ? `no bairro ${obra.bairro}`
                                             : (obra.cidade || 'localização não informada');
                                         const cotacaoNumero = supplierCotacaoNumero.get(supplier.id) || 'nova';
+                                        const cotacaoId = supplierCotacaoId.get(supplier.id);
+                                        const loginRef = encodeLoginRef({ email: loginEmail || undefined, cotacaoId });
                                         if (phone) {
-                                            await notifySupplierNewQuotation(phone, cotacaoNumero, obraLocal);
+                                            await notifySupplierNewQuotation(phone, cotacaoNumero, obraLocal, loginRef || undefined);
                                         }
                                         if (email) {
-                                            await notifySupplierNewQuotationEmail(email, cotacaoNumero, obraLocal);
+                                            await notifySupplierNewQuotationEmail(email, cotacaoNumero, obraLocal, buildQuotationLoginUrl({ email: loginEmail || undefined, cotacaoId }));
                                         }
                                     })
                                 );

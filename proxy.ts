@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { decodeLoginRef, quotationDeepLinkPath } from './lib/quotationLink'
 
 /**
  * Proxy de Segurança e Proteção de Rotas (Next.js 16+)
@@ -18,12 +19,31 @@ export function proxy(request: NextRequest) {
 
     // Se está em rota pública e já autenticado, redirecionar para dashboard
     if (isPublicRoute && pathname === '/login' && token && role) {
-        if (role === 'admin' || role === 'administrador') {
-            return NextResponse.redirect(new URL('/dashboard/admin', request.url))
-        } else if (role === 'fornecedor') {
-            return NextResponse.redirect(new URL('/dashboard/fornecedor', request.url))
-        } else if (role === 'cliente') {
-            return NextResponse.redirect(new URL('/dashboard/cliente', request.url))
+        const roleHome = (role === 'admin' || role === 'administrador')
+            ? '/dashboard/admin'
+            : role === 'fornecedor'
+                ? '/dashboard/fornecedor'
+                : role === 'cliente'
+                    ? '/dashboard/cliente'
+                    : null
+
+        if (roleHome) {
+            let target = roleHome
+
+            // Link de notificação (?wa=<token>): abre direto a cotação
+            const waToken = request.nextUrl.searchParams.get('wa')
+            const loginLinkRef = waToken ? decodeLoginRef(waToken) : null
+            if (loginLinkRef?.cotacaoId && role === 'fornecedor') {
+                target = quotationDeepLinkPath(loginLinkRef.cotacaoId)
+            } else {
+                // Preservar destino original (?redirect=) se for da área do usuário
+                const redirectParam = request.nextUrl.searchParams.get('redirect')
+                if (redirectParam && redirectParam.startsWith(roleHome)) {
+                    target = redirectParam
+                }
+            }
+
+            return NextResponse.redirect(new URL(target, request.url))
         }
     }
 

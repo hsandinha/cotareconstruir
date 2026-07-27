@@ -490,8 +490,10 @@ const PLATFORM_LOGIN_URL = 'https://comprareconstruir.com/login';
 
 /**
  * Envia email ao fornecedor sobre nova cotação recebida.
+ * `loginUrl` (opcional): link de login com token que pré-preenche o email
+ * e abre direto a cotação após autenticar (ver lib/quotationLink.ts).
  */
-export async function notifySupplierNewQuotationEmail(email: string, cotacaoNumero: string, obraNome: string): Promise<SendEmailResult> {
+export async function notifySupplierNewQuotationEmail(email: string, cotacaoNumero: string, obraNome: string, loginUrl?: string): Promise<SendEmailResult> {
     const tpl = buildEventEmail({
         subject: `Nova cotação recebida — #${cotacaoNumero}`,
         heading: 'Você recebeu uma nova cotação',
@@ -500,8 +502,8 @@ export async function notifySupplierNewQuotationEmail(email: string, cotacaoNume
             { label: 'Cotação', value: `#${cotacaoNumero}` },
             { label: 'Obra', value: obraNome },
         ],
-        ctaLabel: 'Acessar plataforma',
-        ctaUrl: PLATFORM_LOGIN_URL,
+        ctaLabel: loginUrl ? 'Ver cotação' : 'Acessar plataforma',
+        ctaUrl: loginUrl || PLATFORM_LOGIN_URL,
     });
     return sendEmail({ to: email, subject: tpl.subject, html: tpl.html, text: tpl.text });
 }

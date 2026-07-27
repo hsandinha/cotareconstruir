@@ -60,6 +60,31 @@ const templates = [
         ],
     },
     {
+        // v2: botão com URL dinâmica (?wa=<token>) — o token pré-preenche o
+        // email no login e redireciona direto para a cotação após autenticar.
+        name: 'nova_cotacao_fornecedor_v2',
+        language: 'pt_BR',
+        category: 'UTILITY',
+        components: [
+            {
+                type: 'BODY',
+                text: 'Olá! Você recebeu uma nova cotação na Comprar e Construir.\n\n*Cotação:* #{{1}}\n*Obra:* {{2}}\n\nToque no botão abaixo para acessar a cotação e enviar sua proposta.',
+                example: { body_text: [['1024', 'Residencial Jardim das Flores']] },
+            },
+            {
+                type: 'BUTTONS',
+                buttons: [
+                    {
+                        type: 'URL',
+                        text: 'Ver cotação',
+                        url: `${PLATFORM_URL}?wa={{1}}`,
+                        example: [`${PLATFORM_URL}?wa=JTdCJTIyZSUyMiUzQSUyMmZvcm5lY2Vkb3IlNDBlbWFpbC5jb20lMjIlMkMlMjJjJTIyJTNBJTIyMTAyNCUyMiU3RA`],
+                    },
+                ],
+            },
+        ],
+    },
+    {
         name: 'pedido_aprovado_fornecedor',
         language: 'pt_BR',
         category: 'UTILITY',
@@ -131,15 +156,33 @@ async function createTemplate(tpl) {
     return true;
 }
 
+async function getExistingTemplateNames() {
+    try {
+        const url = `${GRAPH_API}/${WABA_ID}/message_templates?limit=100&access_token=${ACCESS_TOKEN}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (!res.ok) return new Set();
+        return new Set((data.data || []).map((t) => t.name));
+    } catch {
+        return new Set();
+    }
+}
+
 async function main() {
     if (process.argv.includes('--list')) {
         await listTemplates();
         return;
     }
 
+    const existing = await getExistingTemplateNames();
+
     console.log(`\n🚀 Submetendo ${templates.length} templates para aprovação na WABA ${WABA_ID}...\n`);
     let ok = 0;
     for (const tpl of templates) {
+        if (existing.has(tpl.name)) {
+            console.log(`⏭️  "${tpl.name}" já existe na WABA — pulando`);
+            continue;
+        }
         const success = await createTemplate(tpl);
         if (success) ok++;
     }

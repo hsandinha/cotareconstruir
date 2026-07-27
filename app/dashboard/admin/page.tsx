@@ -9,6 +9,7 @@ import {
     UserCircle2,
     Truck,
     Factory,
+    BookA,
     Sparkles,
     Activity,
     FileSearch,
@@ -29,6 +30,7 @@ import FornecedoresManagement from "@/components/dashboard/admin/FornecedoresMan
 import SuppliersByGroupManagement from "@/components/dashboard/admin/SuppliersByGroupManagement";
 import SupplierApiKeysManagement from "@/components/dashboard/admin/SupplierApiKeysManagement";
 import { ManufacturersSection } from "@/components/dashboard/admin/ManufacturersSection";
+import { MaterialSynonymsSection } from "@/components/dashboard/admin/MaterialSynonymsSection";
 import MaterialRequestsManagement from "@/components/dashboard/admin/MaterialRequestsManagement";
 import OrdersOverviewManagement from "@/components/dashboard/admin/OrdersOverviewManagement";
 import { validatePassword } from "@/lib/validation";
@@ -56,6 +58,7 @@ type AdminTabId =
     | "clientes"
     | "fornecedores"
     | "fabricantes"
+    | "sinonimos"
     | "materiais-novos"
     | "acompanhamento"
     | "audit"
@@ -110,6 +113,7 @@ export default function AdminDashboard() {
                 { id: "clientes", label: "Clientes", icon: UserCircle2 },
                 { id: "fornecedores", label: "Fornecedores", icon: Truck },
                 { id: "fabricantes", label: "Fabricantes", icon: Factory },
+                { id: "sinonimos", label: "Sinônimos de Materiais", icon: BookA },
                 { id: "materiais-novos", label: "Materiais Novos", icon: Sparkles },
             ],
         },
@@ -601,6 +605,7 @@ export default function AdminDashboard() {
                         )}
 
                         {activeTab === "fabricantes" && <ManufacturersSection />}
+                        {activeTab === "sinonimos" && <MaterialSynonymsSection />}
                         {activeTab === "materiais-novos" && <MaterialRequestsManagement />}
                         {activeTab === "acompanhamento" && <OrdersOverviewManagement />}
 

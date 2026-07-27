@@ -10,11 +10,15 @@ import { useToast } from "@/components/ToastProvider";
 import {
     buildCsv,
     downloadCsvFile,
+    downloadXlsxFile,
     getCsvRowValue,
     normalizeCsvKey,
     parseSpreadsheetFile,
     parseFlexibleNumber
 } from "@/lib/csvSpreadsheet";
+import { formatPaymentTerms, PAYMENT_TERMS_SUGGESTIONS } from "@/lib/paymentTerms";
+import { AttachmentsField } from "@/components/AttachmentsField";
+import { uploadAnexos, formatFileSize, type AnexoMeta } from "@/lib/anexos";
 
 // Helper para obter headers com token de autenticação
 
@@ -31,7 +35,7 @@ interface SupplierQuotationResponseSectionProps {
 export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'create', onUpdate, fornecedorId, filterOnlyActiveItems = false }: SupplierQuotationResponseSectionProps) {
     const { showToast } = useToast();
     const { user, profile, session } = useAuth();
-    const [responses, setResponses] = useState<{ [key: string]: { preco: string, disponibilidade: string } }>({});
+    const [responses, setResponses] = useState<{ [key: string]: { preco: string, disponibilidade: string, unidadeCotacao?: string, densidade?: string } }>({});
     const [paymentMethod, setPaymentMethod] = useState("");
     const [validity, setValidity] = useState("");
     const [deliveryDays, setDeliveryDays] = useState("");
@@ -42,6 +46,9 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
     const [importingCsv, setImportingCsv] = useState(false);
     const [exportingCsv, setExportingCsv] = useState(false);
     const [inactiveItemsModal, setInactiveItemsModal] = useState<any[] | null>(null);
+    // Anexos da proposta: já enviados (modo edição) + novos arquivos
+    const [existingAnexos, setExistingAnexos] = useState<AnexoMeta[]>([]);
+    const [anexosFiles, setAnexosFiles] = useState<File[]>([]);
     const csvInputRef = useRef<HTMLInputElement | null>(null);
 
     // Extract resumo outside useEffect so it's accessible in JSX
@@ -54,7 +61,9 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
         setFreightValue(String(resumo.freightValue ?? ""));
         setTaxValue(String(resumo.taxValue ?? ""));
         setDeliveryDays(resumo.deliveryDays === null || resumo.deliveryDays === undefined ? "" : String(resumo.deliveryDays));
-        setPaymentMethod(resumo.paymentTerms || "");
+        setPaymentMethod(formatPaymentTerms(resumo.paymentTerms));
+        setObservations(resumo.observacoes || "");
+        setExistingAnexos(Array.isArray(resumo.anexos) ? resumo.anexos : []);
 
         const initialResponses: { [key: string]: { preco: string, disponibilidade: string } } = {};
         (quotation.items || []).forEach((item: any) => {
@@ -81,7 +90,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
         domingo: "Domingo",
     };
 
-    const handleResponseChange = (itemId: string, field: 'preco' | 'disponibilidade', value: string) => {
+    const handleResponseChange = (itemId: string, field: 'preco' | 'disponibilidade' | 'unidadeCotacao' | 'densidade', value: string) => {
         setResponses(prev => ({
             ...prev,
             [itemId]: {
@@ -89,6 +98,30 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 [field]: value
             }
         }));
+    };
+
+    // Itens do grupo Agregados podem ser cotados por tonelada: o fornecedor
+    // informa o preço/ton e a densidade (t/m³) e o preço na unidade solicitada
+    // (m³) é calculado automaticamente.
+    const isAgregadoItem = (item: any): boolean => {
+        return String(item?.grupo || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .includes('agregado');
+    };
+
+    const isCotadoPorTonelada = (item: any, response?: { unidadeCotacao?: string }): boolean => {
+        return isAgregadoItem(item) && response?.unidadeCotacao === 'ton';
+    };
+
+    const getEffectiveUnitPrice = (item: any, response?: { preco?: string, unidadeCotacao?: string, densidade?: string }): number => {
+        const preco = parseFloat(response?.preco || '') || 0;
+        if (isCotadoPorTonelada(item, response)) {
+            const densidade = parseFloat(response?.densidade || '') || 0;
+            return preco * densidade;
+        }
+        return preco;
     };
 
     const parseDisponibilidade = (value: string): 'disponivel' | 'sob_consulta' | 'indisponivel' | '' => {
@@ -125,15 +158,12 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
         return '';
     };
 
+    // Campo digitável: converte chaves antigas para rótulos legíveis e
+    // aceita qualquer outro texto como está (ex.: "Boleto 28/40/60").
     const normalizePaymentMethod = (value: string): string => {
-        const normalized = normalizeCsvKey(value);
-        if (!normalized) return "";
-        if (normalized.includes("vista")) return "vista";
-        if (normalized === "15dias" || normalized === "15") return "15-dias";
-        if (normalized === "30dias" || normalized === "30") return "30-dias";
-        if (normalized.includes("3060") && normalized.includes("90")) return "30-60-90-dias";
-        if (normalized.includes("3060")) return "30-60-dias";
-        return "";
+        const raw = String(value || "").trim();
+        if (!raw) return "";
+        return formatPaymentTerms(raw);
     };
 
     const normalizeValidity = (value: string): string => {
@@ -146,7 +176,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
         return "";
     };
 
-    const handleDownloadCsv = async () => {
+    const handleDownloadCsv = async (format: "csv" | "xlsx" = "csv") => {
         if (!quotation?.items || quotation.items.length === 0) {
             showToast("error", "Não há itens para exportar.");
             return;
@@ -159,6 +189,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 return {
                     cotacao_item_id: item.id,
                     material: item.descricao,
+                    fabricante: item.fabricante || "",
                     unidade: item.unidade,
                     quantidade: item.quantidade,
                     preco_unitario: response.preco,
@@ -172,9 +203,10 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 };
             });
 
-            const csv = buildCsv(rows, [
+            const exportHeaders = [
                 "cotacao_item_id",
                 "material",
+                "fabricante",
                 "unidade",
                 "quantidade",
                 "preco_unitario",
@@ -185,10 +217,15 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 "valor_frete",
                 "valor_impostos",
                 "observacoes",
-            ]);
+            ];
 
             const cotacaoRef = quotation.numero || quotation.id || "cotacao";
-            downloadCsvFile(`resposta_${cotacaoRef}.csv`, csv);
+            if (format === "xlsx") {
+                downloadXlsxFile(`resposta_${cotacaoRef}.xlsx`, exportHeaders, rows, "Resposta");
+            } else {
+                const csv = buildCsv(rows, exportHeaders);
+                downloadCsvFile(`resposta_${cotacaoRef}.csv`, csv);
+            }
         } catch (error) {
             console.error("Erro ao gerar CSV da cotação:", error);
             showToast("error", "Erro ao gerar planilha. Tente novamente.");
@@ -222,7 +259,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 (quotation.items || []).map((item: any) => [normalizeCsvKey(item.descricao || ""), String(item.id)])
             );
 
-            const importedResponses: { [key: string]: { preco: string, disponibilidade: string } } = {};
+            const importedResponses: { [key: string]: { preco: string, disponibilidade: string, unidadeCotacao?: string, densidade?: string } } = {};
             let importedItemsCount = 0;
             let firstConfigRow: Record<string, string> | null = null;
 
@@ -259,7 +296,9 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 const nextPrice = parsedPrice === null ? current.preco : String(Math.max(0, parsedPrice));
                 const nextDisponibilidade = parsedDisponibilidade || current.disponibilidade || "disponivel";
 
+                // Preserva configurações feitas na tela (ex.: unidade ton/densidade dos agregados)
                 importedResponses[item.id] = {
+                    ...current,
                     preco: nextPrice,
                     disponibilidade: nextDisponibilidade,
                 };
@@ -303,13 +342,32 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
             showToast("error", "Usuário não autenticado.");
             return;
         }
+
+        const missingDensity = (quotation.items || []).some((item: any) => {
+            const response = responses[item.id];
+            return Boolean(response?.preco)
+                && isCotadoPorTonelada(item, response)
+                && !((parseFloat(response?.densidade || '') || 0) > 0);
+        });
+        if (missingDensity) {
+            showToast("error", "Informe a densidade (t/m³) dos itens cotados por tonelada.");
+            return;
+        }
+
         setLoading(true);
 
         try {
+            // Upload dos novos anexos e montagem da lista final (mantidos + novos)
+            let anexosFinal: AnexoMeta[] = existingAnexos;
+            if (anexosFiles.length > 0) {
+                const uploaded = await uploadAnexos(anexosFiles, `propostas/${fornecedorId || user.id}`);
+                anexosFinal = [...existingAnexos, ...uploaded];
+            }
+
             const totalValue = (quotation.items || []).reduce((total: number, item: any) => {
                 const response = responses[item.id];
                 if (response?.preco) {
-                    return total + (parseFloat(response.preco) * item.quantidade);
+                    return total + (getEffectiveUnitPrice(item, response) * item.quantidade);
                 }
                 return total;
             }, 0);
@@ -327,7 +385,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
             // Build itens for API
             const propostaItens = (quotation.items || []).map((item: any) => {
                 const response = responses[item.id] || { preco: '0', disponibilidade: 'indisponivel' };
-                const precoUnitario = parseFloat(response.preco) || 0;
+                const precoUnitario = getEffectiveUnitPrice(item, response);
 
                 const disponibilidadeMap: { [key: string]: string } = {
                     'disponivel': 'disponivel',
@@ -341,6 +399,11 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                     'indisponivel': -1
                 };
 
+                const cotadoEmTon = isCotadoPorTonelada(item, response) && (parseFloat(response.preco || '') || 0) > 0;
+                const observacaoConversao = cotadoEmTon
+                    ? `Cotado por tonelada: R$ ${(parseFloat(response.preco || '') || 0).toFixed(2)}/ton × densidade ${(parseFloat(response.densidade || '') || 0).toFixed(2)} t/m³ = R$ ${precoUnitario.toFixed(2)}/${item.unidade || 'm³'}`
+                    : null;
+
                 return {
                     cotacao_item_id: item.id,
                     preco_unitario: precoUnitario,
@@ -348,7 +411,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                     subtotal: precoUnitario * item.quantidade,
                     disponibilidade: disponibilidadeMap[response.disponibilidade] || 'indisponivel',
                     prazo_dias: prazoDiasMap[response.disponibilidade] ?? -1,
-                    observacao: null
+                    observacao: observacaoConversao
                 };
             });
 
@@ -373,7 +436,8 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                     condicoes_pagamento: paymentMethod,
                     observacoes: observations,
                     data_validade: dataValidade.toISOString(),
-                    itens: propostaItens
+                    itens: propostaItens,
+                    anexos: anexosFinal
                 })
             });
 
@@ -391,9 +455,9 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
 
             // Volta para tela anterior
             onBack();
-        } catch (error) {
+        } catch (error: any) {
             console.error("Erro ao enviar proposta:", error);
-            showToast("error", "Erro ao enviar proposta. Tente novamente.");
+            showToast("error", error?.message || "Erro ao enviar proposta. Tente novamente.");
         } finally {
             setLoading(false);
         }
@@ -403,7 +467,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
         ? quotation.items.reduce((total: number, item: any) => {
             const response = responses[item.id];
             if (response?.preco) {
-                return total + (parseFloat(response.preco) * item.quantidade);
+                return total + (getEffectiveUnitPrice(item, response) * item.quantidade);
             }
             return total;
         }, 0)
@@ -430,12 +494,21 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 <div className="flex items-center gap-2">
                     <button
                         type="button"
-                        onClick={handleDownloadCsv}
+                        onClick={() => handleDownloadCsv("xlsx")}
+                        disabled={exportingCsv || importingCsv}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 disabled:opacity-60"
+                    >
+                        <Download className="h-4 w-4" />
+                        {exportingCsv ? "Gerando..." : "Baixar Excel"}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => handleDownloadCsv("csv")}
                         disabled={exportingCsv || importingCsv}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 border border-slate-200 rounded-md hover:bg-slate-200 disabled:opacity-60"
                     >
                         <Download className="h-4 w-4" />
-                        {exportingCsv ? "Gerando..." : "Baixar CSV"}
+                        CSV
                     </button>
                     <button
                         type="button"
@@ -449,7 +522,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                     <input
                         ref={csvInputRef}
                         type="file"
-                        accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                        accept=".csv,.xlsx,.xls,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                         className="hidden"
                         onChange={handleImportCsvFile}
                     />
@@ -479,6 +552,48 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                     </div>
                 </div>
             </div>
+
+            {(quotation.anexos || []).length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h4 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-1.5">
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
+                        </svg>
+                        Anexos do Cliente (projetos, detalhes, especificações)
+                    </h4>
+                    <ul className="space-y-1.5">
+                        {(quotation.anexos || []).map((anexo: any, index: number) => (
+                            <li key={anexo.id || index} className="flex items-center gap-2">
+                                <a
+                                    href={anexo.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-sm font-medium text-blue-700 hover:underline truncate"
+                                >
+                                    {anexo.nome}
+                                </a>
+                                {formatFileSize(anexo.tamanho) && (
+                                    <span className="text-xs text-blue-400 shrink-0">({formatFileSize(anexo.tamanho)})</span>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
+            {quotation.observacoesCliente && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                        <svg className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 0 1 1.037-.443 48.282 48.282 0 0 0 5.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                        </svg>
+                        <div className="flex-1 min-w-0">
+                            <h4 className="text-sm font-semibold text-amber-900 mb-1">Observações do Cliente</h4>
+                            <p className="text-sm text-amber-800 whitespace-pre-wrap">{quotation.observacoesCliente}</p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {quotation.obraHorarioEntrega && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -547,7 +662,10 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                         <tbody className="bg-white divide-y divide-gray-100">
                             {quotation.items && (filterOnlyActiveItems ? quotation.items.filter((item: any) => !item._inativo_para_fornecedor) : quotation.items).map((item: any) => {
                                 const response = responses[item.id] || { preco: '', disponibilidade: '' };
-                                const subtotal = response.preco ? (parseFloat(response.preco) * item.quantidade).toFixed(2) : '0.00';
+                                const agregado = isAgregadoItem(item);
+                                const cotadoEmTon = isCotadoPorTonelada(item, response);
+                                const effectivePrice = getEffectiveUnitPrice(item, response);
+                                const subtotal = response.preco ? (effectivePrice * item.quantidade).toFixed(2) : '0.00';
                                 const dispColor = response.disponibilidade === 'disponivel'
                                     ? 'text-green-700 bg-green-50 border-green-200'
                                     : response.disponibilidade === 'sob_consulta'
@@ -561,12 +679,29 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                                         <td className="px-4 py-3 text-sm text-gray-900">
                                             <div className="flex items-center gap-2 flex-wrap">
                                                 <span className="font-medium">{item.descricao}</span>
+                                                {item.fabricante && (
+                                                    <span className="inline-flex items-center rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                                                        Fabricante: {item.fabricante}
+                                                    </span>
+                                                )}
                                             </div>
                                             {item.observacao && (
                                                 <div className="text-xs text-gray-400 mt-0.5">{item.observacao}</div>
                                             )}
                                         </td>
-                                        <td className="px-3 py-3 whitespace-nowrap text-center text-xs text-gray-500">{item.unidade}</td>
+                                        <td className="px-3 py-3 whitespace-nowrap text-center text-xs text-gray-500">
+                                            {agregado ? (
+                                                <select
+                                                    className="text-xs border border-gray-300 rounded-md px-1.5 py-1 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                                                    value={response.unidadeCotacao || 'm3'}
+                                                    onChange={(e) => handleResponseChange(item.id, 'unidadeCotacao', e.target.value)}
+                                                    title="Itens de agregados podem ser cotados por tonelada"
+                                                >
+                                                    <option value="m3">{item.unidade || 'm³'}</option>
+                                                    <option value="ton">ton</option>
+                                                </select>
+                                            ) : item.unidade}
+                                        </td>
                                         <td className="px-3 py-3 whitespace-nowrap text-center text-sm text-gray-900 font-semibold">{item.quantidade}</td>
                                         <td className="px-3 py-3 whitespace-nowrap text-center">
                                             <input
@@ -578,6 +713,25 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                                                 onChange={(e) => handleResponseChange(item.id, 'preco', e.target.value)}
                                                 onFocus={(e) => e.target.select()}
                                             />
+                                            {cotadoEmTon && (
+                                                <div className="mt-1.5 space-y-1">
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        placeholder="Densidade t/m³"
+                                                        className="w-24 px-2 py-1 text-xs text-center text-gray-900 placeholder:text-gray-400 border border-amber-300 bg-amber-50 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                                        value={response.densidade || ''}
+                                                        onChange={(e) => handleResponseChange(item.id, 'densidade', e.target.value)}
+                                                        onFocus={(e) => e.target.select()}
+                                                    />
+                                                    <div className="text-[10px] text-gray-500 whitespace-nowrap">
+                                                        {effectivePrice > 0
+                                                            ? `≈ R$ ${effectivePrice.toFixed(2)}/${item.unidade || 'm³'}`
+                                                            : 'Preço por ton × densidade'}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="px-3 py-3 whitespace-nowrap text-center">
                                             <select
@@ -629,7 +783,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
             <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                     <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
+                        <label className="text-xs font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
                             <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
                             </svg>
@@ -682,18 +836,19 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Forma de Pagamento</label>
-                        <select
+                        <input
+                            type="text"
+                            list="payment-terms-suggestions"
                             value={paymentMethod}
                             onChange={(e) => setPaymentMethod(e.target.value)}
                             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                            <option value="">Selecione</option>
-                            <option value="vista">À vista</option>
-                            <option value="15-dias">15 dias</option>
-                            <option value="30-dias">30 dias</option>
-                            <option value="30-60-dias">30/60 dias</option>
-                            <option value="30-60-90-dias">30/60/90 dias</option>
-                        </select>
+                            placeholder="Ex: Boleto 28/40/60"
+                        />
+                        <datalist id="payment-terms-suggestions">
+                            {PAYMENT_TERMS_SUGGESTIONS.map((suggestion) => (
+                                <option key={suggestion} value={suggestion} />
+                            ))}
+                        </datalist>
                     </div>
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Validade da Proposta</label>
@@ -743,6 +898,18 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                             onChange={(e) => setObservations(e.target.value)}
                             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                             placeholder="Informações adicionais sobre sua proposta..."
+                        />
+                    </div>
+                    <div className="md:col-span-4">
+                        <AttachmentsField
+                            label="Anexos da proposta (opcional)"
+                            description="Anexe orçamentos detalhados, catálogos, desenhos ou especificações. O cliente poderá baixar os arquivos."
+                            existing={existingAnexos}
+                            onRemoveExisting={(index) => setExistingAnexos((prev) => prev.filter((_, i) => i !== index))}
+                            files={anexosFiles}
+                            onChange={setAnexosFiles}
+                            disabled={loading}
+                            onError={(message) => showToast("error", message)}
                         />
                     </div>
                 </div>

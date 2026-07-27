@@ -6,6 +6,7 @@ import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/useAuth";
 import { Plus, Search, ShoppingCart, Wrench, ChevronRight, ChevronDown } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
+import { textIncludesTerm } from "@/lib/materialSearch";
 
 // Interfaces for Supabase data
 interface Fase {
@@ -308,9 +309,10 @@ export function ClientExploreSection() {
     // Agora busca nos materiais reais do Firestore
     const filteredMaterialSuggestions = useMemo(() => {
         if (!searchTerm || materiais.length === 0) return [];
-        return materiais.filter(m =>
-            m.nome.toLowerCase().includes(searchTerm.toLowerCase())
-        ).slice(0, 10); // Limita a 10 sugestões
+        // Busca sem diferenciar maiúsculas/minúsculas nem acentos
+        return materiais
+            .filter(m => textIncludesTerm(m.nome, searchTerm))
+            .slice(0, 10); // Limita a 10 sugestões
     }, [searchTerm, materiais]);
 
     const addToCart = (material: Material) => {

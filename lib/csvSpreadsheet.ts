@@ -52,8 +52,30 @@ function detectDelimiter(text: string): string {
 
     const semicolons = (sample.match(/;/g) || []).length;
     const commas = (sample.match(/,/g) || []).length;
+    const tabs = (sample.match(/\t/g) || []).length;
 
+    // Tab vence quando presente (colar direto do Excel / "Texto separado por tabulação")
+    if (tabs > semicolons && tabs > commas) return "\t";
     return semicolons >= commas ? ";" : ",";
+}
+
+/**
+ * Decodifica o arquivo de texto tolerando os dois encodings comuns:
+ * UTF-8 (nosso modelo) e Windows-1252/ANSI (CSV salvo pelo Excel pt-BR).
+ * Sem isso, acentos viram "�" e o casamento de nomes de materiais falha.
+ */
+export function decodeSpreadsheetText(buffer: ArrayBuffer): string {
+    try {
+        const utf8 = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+        if (!utf8.includes("�")) return utf8;
+    } catch {
+        // bytes inválidos em UTF-8 → provavelmente ANSI/Windows-1252
+    }
+    try {
+        return new TextDecoder("windows-1252").decode(buffer);
+    } catch {
+        return new TextDecoder("utf-8").decode(buffer);
+    }
 }
 
 function parseCsvMatrix(text: string, delimiter: string): string[][] {
@@ -199,8 +221,41 @@ export async function parseSpreadsheetFile(file: File): Promise<ParsedCsvRow[]> 
         return parseSpreadsheetMatrix(matrix || []);
     }
 
-    const text = await file.text();
-    return parseCsv(text);
+    const buffer = await file.arrayBuffer();
+    return parseCsv(decodeSpreadsheetText(buffer));
+}
+
+/**
+ * Gera e baixa um arquivo .xlsx real (para quem não sabe lidar com CSV).
+ */
+export function downloadXlsxFile(fileName: string, headers: string[], rows: CsvInputRow[], sheetName = "Materiais"): void {
+    const matrix: unknown[][] = [
+        headers,
+        ...rows.map((row) => headers.map((header) => row[header] ?? "")),
+    ];
+
+    const sheet = XLSX.utils.aoa_to_sheet(matrix);
+    sheet["!cols"] = headers.map((header) => {
+        const maxLen = Math.max(
+            header.length,
+            ...rows.map((row) => String(row[header] ?? "").length)
+        );
+        return { wch: Math.min(Math.max(maxLen + 2, 10), 50) };
+    });
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+
+    const data = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }
 
 export function getCsvRowValue(row: ParsedCsvRow, aliases: string[]): string {
