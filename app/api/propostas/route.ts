@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { resolveSupplierAccess } from '@/lib/supplierAccessServer';
 import { notifyClientNewProposal } from '@/lib/whatsappService';
 import { notifyClientNewProposalEmail } from '@/lib/emailService';
+import { encodeLoginRef, buildQuotationLoginUrl } from '@/lib/quotationLink';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
@@ -360,18 +361,24 @@ export async function POST(req: NextRequest) {
                     .single();
 
                 const cotacaoNumeroProposta = String(cotacao.numero || cotacao_id);
+                // Deep-link para o painel do CLIENTE: pré-preenche o email e
+                // abre direto a cotação após login (ver lib/quotationLink.ts).
+                const clientLoginRef = encodeLoginRef({ email: clientUser?.email || undefined, cotacaoId: cotacao_id, role: 'cliente' });
+                const clientLoginUrl = buildQuotationLoginUrl({ email: clientUser?.email || undefined, cotacaoId: cotacao_id, role: 'cliente' });
                 if (clientUser?.telefone) {
                     await notifyClientNewProposal(
                         clientUser.telefone,
                         cotacaoNumeroProposta,
-                        supplierLabel
+                        supplierLabel,
+                        clientLoginRef || undefined
                     );
                 }
                 if (clientUser?.email) {
                     await notifyClientNewProposalEmail(
                         clientUser.email,
                         cotacaoNumeroProposta,
-                        supplierLabel
+                        supplierLabel,
+                        clientLoginUrl
                     );
                 }
             }

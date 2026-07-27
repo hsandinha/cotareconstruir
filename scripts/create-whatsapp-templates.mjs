@@ -103,6 +103,31 @@ const templates = [
         ],
     },
     {
+        // v2: botão com URL dinâmica (?wa=<token>) — abre direto a cotação/pedido
+        // no painel do fornecedor após autenticar, com email pré-preenchido.
+        name: 'pedido_aprovado_fornecedor_v2',
+        language: 'pt_BR',
+        category: 'UTILITY',
+        components: [
+            {
+                type: 'BODY',
+                text: 'Boas notícias! Seu pedido foi aprovado na Comprar e Construir.\n\n*Pedido:* #{{1}}\n*Cliente:* {{2}}\n\nToque no botão abaixo para acessar o pedido e preparar o envio.',
+                example: { body_text: [['5087', 'Construtora Alfa']] },
+            },
+            {
+                type: 'BUTTONS',
+                buttons: [
+                    {
+                        type: 'URL',
+                        text: 'Ver pedido',
+                        url: `${PLATFORM_URL}?wa={{1}}`,
+                        example: [`${PLATFORM_URL}?wa=JTdCJTIyZSUyMiUzQSUyMmZvcm5lY2Vkb3IlNDBlbWFpbC5jb20lMjIlMkMlMjJjJTIyJTNBJTIyMTAyNCUyMiU3RA`],
+                    },
+                ],
+            },
+        ],
+    },
+    {
         name: 'nova_proposta_cliente',
         language: 'pt_BR',
         category: 'UTILITY',
@@ -116,6 +141,31 @@ const templates = [
                 type: 'BUTTONS',
                 buttons: [
                     { type: 'URL', text: 'Acessar plataforma', url: PLATFORM_URL },
+                ],
+            },
+        ],
+    },
+    {
+        // v2: botão com URL dinâmica (?wa=<token>) — abre direto a cotação no
+        // painel do cliente após autenticar, com email pré-preenchido.
+        name: 'nova_proposta_cliente_v2',
+        language: 'pt_BR',
+        category: 'UTILITY',
+        components: [
+            {
+                type: 'BODY',
+                text: 'Você recebeu uma nova proposta na Comprar e Construir.\n\n*Cotação:* #{{1}}\n*Fornecedor:* {{2}}\n\nToque no botão abaixo para ver a proposta no mapa comparativo.',
+                example: { body_text: [['1024', 'Depósito Central Materiais']] },
+            },
+            {
+                type: 'BUTTONS',
+                buttons: [
+                    {
+                        type: 'URL',
+                        text: 'Ver proposta',
+                        url: `${PLATFORM_URL}?wa={{1}}`,
+                        example: [`${PLATFORM_URL}?wa=JTdCJTIyZSUyMiUzQSUyMmNsaWVudGUlNDBlbWFpbC5jb20lMjIlMkMlMjJjJTIyJTNBJTIyMTAyNCUyMiU3RA`],
+                    },
                 ],
             },
         ],

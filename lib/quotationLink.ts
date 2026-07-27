@@ -1,10 +1,11 @@
 /**
- * Link de acesso direto à cotação enviado ao fornecedor (WhatsApp/email).
+ * Link de acesso direto à cotação enviado nas notificações (WhatsApp/email),
+ * tanto ao fornecedor quanto ao cliente.
  *
  * O link aponta para /login?wa=<token>, onde o token (base64url) carrega o
- * email de login do fornecedor e o id da cotação. A tela de login usa o token
- * para pré-preencher o email e, após autenticar, redirecionar direto para a
- * cotação no painel do fornecedor.
+ * email de login do destinatário, o id da cotação e o papel (cliente ou
+ * fornecedor). A tela de login usa o token para pré-preencher o email e, após
+ * autenticar, redirecionar direto para a cotação no painel do papel correto.
  *
  * Usa apenas APIs universais (atob/btoa) para funcionar em Node, browser e
  * Edge runtime (proxy.ts).
@@ -12,9 +13,13 @@
 
 export const PLATFORM_LOGIN_URL = 'https://comprareconstruir.com/login';
 
+export type QuotationRole = 'cliente' | 'fornecedor';
+
 export interface QuotationLoginRef {
     email?: string;
     cotacaoId?: string;
+    /** Painel de destino do deep-link. Ausente = fornecedor (retrocompatível). */
+    role?: QuotationRole;
 }
 
 /**
@@ -24,6 +29,7 @@ export function encodeLoginRef(ref: QuotationLoginRef): string {
     const payload: Record<string, string> = {};
     if (ref.email) payload.e = ref.email;
     if (ref.cotacaoId) payload.c = ref.cotacaoId;
+    if (ref.role) payload.r = ref.role;
     const json = JSON.stringify(payload);
     return btoa(encodeURIComponent(json))
         .replace(/\+/g, '-')
@@ -43,6 +49,7 @@ export function decodeLoginRef(token: string): QuotationLoginRef | null {
         const ref: QuotationLoginRef = {};
         if (typeof data.e === 'string' && data.e) ref.email = data.e;
         if (typeof data.c === 'string' && data.c) ref.cotacaoId = data.c;
+        if (data.r === 'cliente' || data.r === 'fornecedor') ref.role = data.r;
         return (ref.email || ref.cotacaoId) ? ref : null;
     } catch {
         return null;
@@ -58,10 +65,13 @@ export function buildQuotationLoginUrl(ref: QuotationLoginRef): string {
 }
 
 /**
- * Caminho interno do painel do fornecedor que abre a cotação diretamente
- * (deep-link já suportado pelo QuotationInboxSection via ?cotacaoId=).
+ * Caminho interno do painel que abre a cotação diretamente (deep-link já
+ * suportado por ?cotacaoId= em ambos os painéis). O painel de destino segue o
+ * papel do destinatário; ausência de papel assume fornecedor (retrocompatível).
  */
-export function quotationDeepLinkPath(cotacaoId?: string): string {
-    if (!cotacaoId) return '/dashboard/fornecedor';
-    return `/dashboard/fornecedor?tab=vendas-cotacoes&cotacaoId=${encodeURIComponent(cotacaoId)}`;
+export function quotationDeepLinkPath(cotacaoId?: string, role: QuotationRole = 'fornecedor'): string {
+    const home = role === 'cliente' ? '/dashboard/cliente' : '/dashboard/fornecedor';
+    if (!cotacaoId) return home;
+    const tab = role === 'cliente' ? 'pedidos' : 'vendas-cotacoes';
+    return `${home}?tab=${tab}&cotacaoId=${encodeURIComponent(cotacaoId)}`;
 }

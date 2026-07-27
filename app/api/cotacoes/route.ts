@@ -766,12 +766,12 @@ export async function POST(req: NextRequest) {
                                             : (obra.cidade || 'localização não informada');
                                         const cotacaoNumero = supplierCotacaoNumero.get(supplier.id) || 'nova';
                                         const cotacaoId = supplierCotacaoId.get(supplier.id);
-                                        const loginRef = encodeLoginRef({ email: loginEmail || undefined, cotacaoId });
+                                        const loginRef = encodeLoginRef({ email: loginEmail || undefined, cotacaoId, role: 'fornecedor' });
                                         if (phone) {
                                             await notifySupplierNewQuotation(phone, cotacaoNumero, obraLocal, loginRef || undefined);
                                         }
                                         if (email) {
-                                            await notifySupplierNewQuotationEmail(email, cotacaoNumero, obraLocal, buildQuotationLoginUrl({ email: loginEmail || undefined, cotacaoId }));
+                                            await notifySupplierNewQuotationEmail(email, cotacaoNumero, obraLocal, buildQuotationLoginUrl({ email: loginEmail || undefined, cotacaoId, role: 'fornecedor' }));
                                         }
                                     })
                                 );

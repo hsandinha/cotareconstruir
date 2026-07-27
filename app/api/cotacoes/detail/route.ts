@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { notifySupplierOrderApproved } from '@/lib/whatsappService';
 import { notifySupplierOrderApprovedEmail } from '@/lib/emailService';
+import { encodeLoginRef, buildQuotationLoginUrl } from '@/lib/quotationLink';
 
 async function getAuthUser(req: NextRequest) {
     if (!supabaseAdmin) return null;
@@ -498,19 +499,25 @@ export async function POST(req: NextRequest) {
                 }
 
                 const supplierPhone = supplierPhoneMap.get(supplierId);
+                const supplierEmail = supplierEmailMap.get(supplierId);
+                // Deep-link para o painel do FORNECEDOR: pré-preenche o email e
+                // abre direto a cotação após login (ver lib/quotationLink.ts).
+                const supplierLoginRef = encodeLoginRef({ email: supplierEmail || undefined, cotacaoId, role: 'fornecedor' });
+                const supplierLoginUrl = buildQuotationLoginUrl({ email: supplierEmail || undefined, cotacaoId, role: 'fornecedor' });
                 if (supplierPhone) {
                     await notifySupplierOrderApproved(
                         supplierPhone,
                         pedidoNumero,
-                        clientDetails.name || 'Cliente'
+                        clientDetails.name || 'Cliente',
+                        supplierLoginRef || undefined
                     );
                 }
-                const supplierEmail = supplierEmailMap.get(supplierId);
                 if (supplierEmail) {
                     await notifySupplierOrderApprovedEmail(
                         supplierEmail,
                         pedidoNumero,
-                        clientDetails.name || 'Cliente'
+                        clientDetails.name || 'Cliente',
+                        supplierLoginUrl
                     );
                 }
             }

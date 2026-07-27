@@ -283,9 +283,33 @@ export async function notifySupplierNewQuotation(phone: string, cotacaoNumero: s
 
 /**
  * Notifica cliente sobre nova proposta recebida.
- * Template: nova_proposta_cliente — {{1}} = número da cotação, {{2}} = fornecedor.
+ *
+ * Com `loginRef` (token de lib/quotationLink.ts) usa o template
+ * nova_proposta_cliente_v2, cujo botão aponta para /login?wa=<token> —
+ * pré-preenche o email e abre direto a cotação no painel do cliente após
+ * autenticar. Se o v2 falhar (ex.: ainda não aprovado pela Meta), cai no antigo.
+ *
+ * Templates: nova_proposta_cliente[_v2] — {{1}} = número da cotação, {{2}} = fornecedor.
  */
-export async function notifyClientNewProposal(phone: string, cotacaoNumero: string, supplierName: string): Promise<WhatsAppSendResult> {
+export async function notifyClientNewProposal(phone: string, cotacaoNumero: string, supplierName: string, loginRef?: string): Promise<WhatsAppSendResult> {
+    if (loginRef) {
+        const result = await sendWhatsAppTemplate({
+            to: phone,
+            templateName: 'nova_proposta_cliente_v2',
+            language: 'pt_BR',
+            components: [
+                ...bodyParams(cotacaoNumero, supplierName),
+                {
+                    type: 'button',
+                    sub_type: 'url',
+                    index: '0',
+                    parameters: [{ type: 'text', text: loginRef }],
+                },
+            ],
+        });
+        if (result.success) return result;
+        console.warn(`⚠️ WhatsApp: template v2 falhou (${result.error}), usando nova_proposta_cliente`);
+    }
     return sendWhatsAppTemplate({
         to: phone,
         templateName: 'nova_proposta_cliente',
@@ -296,9 +320,32 @@ export async function notifyClientNewProposal(phone: string, cotacaoNumero: stri
 
 /**
  * Notifica fornecedor sobre pedido aprovado.
- * Template: pedido_aprovado_fornecedor — {{1}} = número do pedido, {{2}} = cliente.
+ *
+ * Com `loginRef` usa o template pedido_aprovado_fornecedor_v2 com botão de URL
+ * dinâmica (/login?wa=<token>), abrindo direto a cotação no painel do
+ * fornecedor. Fallback para o template antigo se o v2 não estiver aprovado.
+ *
+ * Templates: pedido_aprovado_fornecedor[_v2] — {{1}} = número do pedido, {{2}} = cliente.
  */
-export async function notifySupplierOrderApproved(phone: string, pedidoNumero: string, clientName: string): Promise<WhatsAppSendResult> {
+export async function notifySupplierOrderApproved(phone: string, pedidoNumero: string, clientName: string, loginRef?: string): Promise<WhatsAppSendResult> {
+    if (loginRef) {
+        const result = await sendWhatsAppTemplate({
+            to: phone,
+            templateName: 'pedido_aprovado_fornecedor_v2',
+            language: 'pt_BR',
+            components: [
+                ...bodyParams(pedidoNumero, clientName),
+                {
+                    type: 'button',
+                    sub_type: 'url',
+                    index: '0',
+                    parameters: [{ type: 'text', text: loginRef }],
+                },
+            ],
+        });
+        if (result.success) return result;
+        console.warn(`⚠️ WhatsApp: template v2 falhou (${result.error}), usando pedido_aprovado_fornecedor`);
+    }
     return sendWhatsAppTemplate({
         to: phone,
         templateName: 'pedido_aprovado_fornecedor',

@@ -510,8 +510,10 @@ export async function notifySupplierNewQuotationEmail(email: string, cotacaoNume
 
 /**
  * Envia email ao cliente sobre nova proposta recebida.
+ * `loginUrl` (opcional): link de login com token que pré-preenche o email
+ * e abre direto a cotação no painel do cliente após autenticar.
  */
-export async function notifyClientNewProposalEmail(email: string, cotacaoNumero: string, supplierName: string): Promise<SendEmailResult> {
+export async function notifyClientNewProposalEmail(email: string, cotacaoNumero: string, supplierName: string, loginUrl?: string): Promise<SendEmailResult> {
     const tpl = buildEventEmail({
         subject: `Nova proposta recebida — cotação #${cotacaoNumero}`,
         heading: 'Você recebeu uma nova proposta',
@@ -520,16 +522,18 @@ export async function notifyClientNewProposalEmail(email: string, cotacaoNumero:
             { label: 'Cotação', value: `#${cotacaoNumero}` },
             { label: 'Fornecedor', value: supplierName },
         ],
-        ctaLabel: 'Ver proposta',
-        ctaUrl: PLATFORM_LOGIN_URL,
+        ctaLabel: loginUrl ? 'Ver proposta' : 'Acessar plataforma',
+        ctaUrl: loginUrl || PLATFORM_LOGIN_URL,
     });
     return sendEmail({ to: email, subject: tpl.subject, html: tpl.html, text: tpl.text });
 }
 
 /**
  * Envia email ao fornecedor sobre pedido aprovado.
+ * `loginUrl` (opcional): link de login com token que pré-preenche o email
+ * e abre direto a cotação no painel do fornecedor após autenticar.
  */
-export async function notifySupplierOrderApprovedEmail(email: string, pedidoNumero: string, clientName: string): Promise<SendEmailResult> {
+export async function notifySupplierOrderApprovedEmail(email: string, pedidoNumero: string, clientName: string, loginUrl?: string): Promise<SendEmailResult> {
     const tpl = buildEventEmail({
         subject: `Pedido aprovado — #${pedidoNumero}`,
         heading: 'Seu pedido foi aprovado',
@@ -538,8 +542,8 @@ export async function notifySupplierOrderApprovedEmail(email: string, pedidoNume
             { label: 'Pedido', value: `#${pedidoNumero}` },
             { label: 'Cliente', value: clientName },
         ],
-        ctaLabel: 'Acessar plataforma',
-        ctaUrl: PLATFORM_LOGIN_URL,
+        ctaLabel: loginUrl ? 'Ver pedido' : 'Acessar plataforma',
+        ctaUrl: loginUrl || PLATFORM_LOGIN_URL,
     });
     return sendEmail({ to: email, subject: tpl.subject, html: tpl.html, text: tpl.text });
 }

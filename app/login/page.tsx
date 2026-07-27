@@ -22,7 +22,7 @@ function LoginPageContent() {
 
     // Destino pós-login: cotação do token, ou ?redirect= definido pelo proxy
     const nextPath = useMemo(() => {
-        if (loginRef?.cotacaoId) return quotationDeepLinkPath(loginRef.cotacaoId);
+        if (loginRef?.cotacaoId) return quotationDeepLinkPath(loginRef.cotacaoId, loginRef.role);
         const redirect = searchParams?.get("redirect");
         if (redirect && redirect.startsWith("/") && !redirect.startsWith("//")) return redirect;
         return null;

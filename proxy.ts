@@ -33,8 +33,10 @@ export function proxy(request: NextRequest) {
             // Link de notificação (?wa=<token>): abre direto a cotação
             const waToken = request.nextUrl.searchParams.get('wa')
             const loginLinkRef = waToken ? decodeLoginRef(waToken) : null
-            if (loginLinkRef?.cotacaoId && role === 'fornecedor') {
-                target = quotationDeepLinkPath(loginLinkRef.cotacaoId)
+            if (loginLinkRef?.cotacaoId && (role === 'fornecedor' || role === 'cliente')) {
+                // Abre a cotação no painel do papel real do usuário (cookie),
+                // independentemente do papel gravado no token.
+                target = quotationDeepLinkPath(loginLinkRef.cotacaoId, role)
             } else {
                 // Preservar destino original (?redirect=) se for da área do usuário
                 const redirectParam = request.nextUrl.searchParams.get('redirect')
