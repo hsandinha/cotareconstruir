@@ -250,7 +250,7 @@ export async function GET(req: NextRequest) {
                     ? supabaseAdmin.from('cotacoes').select('id, status, data_validade').in('id', cotacaoIds)
                     : Promise.resolve({ data: [] }),
                 userIds.length > 0
-                    ? supabaseAdmin.from('users').select('id, nome, email').in('id', userIds)
+                    ? supabaseAdmin.from('users').select('id, nome, email, telefone, cpf_cnpj').in('id', userIds)
                     : Promise.resolve({ data: [] }),
             ]);
 

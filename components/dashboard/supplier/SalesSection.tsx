@@ -170,9 +170,9 @@ export function SupplierSalesSection() {
                     })),
                     clientDetails: extraData.clientDetails || (cliente ? {
                         name: cliente.nome || '',
-                        document: '',
+                        document: cliente.cpf_cnpj || '',
                         email: cliente.email || '',
-                        phone: '',
+                        phone: cliente.telefone || '',
                         address: obra ? [
                             [obra.logradouro, obra.numero].filter(Boolean).join(', '),
                             obra.complemento,
