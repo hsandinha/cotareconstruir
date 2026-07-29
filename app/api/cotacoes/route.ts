@@ -565,9 +565,19 @@ export async function POST(req: NextRequest) {
                     servico_nome: item.servico_nome,
                 }));
 
-                const { error: itensError } = await supabaseAdmin
+                let { error: itensError } = await supabaseAdmin
                     .from('cotacao_itens')
                     .insert(cotacaoItens);
+
+                // Fabricante é opcional: se a coluna ainda não existir no banco
+                // (migração pendente), refaz o insert sem o campo em vez de falhar.
+                if (itensError && /fabricante/i.test(itensError.message || '')) {
+                    console.warn('Coluna fabricante ausente em cotacao_itens — inserindo sem o campo. Aplique a migração 20260727000000.');
+                    const retryRes = await supabaseAdmin
+                        .from('cotacao_itens')
+                        .insert(cotacaoItens.map(({ fabricante: _fabricante, ...rest }: any) => rest));
+                    itensError = retryRes.error;
+                }
 
                 if (itensError) {
                     console.error('Erro ao inserir cotacao_itens:', itensError);
