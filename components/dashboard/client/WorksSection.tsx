@@ -123,6 +123,9 @@ export function ClientWorksSection() {
         domingo: "Domingo",
     };
 
+    // Ordem fixa dos dias (o JSON do banco volta em ordem alfabética)
+    const DAY_ORDER = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"];
+
     // Formulário de etapa
     const [etapaForm, setEtapaForm] = useState({
         fase_id: "",
@@ -276,6 +279,24 @@ export function ClientWorksSection() {
 
         const fase = fases.find(f => f.id === etapaForm.fase_id);
         if (!fase) return;
+
+        // Evita duplicidade: cada fase entra uma única vez no cronograma
+        const jaExiste = (obraEtapas[selectedObraId] || []).some(et => et.fase_id === etapaForm.fase_id);
+        if (jaExiste) {
+            showToast("error", `A fase "${fase.nome}" já está no cronograma desta obra.`);
+            return;
+        }
+
+        // As datas do cronograma partem da data de início da obra
+        const obraDaEtapa = obras.find(o => o.id === selectedObraId);
+        if (!obraDaEtapa?.data_inicio) {
+            showToast("error", "Cadastre a data de início da obra antes de adicionar etapas ao cronograma.");
+            return;
+        }
+        if (etapaForm.data_prevista < obraDaEtapa.data_inicio) {
+            showToast("error", `A data da etapa não pode ser anterior ao início da obra (${new Date(obraDaEtapa.data_inicio + 'T00:00:00').toLocaleDateString('pt-BR')}).`);
+            return;
+        }
 
         setSavingEtapa(true);
         try {
@@ -647,8 +668,8 @@ export function ClientWorksSection() {
                                                         <Clock className="w-3 h-3" /> HORÁRIO DE ENTREGAS
                                                     </h5>
                                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                                                        {Object.entries(obra.horario_entrega).map(([day, schedule]) => {
-                                                            const s = schedule as DaySchedule;
+                                                        {DAY_ORDER.filter(day => (obra.horario_entrega as any)?.[day]).map((day) => {
+                                                            const s = (obra.horario_entrega as any)[day] as DaySchedule;
                                                             if (!s.enabled) return null;
                                                             return (
                                                                 <div key={day} className="rounded-lg bg-blue-50 px-3 py-2 text-xs">
@@ -956,7 +977,9 @@ export function ClientWorksSection() {
                                 </div>
 
                                 <div className="mt-4 space-y-3">
-                                    {Object.entries(deliverySchedule).map(([day, schedule]) => (
+                                    {DAY_ORDER.filter(day => (deliverySchedule as any)[day]).map((day) => {
+                                        const schedule = (deliverySchedule as any)[day] as DaySchedule;
+                                        return (
                                         <div key={day} className="flex items-center gap-4">
                                             <label className="flex items-center gap-2 w-36">
                                                 <input
@@ -997,7 +1020,8 @@ export function ClientWorksSection() {
                                                 </div>
                                             )}
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
 
@@ -1048,11 +1072,15 @@ export function ClientWorksSection() {
                                     required
                                 >
                                     <option value="">Selecione a fase...</option>
-                                    {fases.map(fase => (
-                                        <option key={fase.id} value={fase.id}>
-                                            {fase.ordem}. {fase.nome}
-                                        </option>
-                                    ))}
+                                    {(() => {
+                                        // Fases já no cronograma ficam indisponíveis (evita duplicidade)
+                                        const fasesUsadas = new Set(((selectedObraId ? obraEtapas[selectedObraId] : []) || []).map((et: ObraEtapa) => et.fase_id));
+                                        return fases.map(fase => (
+                                            <option key={fase.id} value={fase.id} disabled={fasesUsadas.has(fase.id)}>
+                                                {fase.ordem}. {fase.nome}{fasesUsadas.has(fase.id) ? ' — já adicionada' : ''}
+                                            </option>
+                                        ));
+                                    })()}
                                 </select>
                             </div>
 
@@ -1062,16 +1090,30 @@ export function ClientWorksSection() {
                                     <input
                                         type="date"
                                         value={etapaForm.data_prevista}
+                                        min={obras.find(o => o.id === selectedObraId)?.data_inicio || undefined}
                                         onChange={e => setEtapaForm({ ...etapaForm, data_prevista: e.target.value })}
                                         className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                                         required
                                     />
+                                    {(() => {
+                                        const inicioObra = obras.find(o => o.id === selectedObraId)?.data_inicio;
+                                        return inicioObra ? (
+                                            <p className="mt-1 text-[11px] text-slate-400">
+                                                A partir do início da obra: {new Date(inicioObra + 'T00:00:00').toLocaleDateString('pt-BR')}
+                                            </p>
+                                        ) : (
+                                            <p className="mt-1 text-[11px] text-orange-500">
+                                                Cadastre a data de início da obra para adicionar etapas.
+                                            </p>
+                                        );
+                                    })()}
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Data Fim</label>
                                     <input
                                         type="date"
                                         value={etapaForm.data_fim_prevista}
+                                        min={etapaForm.data_prevista || obras.find(o => o.id === selectedObraId)?.data_inicio || undefined}
                                         onChange={e => setEtapaForm({ ...etapaForm, data_fim_prevista: e.target.value })}
                                         className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                                     />

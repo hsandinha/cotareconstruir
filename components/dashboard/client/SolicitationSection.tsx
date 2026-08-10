@@ -15,7 +15,7 @@ import {
     parseFlexibleNumber
 } from "@/lib/csvSpreadsheet";
 import { useToast } from "@/components/ToastProvider";
-import { normalizeSearchText, expandTermWithSynonyms } from "@/lib/materialSearch";
+import { normalizeSearchText, expandTermWithSynonyms, fetchAllRows, scoreTermMatch } from "@/lib/materialSearch";
 import { AttachmentsField } from "@/components/AttachmentsField";
 import { uploadAnexos } from "@/lib/anexos";
 import {
@@ -279,13 +279,24 @@ export function ClientSolicitationSection() {
             .select("id, nome, unidade")
             .order("nome", { ascending: true });
 
-        if (variants.length === 1) {
-            query = query.ilike("nome", `%${escapeIlikePattern(variants[0])}%`);
-        } else {
-            const orFilter = variants
-                .map(variant => `nome.ilike.%${escapeIlikePattern(variant)}%`)
-                .join(',');
-            query = query.or(orFilter);
+        // Cada variante vira um grupo AND das suas palavras: "tubo 50" →
+        // and(nome.ilike.%tubo%,nome.ilike.%50%). Variantes se combinam em OR.
+        const orParts = variants
+            .map(variant => {
+                const tokens = variant
+                    .split(/\s+/)
+                    .map(token => escapeIlikePattern(token))
+                    .filter(Boolean);
+                if (tokens.length === 0) return null;
+                if (tokens.length === 1) return `nome.ilike.%${tokens[0]}%`;
+                return `and(${tokens.map(token => `nome.ilike.%${token}%`).join(',')})`;
+            })
+            .filter(Boolean) as string[];
+
+        if (orParts.length === 1 && !orParts[0].startsWith('and(')) {
+            query = query.ilike("nome", orParts[0].replace('nome.ilike.', ''));
+        } else if (orParts.length > 0) {
+            query = query.or(orParts.join(','));
         }
 
         const { data: materiaisData, error: materiaisError } = await query.range(from, to);
@@ -329,25 +340,10 @@ export function ClientSolicitationSection() {
         };
     };
 
-    const scoreMaterialMatch = (materialName: string, normalizedTerm: string) => {
-        const name = normalizeText(materialName);
-        if (!name || !normalizedTerm) return -1;
-
-        const term = normalizedTerm.replace(/[^a-z0-9]/g, "");
-        const compactName = name.replace(/[^a-z0-9]/g, "");
-        const words = name.split(/[^a-z0-9]+/).filter(Boolean);
-
-        if (name === normalizedTerm || compactName === term) return 1000;
-        if (name.startsWith(normalizedTerm)) return 900;
-        if (words.some(word => word === normalizedTerm)) return 850;
-        if (words.some(word => word.startsWith(normalizedTerm))) return 760;
-
-        // Match parcial ainda é válido, mas com baixa prioridade para evitar ruído (ex.: "saco" ao buscar "aço")
-        if (words.some(word => word.includes(normalizedTerm))) return 240;
-        if (name.includes(normalizedTerm) || compactName.includes(term)) return 150;
-
-        return -1;
-    };
+    // Busca por palavras: todas as palavras do termo precisam existir no nome
+    // (ex.: "Tubo 50" encontra "TUBO PVC SOLDA 50MM") — ver lib/materialSearch.
+    const scoreMaterialMatch = (materialName: string, normalizedTerm: string) =>
+        scoreTermMatch(materialName, normalizedTerm);
 
     // Carregar dados iniciais
     // Fecha o menu "Importar" ao clicar fora ou pressionar ESC
@@ -432,14 +428,18 @@ export function ClientSolicitationSection() {
     // Carregar dados de estrutura (fases, serviços, materiais)
     const loadConstructionData = async () => {
         try {
-            const [fasesRes, servicosRes, materiaisRes, servicoFaseRes, servicoGrupoRes, materialGrupoRes] = await Promise.all([
+            // Materiais e vínculos são paginados: o catálogo passa de 19 mil
+            // itens e um select simples trunca em 1000 linhas.
+            const [fasesRes, servicosRes, materiaisData, servicoFaseRes, servicoGrupoRes, materialGrupoData] = await Promise.all([
                 supabase.from("fases").select("*").order("cronologia", { ascending: true }),
                 supabase.from("servicos").select("*").order("ordem", { ascending: true }),
-                supabase.from("materiais").select("*").range(0, 4999),
+                fetchAllRows(supabase, "materiais", "id, nome, unidade", "nome"),
                 supabase.from("servico_fase").select("*"),
                 supabase.from("servico_grupo").select("*"),
-                supabase.from("material_grupo").select("*")
+                fetchAllRows(supabase, "material_grupo", "material_id, grupo_id")
             ]);
+            const materiaisRes = { data: materiaisData };
+            const materialGrupoRes = { data: materialGrupoData };
 
             // Build lookup maps
             const servicoFaseMap: Record<string, string[]> = {};
@@ -515,23 +515,12 @@ export function ClientSolicitationSection() {
         return obras.find(o => o.id === selectedObraId);
     }, [obras, selectedObraId]);
 
-    // Etapas da obra válidas para cotação (data atual >= data_prevista - dias_antecedencia_cotacao)
+    // Etapas da obra disponíveis para cotação. O cronograma (datas/antecedência)
+    // NÃO restringe a cotação — serve apenas para o recebimento de ofertas.
+    // O cliente pode cotar qualquer etapa listada, exceto as já concluídas.
     const validEtapasForQuotation = useMemo(() => {
         if (obraEtapas.length === 0) return [];
-
-        const hoje = new Date();
-        hoje.setHours(0, 0, 0, 0);
-
-        return obraEtapas.filter(etapa => {
-            const dataPrevista = new Date(etapa.data_prevista);
-            dataPrevista.setHours(0, 0, 0, 0);
-            const dataInicioCotacao = new Date(dataPrevista);
-            dataInicioCotacao.setDate(dataInicioCotacao.getDate() - etapa.dias_antecedencia_cotacao);
-
-            console.log(`Etapa: ${etapa.nome}, Prevista: ${dataPrevista.toLocaleDateString()}, Início Cotação: ${dataInicioCotacao.toLocaleDateString()}, Hoje: ${hoje.toLocaleDateString()}, Válida: ${hoje >= dataInicioCotacao}`);
-
-            return hoje >= dataInicioCotacao && !etapa.is_completed;
-        });
+        return obraEtapas.filter(etapa => !etapa.is_completed);
     }, [obraEtapas]);
 
     const groupIdsByEtapa = useMemo(() => {
@@ -577,10 +566,9 @@ export function ClientSolicitationSection() {
         // Busca sem diferenciar maiúsculas/acentos, expandida com sinônimos
         const filterVariants = expandTermWithSynonyms(phaseFilter, synonymGroups);
         const active = filterVariants.length > 0;
-        const matchesFilter = (nome: string) => {
-            const normalizedName = normalizeSearchText(nome);
-            return filterVariants.some(variant => normalizedName.includes(variant));
-        };
+        // Busca por palavras: "tubo 50" encontra "TUBO PVC SOLDA 50MM"
+        const matchesFilter = (nome: string) =>
+            filterVariants.some(variant => scoreTermMatch(nome, variant) >= 0);
         return validEtapasForQuotation
             .map(etapa => {
                 const grupoIds = groupIdsByEtapa.get(etapa.id) || new Set<string>();
@@ -902,32 +890,30 @@ export function ClientSolicitationSection() {
         searchTerm.trim().length > 0 &&
         (filteredMaterials.length > 0 || isSearchingRemote || isLoadingMoreRemote);
 
-    const TEMPLATE_HEADERS = ["material", "quantidade", "unidade", "grupo", "fabricante", "observacao"];
+    // O modelo NÃO pede o grupo de insumo: na importação o sistema identifica
+    // o grupo automaticamente comparando o nome com o catálogo.
+    const TEMPLATE_HEADERS = ["material", "quantidade", "unidade", "fabricante", "observacao"];
 
-    // Monta as linhas de exemplo do modelo. Usa materiais reais do catálogo
-    // (com o grupo correto) para o exemplo já importar sem erro; se o catálogo
-    // ainda não carregou, cai nos exemplos estáticos.
+    // Monta as linhas de exemplo do modelo com materiais reais do catálogo;
+    // se o catálogo ainda não carregou, cai nos exemplos estáticos.
     const buildTemplateRows = () => {
-        const grupoNomeById = new Map(grupos.map(g => [g.id, g.nome]));
         const catalogExamples = materiais
-            .filter(m => (m.gruposInsumoIds || []).length > 0 && grupoNomeById.get(m.gruposInsumoIds[0]))
+            .filter(m => (m.gruposInsumoIds || []).length > 0)
             .slice(0, 3)
             .map((m, index) => ({
                 material: m.nome,
                 quantidade: [10, 20, 50][index] || 10,
                 unidade: m.unidade || "unid",
-                grupo: grupoNomeById.get(m.gruposInsumoIds[0]) || "",
                 fabricante: "",
                 observacao: index === 0 ? "Exemplo — substitua pelos seus materiais" : "",
             }));
 
         if (catalogExamples.length > 0) return catalogExamples;
 
-        const fallbackGrupo = availableGroups[0] || "";
         return [
-            { material: "Cimento CP II 50kg", quantidade: 120, unidade: "sc", grupo: fallbackGrupo, fabricante: "", observacao: "Exemplo — substitua pelos seus materiais" },
-            { material: "Areia Média Lavada", quantidade: 20, unidade: "m³", grupo: fallbackGrupo, fabricante: "", observacao: "" },
-            { material: "Tubo PVC 100mm", quantidade: 80, unidade: "m", grupo: fallbackGrupo, fabricante: "Tigre", observacao: "" },
+            { material: "Cimento CP II 50kg", quantidade: 120, unidade: "sc", fabricante: "", observacao: "Exemplo — substitua pelos seus materiais" },
+            { material: "Areia Média Lavada", quantidade: 20, unidade: "m³", fabricante: "", observacao: "" },
+            { material: "Tubo PVC 100mm", quantidade: 80, unidade: "m", fabricante: "Tigre", observacao: "" },
         ];
     };
 
@@ -1049,30 +1035,40 @@ export function ClientSolicitationSection() {
                     matchedMaterial = materialByNormalizedName.get(normalizeCsvKey(rawMaterialName)) || null;
                 }
 
+                // Identificação automática: procura o material mais parecido do
+                // catálogo. Score alto (≥900) = mesmo material; score moderado
+                // (≥300) = material diferente, mas serve para deduzir o GRUPO
+                // (o modelo não pede mais a coluna "grupo" do cliente).
+                let grupoInferidoDe: Material | null = null;
                 if (!matchedMaterial && rawMaterialName) {
                     const normalizedName = normalizeText(rawMaterialName);
                     let bestMatch: { material: Material; score: number } | null = null;
 
                     for (const material of materiais) {
                         const score = scoreMaterialMatch(material.nome, normalizedName);
-                        if (score < 760) continue;
-
+                        if (score < 0) continue;
                         if (!bestMatch || score > bestMatch.score) {
                             bestMatch = { material, score };
                         }
                     }
 
-                    matchedMaterial = bestMatch?.material || null;
+                    if (bestMatch && bestMatch.score >= 900) {
+                        matchedMaterial = bestMatch.material;
+                    } else if (bestMatch && bestMatch.score >= 300 && (bestMatch.material.gruposInsumoIds || []).length > 0) {
+                        grupoInferidoDe = bestMatch.material;
+                    }
                 }
 
                 let categoryName = canonicalGroupByNormalized.get(normalizeGroupName(rawGroupName)) || "";
-                if (!categoryName && matchedMaterial) {
-                    const materialGroupName = (matchedMaterial.gruposInsumoIds || [])
+                const resolveGroupFromMaterial = (material: Material | null) => {
+                    if (!material) return "";
+                    const materialGroupName = (material.gruposInsumoIds || [])
                         .map((groupId) => groupNameById.get(groupId) || "")
                         .find(Boolean) || "";
-
-                    categoryName = canonicalGroupByNormalized.get(normalizeGroupName(materialGroupName)) || materialGroupName;
-                }
+                    return canonicalGroupByNormalized.get(normalizeGroupName(materialGroupName)) || materialGroupName;
+                };
+                if (!categoryName) categoryName = resolveGroupFromMaterial(matchedMaterial);
+                if (!categoryName) categoryName = resolveGroupFromMaterial(grupoInferidoDe);
 
                 const description = String(rawMaterialName || matchedMaterial?.nome || "").trim();
                 if (!description) {
@@ -1776,27 +1772,14 @@ export function ClientSolicitationSection() {
                                         >
                                             <button
                                                 role="menuitem"
-                                                onClick={() => { setImportMenuOpen(false); openUploadClientListDialog(); }}
-                                                disabled={uploadingList || downloadingTemplate}
-                                                className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
-                                            >
-                                                <Upload className="mt-0.5 h-4 w-4 text-blue-600" />
-                                                <div>
-                                                    <p className="text-sm font-semibold text-slate-900">Carregar lista (CSV/XLSX)</p>
-                                                    <p className="text-[11px] text-slate-500">Envie sua planilha com materiais e quantidades.</p>
-                                                </div>
-                                            </button>
-                                            <div className="h-px bg-slate-100" />
-                                            <button
-                                                role="menuitem"
                                                 onClick={() => { setImportMenuOpen(false); handleDownloadClientTemplate("xlsx"); }}
                                                 disabled={uploadingList || downloadingTemplate}
                                                 className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
                                             >
                                                 <Download className="mt-0.5 h-4 w-4 text-emerald-600" />
                                                 <div>
-                                                    <p className="text-sm font-semibold text-slate-900">Baixar modelo Excel (recomendado)</p>
-                                                    <p className="text-[11px] text-slate-500">Planilha .xlsx pronta: material, quantidade, unidade, grupo, fabricante.</p>
+                                                    <p className="text-sm font-semibold text-slate-900">1. Baixar modelo Excel</p>
+                                                    <p className="text-[11px] text-slate-500">Planilha .xlsx pronta: material, quantidade, unidade, fabricante.</p>
                                                 </div>
                                             </button>
                                             <div className="h-px bg-slate-100" />
@@ -1808,8 +1791,21 @@ export function ClientSolicitationSection() {
                                             >
                                                 <Download className="mt-0.5 h-4 w-4 text-slate-600" />
                                                 <div>
-                                                    <p className="text-sm font-semibold text-slate-900">Baixar modelo CSV</p>
+                                                    <p className="text-sm font-semibold text-slate-900">2. Baixar modelo CSV</p>
                                                     <p className="text-[11px] text-slate-500">Mesmo modelo em formato .csv (separado por ponto e vírgula).</p>
+                                                </div>
+                                            </button>
+                                            <div className="h-px bg-slate-100" />
+                                            <button
+                                                role="menuitem"
+                                                onClick={() => { setImportMenuOpen(false); openUploadClientListDialog(); }}
+                                                disabled={uploadingList || downloadingTemplate}
+                                                className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                                            >
+                                                <Upload className="mt-0.5 h-4 w-4 text-blue-600" />
+                                                <div>
+                                                    <p className="text-sm font-semibold text-slate-900">3. Carregar a lista preenchida</p>
+                                                    <p className="text-[11px] text-slate-500">Envie o modelo preenchido — o grupo de cada material é identificado automaticamente.</p>
                                                 </div>
                                             </button>
                                         </div>

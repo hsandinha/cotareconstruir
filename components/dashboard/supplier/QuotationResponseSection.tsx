@@ -604,7 +604,10 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                         <div className="flex-1 min-w-0">
                             <h4 className="text-sm font-semibold text-blue-900 mb-2">Horários de Entrega na Obra</h4>
                             <div className="flex flex-wrap gap-2">
-                                {Object.entries(quotation.obraHorarioEntrega).map(([day, schedule]: [string, any]) => {
+                                {["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
+                                    .filter((day) => quotation.obraHorarioEntrega?.[day])
+                                    .map((day) => {
+                                    const schedule: any = quotation.obraHorarioEntrega[day];
                                     if (!schedule?.enabled) return null;
                                     return (
                                         <span key={day} className="inline-flex items-center gap-1.5 bg-white/80 border border-blue-200 rounded-full px-3 py-1 text-xs font-medium text-blue-800">

@@ -356,18 +356,30 @@ export async function POST(req: NextRequest) {
 
                 const { data: clientUser } = await supabaseAdmin
                     .from('users')
-                    .select('telefone, email')
+                    .select('telefone, email, cliente_id')
                     .eq('id', cotacao.user_id)
                     .single();
+
+                // WhatsApp do cadastro do cliente (preferido para notificação)
+                let clientWhatsapp: string | null = null;
+                if (clientUser?.cliente_id) {
+                    const { data: clienteRow } = await supabaseAdmin
+                        .from('clientes')
+                        .select('whatsapp')
+                        .eq('id', clientUser.cliente_id)
+                        .single();
+                    clientWhatsapp = clienteRow?.whatsapp || null;
+                }
 
                 const cotacaoNumeroProposta = String(cotacao.numero || cotacao_id);
                 // Deep-link para o painel do CLIENTE: pré-preenche o email e
                 // abre direto a cotação após login (ver lib/quotationLink.ts).
                 const clientLoginRef = encodeLoginRef({ email: clientUser?.email || undefined, cotacaoId: cotacao_id, role: 'cliente' });
                 const clientLoginUrl = buildQuotationLoginUrl({ email: clientUser?.email || undefined, cotacaoId: cotacao_id, role: 'cliente' });
-                if (clientUser?.telefone) {
+                const clientPhone = clientWhatsapp || clientUser?.telefone;
+                if (clientPhone) {
                     await notifyClientNewProposal(
-                        clientUser.telefone,
+                        clientPhone,
                         cotacaoNumeroProposta,
                         supplierLabel,
                         clientLoginRef || undefined

@@ -19,6 +19,7 @@ export function ClientProfileSection() {
         cpf: "",
         email: "",
         phone: "",
+        whatsapp: "",
         role: "",
     });
 
@@ -120,6 +121,7 @@ export function ClientProfileSection() {
                                 cpf: isCnpj ? "" : formatCpfBr(cliente.cpf_cnpj || ""),
                                 email: cliente.email || userData.email || "",
                                 phone: formatPhoneBr(cliente.telefone || ""),
+                                whatsapp: formatPhoneBr(cliente.whatsapp || ""),
                                 role: "",
                             });
 
@@ -152,6 +154,7 @@ export function ClientProfileSection() {
                         cpf: formatCpfBr(userData.cpf_cnpj || ""),
                         email: userData.email || user.email || "",
                         phone: formatPhoneBr(userData.telefone || ""),
+                        whatsapp: formatPhoneBr(userData.whatsapp || ""),
                         role: userData.person_role || "",
                     });
                     setAddress({
@@ -236,6 +239,7 @@ export function ClientProfileSection() {
                         razao_social: profileType === "cnpj" ? company.razaoSocial : null,
                         email: person.email,
                         telefone: person.phone?.replace(/\D/g, ''),
+                        whatsapp: person.whatsapp?.replace(/\D/g, '') || null,
                         cep: address.cep?.replace(/\D/g, ''),
                         logradouro: address.logradouro,
                         numero: address.numero,
@@ -488,6 +492,18 @@ export function ClientProfileSection() {
                                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                                     placeholder="(00) 00000-0000"
                                 />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                                    <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> WhatsApp</span>
+                                </label>
+                                <input
+                                    value={person.whatsapp}
+                                    onChange={(e) => setPerson({ ...person, whatsapp: formatPhoneBr(e.target.value) })}
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                    placeholder="(00) 00000-0000"
+                                />
+                                <p className="mt-1 text-[11px] text-slate-400">Usado nas notificações de propostas via WhatsApp.</p>
                             </div>
                         </div>
 

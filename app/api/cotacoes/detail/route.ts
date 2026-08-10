@@ -224,7 +224,7 @@ export async function GET(req: NextRequest) {
             if (missingIds.length > 0) {
                 const { data: moreFornecedores } = await supabaseAdmin
                     .from('fornecedores')
-                    .select('id, razao_social, nome_fantasia, cnpj, email, telefone, logradouro, numero, bairro, cidade, estado')
+                    .select('id, razao_social, nome_fantasia, cnpj, email, telefone, whatsapp, logradouro, numero, complemento, bairro, cidade, estado, cep')
                     .in('id', missingIds);
 
                 (moreFornecedores || []).forEach(f => fornecedorMap.set(f.id, f));
@@ -236,10 +236,48 @@ export async function GET(req: NextRequest) {
             }));
         }
 
+        // Dados do cliente (faturamento) e da obra (entrega) para a Ordem de Compra
+        let clienteInfo: any = null;
+        {
+            const { data: userRow } = await supabaseAdmin
+                .from('users')
+                .select('nome, email, telefone, cpf_cnpj, cliente_id')
+                .eq('id', user.id)
+                .single();
+            if (userRow?.cliente_id) {
+                const { data: clienteRow } = await supabaseAdmin
+                    .from('clientes')
+                    .select('nome, razao_social, cpf_cnpj, email, telefone, whatsapp, logradouro, numero, complemento, bairro, cidade, estado, cep')
+                    .eq('id', userRow.cliente_id)
+                    .single();
+                clienteInfo = clienteRow || null;
+            }
+            if (!clienteInfo && userRow) {
+                clienteInfo = {
+                    nome: userRow.nome,
+                    cpf_cnpj: userRow.cpf_cnpj,
+                    email: userRow.email,
+                    telefone: userRow.telefone,
+                };
+            }
+        }
+
+        let obraInfo: any = null;
+        if (cotacao.obra_id) {
+            const { data: obraRow } = await supabaseAdmin
+                .from('obras')
+                .select('nome, logradouro, numero, complemento, bairro, cidade, estado, cep, horario_entrega, restricoes_entrega')
+                .eq('id', cotacao.obra_id)
+                .single();
+            obraInfo = obraRow || null;
+        }
+
         return NextResponse.json({
             cotacao,
             propostas: enrichedPropostas,
             pedidos,
+            cliente: clienteInfo,
+            obra: obraInfo,
             total_propostas: cotacao.status === 'fechada'
                 ? (cotacao.total_propostas_recebidas || totalPropostas || 0)
                 : (totalPropostas || 0)

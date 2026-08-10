@@ -6,7 +6,7 @@ import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/useAuth";
 import { Plus, Search, ShoppingCart, Wrench, ChevronRight, ChevronDown } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
-import { textIncludesTerm } from "@/lib/materialSearch";
+import { textIncludesTerm, fetchAllRows } from "@/lib/materialSearch";
 
 // Interfaces for Supabase data
 interface Fase {
@@ -144,24 +144,25 @@ export function ClientExploreSection() {
 
     const loadConstructionData = async () => {
         try {
-            // Load all data in parallel
-            const [fasesResult, servicosResult, gruposResult, materiaisResult, servicoFaseResult, servicoGrupoResult, materialGrupoResult] = await Promise.all([
+            // Load all data in parallel (materiais e vínculos paginados: o
+            // catálogo passa de 19 mil itens e um select simples trunca em 1000)
+            const [fasesResult, servicosResult, gruposResult, materiaisData, servicoFaseResult, servicoGrupoResult, materialGrupoData] = await Promise.all([
                 supabase.from("fases").select("*").order("cronologia", { ascending: true }),
                 supabase.from("servicos").select("*").order("ordem", { ascending: true }),
                 supabase.from("grupos_insumo").select("*"),
-                supabase.from("materiais").select("*"),
+                fetchAllRows(supabase, "materiais", "*", "nome"),
                 supabase.from("servico_fase").select("*"),
                 supabase.from("servico_grupo").select("*"),
-                supabase.from("material_grupo").select("*")
+                fetchAllRows(supabase, "material_grupo", "material_id, grupo_id")
             ]);
 
             if (fasesResult.error) throw fasesResult.error;
             if (servicosResult.error) throw servicosResult.error;
             if (gruposResult.error) throw gruposResult.error;
-            if (materiaisResult.error) throw materiaisResult.error;
             if (servicoFaseResult.error) throw servicoFaseResult.error;
             if (servicoGrupoResult.error) throw servicoGrupoResult.error;
-            if (materialGrupoResult.error) throw materialGrupoResult.error;
+            const materiaisResult = { data: materiaisData };
+            const materialGrupoResult = { data: materialGrupoData };
 
             // Build lookup maps for relationships
             const servicoFaseMap: Record<string, string[]> = {};

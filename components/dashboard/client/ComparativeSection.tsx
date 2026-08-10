@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 
 import { ChatInterface } from "../../ChatInterface";
 import { ReviewModal } from "../../ReviewModal";
@@ -34,6 +34,9 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
     const [view, setView] = useState<"map" | "oc">("map");
     // Pedido fechado: alterna entre os subpedidos e o mapa comparativo preservado
     const [closedView, setClosedView] = useState<"pedidos" | "mapa">("pedidos");
+    // Dados do cliente (faturamento) e da obra (entrega) para a Ordem de Compra
+    const [clientInfo, setClientInfo] = useState<any>(null);
+    const [obraInfo, setObraInfo] = useState<any>(null);
     const [chatContext, setChatContext] = useState<{ recipientName: string; recipientId?: string; initialRoomId: string; initialRoomTitle?: string } | null>(null);
     const chatContextRef = useRef(chatContext);
     chatContextRef.current = chatContext;
@@ -82,6 +85,10 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
                 const json = await res.json();
                 const { cotacao: cotacaoData, propostas: propostasData, pedidos: pedidosData, total_propostas } = json;
+
+                // Dados do cliente (faturamento) e da obra (entrega) para a OC
+                setClientInfo(json.cliente || null);
+                setObraInfo(json.obra || null);
 
                 // Armazenar total de propostas (inclui histórico de propostas já deletadas)
                 setTotalPropostas(total_propostas || 0);
@@ -164,12 +171,14 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             phone: order.fornecedor?.telefone,
                             address: [order.fornecedor?.logradouro, order.fornecedor?.numero, order.fornecedor?.bairro, order.fornecedor?.cidade, order.fornecedor?.estado].filter(Boolean).join(', ')
                         },
+                        supplierRaw: order.fornecedor || null,
                         items: order.pedido_itens?.map((item: any) => ({
                             id: item.id,
                             name: item.nome,
                             descricao: item.nome,
                             quantity: item.quantidade,
                             quantidade: item.quantidade,
+                            unidade: item.unidade || '',
                             unitPrice: item.preco_unitario,
                             total: item.subtotal
                         })) || [],
@@ -257,12 +266,14 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             phone: order.fornecedor?.telefone,
                             address: [order.fornecedor?.logradouro, order.fornecedor?.numero, order.fornecedor?.bairro, order.fornecedor?.cidade, order.fornecedor?.estado].filter(Boolean).join(', ')
                         },
+                        supplierRaw: order.fornecedor || null,
                         items: order.pedido_itens?.map((item: any) => ({
                             id: item.id,
                             name: item.nome,
                             descricao: item.nome,
                             quantity: item.quantidade,
                             quantidade: item.quantidade,
+                            unidade: item.unidade || '',
                             unitPrice: item.preco_unitario,
                             total: item.subtotal
                         })) || [],
@@ -468,11 +479,12 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             <table className="min-w-full text-sm">
                                 <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
                                     <tr>
-                                        <th className="border-b border-gray-100 px-4 py-3 text-left text-black">Item</th>
-                                        <th className="border-b border-gray-100 px-4 py-3 text-center text-black">Qtde</th>
-                                        <th className="border-b border-gray-100 px-4 py-3 text-center text-black">Unid.</th>
+                                        <th rowSpan={2} className="border-b border-gray-100 px-3 py-3 text-center text-black w-14">Itens</th>
+                                        <th rowSpan={2} className="border-b border-gray-100 px-4 py-3 text-left text-black">Descrição dos Materiais</th>
+                                        <th rowSpan={2} className="border-b border-gray-100 px-3 py-3 text-center text-black w-16">Qtde</th>
+                                        <th rowSpan={2} className="border-b border-gray-100 px-3 py-3 text-center text-black w-16">Unid.</th>
                                         {proposals.map((proposal: any) => (
-                                            <th key={proposal.id} className="border-b border-gray-100 px-4 py-3 text-center text-black">
+                                            <th key={proposal.id} colSpan={2} className="border-b border-l border-gray-200 px-4 py-2 text-center text-black">
                                                 <div className="flex flex-col items-center gap-1">
                                                     <span>{proposal.supplierName}</span>
                                                     {proposal.numero && (
@@ -487,60 +499,92 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                             </th>
                                         ))}
                                     </tr>
+                                    <tr>
+                                        {proposals.map((proposal: any) => (
+                                            <Fragment key={`sub-${proposal.id}`}>
+                                                <th className="border-b border-l border-gray-200 px-3 py-2 text-center text-black text-[11px]">Unitário</th>
+                                                <th className="border-b border-gray-100 px-3 py-2 text-center text-black text-[11px]">Total</th>
+                                            </Fragment>
+                                        ))}
+                                    </tr>
                                 </thead>
                                 <tbody>
-                                    {(quotation?.items || []).map((item: any) => (
+                                    {(quotation?.items || []).map((item: any, itemIndex: number) => (
                                         <tr key={item.id} className="odd:bg-white even:bg-gray-50/60">
+                                            <td className="border-b border-gray-100 px-3 py-3 text-center text-gray-500 font-semibold">{itemIndex + 1}</td>
                                             <td className="border-b border-gray-100 px-4 py-3">
                                                 <p className="font-semibold text-gray-900">{item.descricao}</p>
                                                 {item.fabricante && (
                                                     <p className="text-xs text-blue-600 mt-0.5">Fabricante: {item.fabricante}</p>
                                                 )}
                                             </td>
-                                            <td className="border-b border-gray-100 px-4 py-3 text-center text-gray-900 font-medium">{item.quantidade}</td>
-                                            <td className="border-b border-gray-100 px-4 py-3 text-center text-gray-700">{item.unidade}</td>
+                                            <td className="border-b border-gray-100 px-3 py-3 text-center text-gray-900 font-medium">{item.quantidade}</td>
+                                            <td className="border-b border-gray-100 px-3 py-3 text-center text-gray-700">{item.unidade}</td>
                                             {proposals.map((proposal: any) => {
                                                 const price = proposalItemPrice(proposal, item.id);
                                                 return (
-                                                    <td key={`${item.id}-${proposal.id}`} className="border-b border-gray-100 px-4 py-3 text-center">
-                                                        {price > 0 ? (
-                                                            <>
-                                                                <div className="text-sm font-semibold text-gray-900">R$ {price.toFixed(2)}</div>
-                                                                <div className="text-xs text-gray-500">Total R$ {(price * (parseFloat(item.quantidade) || 0)).toFixed(2)}</div>
-                                                            </>
-                                                        ) : (
-                                                            <span className="text-xs text-gray-400">Sem oferta</span>
-                                                        )}
-                                                    </td>
+                                                    <Fragment key={`${item.id}-${proposal.id}`}>
+                                                        <td className="border-b border-l border-gray-200 px-3 py-3 text-center">
+                                                            {price > 0 ? (
+                                                                <span className="text-sm font-semibold text-gray-900">R$ {price.toFixed(2)}</span>
+                                                            ) : (
+                                                                <span className="text-xs text-gray-400">Sem oferta</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="border-b border-gray-100 px-3 py-3 text-center">
+                                                            {price > 0 ? (
+                                                                <span className="text-sm font-semibold text-gray-800">R$ {(price * (parseFloat(item.quantidade) || 0)).toFixed(2)}</span>
+                                                            ) : (
+                                                                <span className="text-xs text-gray-300">—</span>
+                                                            )}
+                                                        </td>
+                                                    </Fragment>
                                                 );
                                             })}
                                         </tr>
                                     ))}
                                     {[
-                                        { key: 'frete', label: 'Frete', render: (p: any) => `R$ ${(p.freightPrice || 0).toFixed(2)}` },
+                                        { key: 'desconto', label: 'Desconto à vista', render: (_p: any) => '—' },
                                         { key: 'impostos', label: 'Impostos', render: (p: any) => (p.impostos > 0 ? `R$ ${p.impostos.toFixed(2)}` : '-') },
-                                        { key: 'validade', label: 'Validade', render: (p: any) => p.validity || '-' },
-                                        { key: 'pagamento', label: 'Condições de Pagamento', render: (p: any) => formatPaymentTerms(p.paymentMethod) || '-' },
-                                        { key: 'prazo', label: 'Prazo de Entrega', render: (p: any) => formatDeliveryDays(p.deliveryDays) || '-' },
-                                        { key: 'obs', label: 'Observações', render: (p: any) => p.observacoes || '-' },
+                                        { key: 'mercadoria', label: 'Total da Mercadoria', render: (p: any) => `R$ ${p.totalValue.toFixed(2)}` },
+                                        { key: 'frete', label: 'Frete', render: (p: any) => `R$ ${(p.freightPrice || 0).toFixed(2)}` },
                                     ].map((rowDef, rowIdx) => (
                                         <tr key={rowDef.key} className={rowIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                                            <td className="border-t border-gray-100 px-4 py-3 text-black font-semibold">{rowDef.label}</td>
-                                            <td className="border-t border-gray-100 px-4 py-3 text-center text-black">-</td>
-                                            <td className="border-t border-gray-100 px-4 py-3 text-center text-black">-</td>
+                                            <td colSpan={4} className="border-t border-gray-100 px-4 py-2.5 text-right text-black font-semibold">{rowDef.label}</td>
                                             {proposals.map((proposal: any) => (
-                                                <td key={`${rowDef.key}-${proposal.id}`} className="border-t border-gray-100 px-4 py-3 text-center text-gray-700 text-xs whitespace-pre-wrap break-words max-w-[16rem]">
+                                                <td key={`${rowDef.key}-${proposal.id}`} colSpan={2} className="border-t border-l border-gray-200 px-4 py-2.5 text-center text-gray-700 font-medium">
+                                                    {rowDef.render(proposal)}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                    <tr className="bg-slate-900/90 text-white">
+                                        <td colSpan={4} className="px-4 py-3 text-right text-sm font-bold">Total Global</td>
+                                        {proposals.map((proposal: any) => (
+                                            <td key={`total-${proposal.id}`} colSpan={2} className="px-4 py-3 text-center text-sm font-bold border-l border-slate-700">
+                                                R$ {(proposal.totalValue + (proposal.freightPrice || 0) + (proposal.impostos || 0)).toFixed(2)}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                    {[
+                                        { key: 'pagamento', label: 'Condições de Pagamento', render: (p: any) => formatPaymentTerms(p.paymentMethod) || '-' },
+                                        { key: 'prazo', label: 'Prazo de Entrega', render: (p: any) => formatDeliveryDays(p.deliveryDays) || '-' },
+                                        { key: 'validade', label: 'Validade da Proposta', render: (p: any) => p.validity || '-' },
+                                        { key: 'obs', label: 'Observações', render: (p: any) => p.observacoes || '-' },
+                                    ].map((rowDef, rowIdx) => (
+                                        <tr key={rowDef.key} className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                            <td colSpan={4} className="border-t border-gray-100 px-4 py-2.5 text-right text-black font-semibold">{rowDef.label}</td>
+                                            {proposals.map((proposal: any) => (
+                                                <td key={`${rowDef.key}-${proposal.id}`} colSpan={2} className="border-t border-l border-gray-200 px-4 py-2.5 text-center text-gray-700 text-xs whitespace-pre-wrap break-words max-w-[18rem]">
                                                     {rowDef.render(proposal)}
                                                 </td>
                                             ))}
                                         </tr>
                                     ))}
                                     <tr className="bg-white">
-                                        <td className="border-t border-gray-100 px-4 py-3 text-black font-semibold">Anexos</td>
-                                        <td className="border-t border-gray-100 px-4 py-3 text-center text-black">-</td>
-                                        <td className="border-t border-gray-100 px-4 py-3 text-center text-black">-</td>
+                                        <td colSpan={4} className="border-t border-gray-100 px-4 py-2.5 text-right text-black font-semibold">Anexos</td>
                                         {proposals.map((proposal: any) => (
-                                            <td key={`anexos-${proposal.id}`} className="border-t border-gray-100 px-4 py-3 text-center text-xs">
+                                            <td key={`anexos-${proposal.id}`} colSpan={2} className="border-t border-l border-gray-200 px-4 py-2.5 text-center text-xs">
                                                 {(proposal.anexos || []).length > 0 ? (
                                                     <div className="flex flex-col items-center gap-1">
                                                         {(proposal.anexos || []).map((anexo: any, anexoIdx: number) => (
@@ -559,16 +603,6 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                                 ) : (
                                                     <span className="text-gray-400">-</span>
                                                 )}
-                                            </td>
-                                        ))}
-                                    </tr>
-                                    <tr className="bg-slate-900/90 text-white">
-                                        <td className="px-4 py-3 text-sm font-semibold">Total Mercadoria</td>
-                                        <td className="px-4 py-3 text-center">-</td>
-                                        <td className="px-4 py-3 text-center">R$</td>
-                                        {proposals.map((proposal: any) => (
-                                            <td key={`total-${proposal.id}`} className="px-4 py-3 text-center text-sm font-semibold">
-                                                R$ {proposal.totalValue.toFixed(2)}
                                             </td>
                                         ))}
                                     </tr>
@@ -604,17 +638,9 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             <div key={order.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                                 <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                                     <div>
+                                        <p className="text-xs font-bold uppercase tracking-wide text-blue-600">Ordem de Compra</p>
                                         <h3 className="text-lg font-bold text-gray-900">{order.supplierName}</h3>
                                         <p className="text-sm text-gray-500">Subpedido 1.{index + 1} • Pedido #{order.numero}</p>
-                                        <div className="mt-1 space-y-0.5 text-xs text-gray-600">
-                                            {supplierInfo.document && <p>CNPJ: {supplierInfo.document}</p>}
-                                            {(supplierInfo.phone || supplierInfo.email) && (
-                                                <p>
-                                                    {[supplierInfo.phone, supplierInfo.email].filter(Boolean).join(' • ')}
-                                                </p>
-                                            )}
-                                            {supplierInfo.address && <p>{supplierInfo.address}</p>}
-                                        </div>
                                         {expectedDeliveryLabel && (
                                             <p className="text-xs text-gray-500 mt-1">Previsão de entrega: {expectedDeliveryLabel}</p>
                                         )}
@@ -655,88 +681,185 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                         </div>
                                     </div>
 
-                                    {/* Condições comerciais fechadas com o fornecedor */}
-                                    <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50/60 p-4">
-                                        <h4 className="text-xs font-bold uppercase tracking-wide text-blue-800 mb-2">Condições Comerciais</h4>
-                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                                            <div>
-                                                <p className="text-[11px] text-blue-600 uppercase">Pagamento</p>
-                                                <p className="font-medium text-gray-900">{paymentLabel || '—'}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-[11px] text-blue-600 uppercase">Prazo de Entrega</p>
-                                                <p className="font-medium text-gray-900">{deliveryLabel || '—'}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-[11px] text-blue-600 uppercase">Impostos</p>
-                                                <p className="font-medium text-gray-900">{taxesValue > 0 ? `R$ ${taxesValue.toFixed(2)}` : '—'}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-[11px] text-blue-600 uppercase">Validade da Proposta</p>
-                                                <p className="font-medium text-gray-900">{validityLabel || '—'}</p>
-                                            </div>
-                                        </div>
-                                        {supplierObs && (
-                                            <div className="mt-3">
-                                                <p className="text-[11px] text-blue-600 uppercase">Observações do Fornecedor</p>
-                                                <p className="text-sm text-gray-700 whitespace-pre-wrap">{supplierObs}</p>
-                                            </div>
-                                        )}
-                                        {supplierAnexos.length > 0 && (
-                                            <div className="mt-3">
-                                                <p className="text-[11px] text-blue-600 uppercase mb-1">Anexos da Proposta</p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {supplierAnexos.map((anexo: any, anexoIdx: number) => (
-                                                        <a
-                                                            key={anexo.id || anexoIdx}
-                                                            href={anexo.url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="inline-flex items-center gap-1 rounded-full bg-white border border-blue-200 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
-                                                            title={anexo.nome}
-                                                        >
-                                                            📎 <span className="truncate max-w-[12rem]">{anexo.nome}</span>
-                                                        </a>
-                                                    ))}
+                                    {/* Dados de fornecedor, faturamento e entrega (modelo da OC) */}
+                                    {(() => {
+                                        const raw = order.supplierRaw || {};
+                                        const clienteNome = clientInfo?.razao_social || clientInfo?.nome || supplierProposal?.clientName || '—';
+                                        const enderecoCobranca = [
+                                            [clientInfo?.logradouro, clientInfo?.numero].filter(Boolean).join(', '),
+                                            clientInfo?.complemento,
+                                        ].filter(Boolean).join(' - ');
+                                        const enderecoEntrega = [
+                                            [obraInfo?.logradouro, obraInfo?.numero].filter(Boolean).join(', '),
+                                            obraInfo?.complemento,
+                                        ].filter(Boolean).join(' - ');
+                                        return (
+                                            <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                                                <div className="rounded-lg border border-gray-200 p-3">
+                                                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-1.5">Fornecedor</p>
+                                                    <p className="font-semibold text-gray-900">{order.supplierName}</p>
+                                                    {supplierInfo.document && <p className="text-xs text-gray-600">CNPJ: {supplierInfo.document}</p>}
+                                                    {supplierInfo.email && <p className="text-xs text-gray-600">Contato: {supplierInfo.email}</p>}
+                                                    {supplierInfo.phone && <p className="text-xs text-gray-600">Telefone: {supplierInfo.phone}</p>}
+                                                    {raw.whatsapp && <p className="text-xs text-gray-600">WhatsApp: {raw.whatsapp}</p>}
+                                                    {(raw.logradouro || supplierInfo.address) && (
+                                                        <p className="text-xs text-gray-600 mt-1">
+                                                            {raw.logradouro
+                                                                ? [[raw.logradouro, raw.numero].filter(Boolean).join(', '), raw.bairro, [raw.cidade, raw.estado].filter(Boolean).join('/'), raw.cep ? `CEP: ${raw.cep}` : ''].filter(Boolean).join(' - ')
+                                                                : supplierInfo.address}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <div className="rounded-lg border border-gray-200 p-3">
+                                                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-1.5">Faturar para</p>
+                                                    <p className="font-semibold text-gray-900">{clienteNome}</p>
+                                                    {clientInfo?.cpf_cnpj && <p className="text-xs text-gray-600">CNPJ/CPF: {clientInfo.cpf_cnpj}</p>}
+                                                    {(clientInfo?.telefone || clientInfo?.whatsapp) && (
+                                                        <p className="text-xs text-gray-600">
+                                                            {[clientInfo?.telefone ? `Tel: ${clientInfo.telefone}` : '', clientInfo?.whatsapp ? `WhatsApp: ${clientInfo.whatsapp}` : ''].filter(Boolean).join(' • ')}
+                                                        </p>
+                                                    )}
+                                                    {enderecoCobranca && <p className="text-xs text-gray-600 mt-1">{enderecoCobranca}</p>}
+                                                    {(clientInfo?.bairro || clientInfo?.cidade) && (
+                                                        <p className="text-xs text-gray-600">
+                                                            {[clientInfo?.bairro, [clientInfo?.cidade, clientInfo?.estado].filter(Boolean).join('/'), clientInfo?.cep ? `CEP: ${clientInfo.cep}` : ''].filter(Boolean).join(' - ')}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <div className="rounded-lg border border-gray-200 p-3">
+                                                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-1.5">Endereço de Entrega</p>
+                                                    {obraInfo?.nome && <p className="font-semibold text-gray-900">{obraInfo.nome}</p>}
+                                                    {enderecoEntrega && <p className="text-xs text-gray-600">{enderecoEntrega}</p>}
+                                                    {(obraInfo?.bairro || obraInfo?.cidade) && (
+                                                        <p className="text-xs text-gray-600">
+                                                            {[obraInfo?.bairro, [obraInfo?.cidade, obraInfo?.estado].filter(Boolean).join('/'), obraInfo?.cep ? `CEP: ${obraInfo.cep}` : ''].filter(Boolean).join(' - ')}
+                                                        </p>
+                                                    )}
+                                                    <p className="text-xs text-gray-600 mt-1">Contato: {clientInfo?.nome || clienteNome}</p>
+                                                    {(clientInfo?.telefone || clientInfo?.whatsapp) && (
+                                                        <p className="text-xs text-gray-600">Telefone/obra: {clientInfo?.whatsapp || clientInfo?.telefone}</p>
+                                                    )}
                                                 </div>
                                             </div>
-                                        )}
-                                    </div>
+                                        );
+                                    })()}
 
-                                    <table className="min-w-full text-sm mb-4">
+                                    <table className="min-w-full text-sm mb-4 border border-gray-200">
                                         <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
                                             <tr>
-                                                <th className="px-4 py-2 text-left">Item</th>
-                                                <th className="px-4 py-2 text-center">Qtde</th>
-                                                <th className="px-4 py-2 text-right">Unitário</th>
-                                                <th className="px-4 py-2 text-right">Total</th>
+                                                <th className="px-3 py-2 text-center w-14 border-b border-gray-200">Ítem</th>
+                                                <th className="px-4 py-2 text-left border-b border-gray-200">Descrição dos Materiais</th>
+                                                <th className="px-3 py-2 text-center border-b border-gray-200">Qtde.</th>
+                                                <th className="px-3 py-2 text-center border-b border-gray-200">Unid.</th>
+                                                <th className="px-4 py-2 text-right border-b border-gray-200">Pço Unit.</th>
+                                                <th className="px-4 py-2 text-right border-b border-gray-200">Pço Total</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100">
-                                            {order.items.map((item: any) => (
+                                            {order.items.map((item: any, itemIdx: number) => (
                                                 <tr key={item.id}>
+                                                    <td className="px-3 py-2 text-center text-gray-500 font-semibold">{itemIdx + 1}</td>
                                                     <td className="px-4 py-2 font-medium text-gray-900">{item.descricao || item.name}</td>
-                                                    <td className="px-4 py-2 text-center">{item.quantidade || item.quantity}</td>
+                                                    <td className="px-3 py-2 text-center">{item.quantidade || item.quantity}</td>
+                                                    <td className="px-3 py-2 text-center text-gray-600">{item.unidade || item.unit || '—'}</td>
                                                     <td className="px-4 py-2 text-right">R$ {item.unitPrice?.toFixed(2)}</td>
                                                     <td className="px-4 py-2 text-right">R$ {item.total?.toFixed(2)}</td>
                                                 </tr>
                                             ))}
-                                            <tr>
-                                                <td colSpan={3} className="px-4 py-2 text-right font-semibold text-gray-700">Frete</td>
-                                                <td className="px-4 py-2 text-right font-semibold text-gray-700">R$ {order.freight?.toFixed(2)}</td>
-                                            </tr>
-                                            {taxesValue > 0 && (
-                                                <tr>
-                                                    <td colSpan={3} className="px-4 py-2 text-right font-semibold text-gray-700">Impostos</td>
-                                                    <td className="px-4 py-2 text-right font-semibold text-gray-700">R$ {taxesValue.toFixed(2)}</td>
-                                                </tr>
-                                            )}
-                                            <tr>
-                                                <td colSpan={3} className="px-4 py-2 text-right font-bold text-gray-900">Total</td>
-                                                <td className="px-4 py-2 text-right font-bold text-gray-900">R$ {order.total?.toFixed(2)}</td>
-                                            </tr>
+                                            {(() => {
+                                                const merchandiseTotal = (order.items || []).reduce((sum: number, i: any) => sum + (parseFloat(i.total) || 0), 0);
+                                                const notaTotal = merchandiseTotal + (order.freight || 0) + taxesValue;
+                                                return (
+                                                    <>
+                                                        <tr>
+                                                            <td colSpan={5} className="px-4 py-2 text-right font-semibold text-gray-700">Desconto à vista</td>
+                                                            <td className="px-4 py-2 text-right text-gray-500">—</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td colSpan={5} className="px-4 py-2 text-right font-semibold text-gray-700">Impostos</td>
+                                                            <td className="px-4 py-2 text-right font-semibold text-gray-700">{taxesValue > 0 ? `R$ ${taxesValue.toFixed(2)}` : '—'}</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td colSpan={5} className="px-4 py-2 text-right font-semibold text-gray-700">Total da Mercadoria</td>
+                                                            <td className="px-4 py-2 text-right font-semibold text-gray-700">R$ {merchandiseTotal.toFixed(2)}</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td colSpan={5} className="px-4 py-2 text-right font-semibold text-gray-700">Frete</td>
+                                                            <td className="px-4 py-2 text-right font-semibold text-gray-700">R$ {order.freight?.toFixed(2)}</td>
+                                                        </tr>
+                                                        <tr className="bg-gray-50">
+                                                            <td colSpan={5} className="px-4 py-2 text-right font-bold text-gray-900">Valor Total da Nota</td>
+                                                            <td className="px-4 py-2 text-right font-bold text-gray-900">R$ {notaTotal.toFixed(2)}</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td colSpan={5} className="px-4 py-2 text-right font-semibold text-gray-700">Condições de Pagamento</td>
+                                                            <td className="px-4 py-2 text-right text-gray-700 text-xs whitespace-nowrap">{paymentLabel || '—'}</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td colSpan={5} className="px-4 py-2 text-right font-semibold text-gray-700">Prazo de Entrega</td>
+                                                            <td className="px-4 py-2 text-right text-gray-700 text-xs whitespace-nowrap">{deliveryLabel || '—'}</td>
+                                                        </tr>
+                                                        {validityLabel && (
+                                                            <tr>
+                                                                <td colSpan={5} className="px-4 py-2 text-right font-semibold text-gray-700">Validade da Proposta</td>
+                                                                <td className="px-4 py-2 text-right text-gray-700 text-xs whitespace-nowrap">{validityLabel}</td>
+                                                            </tr>
+                                                        )}
+                                                    </>
+                                                );
+                                            })()}
                                         </tbody>
                                     </table>
+
+                                    {(supplierObs || supplierAnexos.length > 0) && (
+                                        <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                                            {supplierObs && (
+                                                <div>
+                                                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Obs.</p>
+                                                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{supplierObs}</p>
+                                                </div>
+                                            )}
+                                            {supplierAnexos.length > 0 && (
+                                                <div className={supplierObs ? 'mt-2' : ''}>
+                                                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-1">Anexos da Proposta</p>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {supplierAnexos.map((anexo: any, anexoIdx: number) => (
+                                                            <a
+                                                                key={anexo.id || anexoIdx}
+                                                                href={anexo.url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-flex items-center gap-1 rounded-full bg-white border border-blue-200 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                                                                title={anexo.nome}
+                                                            >
+                                                                📎 <span className="truncate max-w-[12rem]">{anexo.nome}</span>
+                                                            </a>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Autorização do cliente e aceite do fornecedor, com data */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+                                            <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">Autorizado pelo Cliente</p>
+                                            <p className="text-sm font-semibold text-emerald-900">{clientInfo?.razao_social || clientInfo?.nome || 'Cliente'}</p>
+                                            {order.createdAt && (
+                                                <p className="text-xs text-emerald-700">{formatDateTime(order.createdAt)}</p>
+                                            )}
+                                        </div>
+                                        <div className={`rounded-lg border px-4 py-3 ${order.dataConfirmacao ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+                                            <p className={`text-[11px] font-bold uppercase tracking-wide ${order.dataConfirmacao ? 'text-emerald-700' : 'text-amber-700'}`}>Aceite do Fornecedor</p>
+                                            <p className={`text-sm font-semibold ${order.dataConfirmacao ? 'text-emerald-900' : 'text-amber-800'}`}>
+                                                {order.dataConfirmacao ? order.supplierName : 'Aguardando aceite do fornecedor'}
+                                            </p>
+                                            {order.dataConfirmacao && (
+                                                <p className="text-xs text-emerald-700">{formatDateTime(order.dataConfirmacao)}</p>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         );
@@ -1395,11 +1518,12 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 <table className="min-w-full text-sm">
                     <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                         <tr>
-                            <th className="border-b border-slate-100 px-4 py-3 text-black text-left">Item</th>
-                            <th className="border-b border-slate-100 px-4 py-3 text-black text-center">Qtde</th>
-                            <th className="border-b border-slate-100 px-4 py-3 text-black text-center">Unidade</th>
+                            <th rowSpan={2} className="border-b border-slate-100 px-3 py-3 text-black text-center w-14">Itens</th>
+                            <th rowSpan={2} className="border-b border-slate-100 px-4 py-3 text-black text-left">Descrição dos Materiais</th>
+                            <th rowSpan={2} className="border-b border-slate-100 px-3 py-3 text-black text-center w-16">Qtde</th>
+                            <th rowSpan={2} className="border-b border-slate-100 px-3 py-3 text-black text-center w-16">Unid.</th>
                             {proposals.map((proposal) => (
-                                <th key={proposal.id} className="border-b border-slate-100 px-4 py-3 text-black text-center">
+                                <th key={proposal.id} colSpan={2} className="border-b border-l border-slate-200 px-4 py-2 text-black text-center">
                                     <div className="flex flex-col items-center gap-1">
                                         <span>{getAnonymousName(proposal.supplierId)}</span>
                                         {proposal.numero && (
@@ -1427,9 +1551,17 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                 </th>
                             ))}
                         </tr>
+                        <tr>
+                            {proposals.map((proposal) => (
+                                <Fragment key={`sub-${proposal.id}`}>
+                                    <th className="border-b border-l border-slate-200 px-3 py-2 text-black text-center text-[11px]">Unitário</th>
+                                    <th className="border-b border-slate-100 px-3 py-2 text-black text-center text-[11px]">Total</th>
+                                </Fragment>
+                            ))}
+                        </tr>
                     </thead>
                     <tbody>
-                        {quotation.items.map((item: any) => {
+                        {quotation.items.map((item: any, itemIndex: number) => {
                             const highlight = bestSupplier(item.id);
                             const bestPriceInTop3 = proposals.reduce((best: number | null, proposal: any) => {
                                 const price = getItemPrice(proposal, item.id);
@@ -1453,6 +1585,9 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
                             return (
                                 <tr key={item.id} className="odd:bg-white even:bg-slate-50/60">
+                                    <td className="border-b border-slate-100 px-3 py-3 text-center text-slate-500 font-semibold">
+                                        {itemIndex + 1}
+                                    </td>
                                     <td className="border-b border-slate-100 px-4 py-3">
                                         <div className="flex items-center justify-between gap-3">
                                             <p className="font-semibold text-slate-900">{item.descricao}</p>
@@ -1466,10 +1601,10 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                             <p className="text-xs text-blue-600 mt-0.5">Fabricante: {item.fabricante}</p>
                                         )}
                                     </td>
-                                    <td className="border-b border-slate-100 px-4 py-3 text-center text-slate-900 font-medium">
+                                    <td className="border-b border-slate-100 px-3 py-3 text-center text-slate-900 font-medium">
                                         {item.quantidade}
                                     </td>
-                                    <td className="border-b border-slate-100 px-4 py-3 text-center text-slate-700">
+                                    <td className="border-b border-slate-100 px-3 py-3 text-center text-slate-700">
                                         {item.unidade}
                                     </td>
                                     {proposals.map((proposal) => {
@@ -1479,125 +1614,114 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                         const isSelected = selectedSuppliers[item.id] === proposal.supplierId;
                                         const rank = price > 0 ? getSupplierRank(item.id, proposal.supplierId) : null;
                                         const medal = rankEmoji(rank);
+                                        const cellClass = `border-b border-slate-100 px-3 py-3 text-center cursor-pointer transition-colors
+                                            ${isSelected ? "bg-blue-100 ring-2 ring-inset ring-blue-500" : isBest ? "bg-emerald-50/80 hover:bg-emerald-100" : rank && rank <= 3 ? "bg-green-50/40 hover:bg-green-50" : "hover:bg-slate-100"}`;
+                                        const handleCellClick = () => price > 0 && handleSelectSupplier(item.id, proposal.supplierId);
 
                                         return (
-                                            <td
-                                                key={`${item.id}-${proposal.id}`}
-                                                onClick={() => price > 0 && handleSelectSupplier(item.id, proposal.supplierId)}
-                                                className={`border-b border-slate-100 px-4 py-3 text-center cursor-pointer transition-colors
-                                                    ${isSelected ? "bg-blue-100 ring-2 ring-inset ring-blue-500" : isBest ? "bg-emerald-50/80 hover:bg-emerald-100" : rank && rank <= 3 ? "bg-green-50/40 hover:bg-green-50" : "hover:bg-slate-100"}
-                                                `}
-                                            >
-                                                {price > 0 ? (
-                                                    <>
-                                                        <div className={`text-sm font-semibold ${isSelected ? "text-blue-900" : "text-slate-900"}`}>
-                                                            {medal && <span className="mr-1">{medal}</span>}
-                                                            R$ {price.toFixed(2)}
-                                                        </div>
-                                                        <div className="text-xs text-slate-500">
-                                                            Total R$ {total.toFixed(2)}
-                                                        </div>
-                                                        {(() => {
-                                                            const availability = getItemAvailability(proposal, item.id);
-                                                            const availabilityInfo = getAvailabilityLabel(availability);
-                                                            return (
-                                                                <div className={`text-[10px] font-medium mt-0.5 ${availabilityInfo.color}`}>
-                                                                    {availabilityInfo.label}
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                        {isSelected && (
-                                                            <div className="mt-1 text-[10px] font-bold text-blue-600 uppercase">
-                                                                Selecionado
+                                            <Fragment key={`${item.id}-${proposal.id}`}>
+                                                <td onClick={handleCellClick} className={`${cellClass} border-l border-slate-200`}>
+                                                    {price > 0 ? (
+                                                        <>
+                                                            <div className={`text-sm font-semibold ${isSelected ? "text-blue-900" : "text-slate-900"}`}>
+                                                                {medal && <span className="mr-1">{medal}</span>}
+                                                                R$ {price.toFixed(2)}
                                                             </div>
-                                                        )}
-                                                    </>
-                                                ) : (
-                                                    <span className="text-xs text-slate-400">Sem oferta</span>
-                                                )}
-                                            </td>
+                                                            {(() => {
+                                                                const availability = getItemAvailability(proposal, item.id);
+                                                                const availabilityInfo = getAvailabilityLabel(availability);
+                                                                return (
+                                                                    <div className={`text-[10px] font-medium mt-0.5 ${availabilityInfo.color}`}>
+                                                                        {availabilityInfo.label}
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-400">Sem oferta</span>
+                                                    )}
+                                                </td>
+                                                <td onClick={handleCellClick} className={cellClass}>
+                                                    {price > 0 ? (
+                                                        <>
+                                                            <div className={`text-sm font-semibold ${isSelected ? "text-blue-900" : "text-slate-800"}`}>
+                                                                R$ {total.toFixed(2)}
+                                                            </div>
+                                                            {isSelected && (
+                                                                <div className="mt-0.5 text-[10px] font-bold text-blue-600 uppercase">
+                                                                    Selecionado
+                                                                </div>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-300">—</span>
+                                                    )}
+                                                </td>
+                                            </Fragment>
                                         );
                                     })}
                                 </tr>
                             );
                         })}
-                        <tr className="bg-slate-50 text-sm">
-                            <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Frete (Estimado)</td>
-                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
-                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                        {/* Rodapé no formato do Mapa de Preços da Cotar e Construir */}
+                        {[
+                            { key: 'desconto', label: 'Desconto à vista', render: (_p: any) => '—' },
+                            { key: 'impostos', label: 'Impostos', render: (p: any) => (p.impostos > 0 ? `R$ ${p.impostos.toFixed(2)}` : '-') },
+                            { key: 'mercadoria', label: 'Total da Mercadoria', render: (p: any) => `R$ ${p.totalValue.toFixed(2)}`, strong: true },
+                            { key: 'frete', label: 'Frete', render: (p: any) => `R$ ${(p.freightPrice || 0).toFixed(2)}` },
+                        ].map((rowDef, rowIdx) => (
+                            <tr key={rowDef.key} className={`${rowIdx % 2 === 0 ? 'bg-slate-50' : 'bg-white'} text-sm`}>
+                                <td colSpan={4} className="border-t border-slate-100 px-4 py-2.5 text-right text-black font-semibold">{rowDef.label}</td>
+                                {proposals.map((proposal) => (
+                                    <td
+                                        key={`${rowDef.key}-${proposal.id}`}
+                                        colSpan={2}
+                                        className={`border-t border-l border-slate-200 px-4 py-2.5 text-center ${rowDef.strong ? 'font-semibold text-slate-900' : 'text-slate-700 font-medium'}`}
+                                    >
+                                        {rowDef.render(proposal)}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                        <tr className="bg-slate-900/90 text-white">
+                            <td colSpan={4} className="px-4 py-3 text-right text-sm font-bold">Total Global</td>
                             {proposals.map((proposal) => (
-                                <td
-                                    key={`frete-${proposal.id}`}
-                                    className="border-t border-slate-100 px-4 py-3 text-center text-slate-700 font-medium"
-                                >
-                                    R$ {(proposal.freightPrice || 0).toFixed(2)}
+                                <td key={`total-${proposal.id}`} colSpan={2} className="px-4 py-3 text-center text-sm font-bold border-l border-slate-700">
+                                    R$ {(proposal.totalValue + (proposal.freightPrice || 0) + (proposal.impostos || 0)).toFixed(2)}
                                 </td>
                             ))}
                         </tr>
-                        <tr className="bg-white text-sm">
-                            <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Impostos</td>
-                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
-                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
-                            {proposals.map((proposal) => (
-                                <td
-                                    key={`impostos-${proposal.id}`}
-                                    className="border-t border-slate-100 px-4 py-3 text-center text-slate-700 font-medium"
-                                >
-                                    {proposal.impostos > 0 ? `R$ ${proposal.impostos.toFixed(2)}` : '-'}
-                                </td>
-                            ))}
-                        </tr>
-                        <tr className="bg-slate-50 text-sm">
-                            <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Validade</td>
-                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
-                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
-                            {proposals.map((proposal) => (
-                                <td
-                                    key={`validade-${proposal.id}`}
-                                    className="border-t border-slate-100 px-4 py-3 text-center text-slate-700 font-medium"
-                                >
-                                    {proposal.validity || "-"}
-                                </td>
-                            ))}
-                        </tr>
-                        <tr className="bg-white text-sm">
-                            <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Condições de Pagamento</td>
-                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
-                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
-                            {proposals.map((proposal) => (
-                                <td
-                                    key={`payment-${proposal.id}`}
-                                    className="border-t border-slate-100 px-4 py-3 text-center text-slate-700 text-xs"
-                                >
-                                    {formatPaymentTerms(proposal.paymentMethod) || "-"}
-                                </td>
-                            ))}
-                        </tr>
-                        <tr className="bg-slate-50 text-sm">
-                            <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Prazo de Entrega</td>
-                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
-                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
-                            {proposals.map((proposal) => (
-                                <td
-                                    key={`delivery-${proposal.id}`}
-                                    className="border-t border-slate-100 px-4 py-3 text-center text-slate-700 text-xs"
-                                >
-                                    {proposal.deliveryDays === null || proposal.deliveryDays === undefined
+                        {[
+                            { key: 'payment', label: 'Condições de Pagamento', render: (p: any) => formatPaymentTerms(p.paymentMethod) || '-' },
+                            {
+                                key: 'delivery', label: 'Prazo de Entrega', render: (p: any) =>
+                                    p.deliveryDays === null || p.deliveryDays === undefined
                                         ? '-'
-                                        : proposal.deliveryDays === 0
-                                            ? 'Imediata'
-                                            : `${proposal.deliveryDays} dias`}
-                                </td>
-                            ))}
-                        </tr>
+                                        : p.deliveryDays === 0 ? 'Imediata' : `${p.deliveryDays} dias`
+                            },
+                            { key: 'validade', label: 'Validade da Proposta', render: (p: any) => p.validity || '-' },
+                            { key: 'obs', label: 'Observações do Fornecedor', render: (p: any) => p.observacoes || '-' },
+                        ].map((rowDef, rowIdx) => (
+                            <tr key={rowDef.key} className={`${rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} text-sm`}>
+                                <td colSpan={4} className="border-t border-slate-100 px-4 py-2.5 text-right text-black font-semibold">{rowDef.label}</td>
+                                {proposals.map((proposal) => (
+                                    <td
+                                        key={`${rowDef.key}-${proposal.id}`}
+                                        colSpan={2}
+                                        className="border-t border-l border-slate-200 px-4 py-2.5 text-center text-slate-700 text-xs whitespace-pre-wrap break-words max-w-[18rem]"
+                                    >
+                                        {rowDef.render(proposal)}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
                         <tr className="bg-white text-sm">
-                            <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Anexos do Fornecedor</td>
-                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
-                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
+                            <td colSpan={4} className="border-t border-slate-100 px-4 py-2.5 text-right text-black font-semibold">Anexos do Fornecedor</td>
                             {proposals.map((proposal) => (
                                 <td
                                     key={`anexos-${proposal.id}`}
-                                    className="border-t border-slate-100 px-4 py-3 text-center text-xs"
+                                    colSpan={2}
+                                    className="border-t border-l border-slate-200 px-4 py-2.5 text-center text-xs"
                                 >
                                     {(proposal.anexos || []).length > 0 ? (
                                         <div className="flex flex-col items-center gap-1">
@@ -1617,29 +1741,6 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                     ) : (
                                         <span className="text-slate-400">-</span>
                                     )}
-                                </td>
-                            ))}
-                        </tr>
-                        <tr className="bg-slate-50 text-sm">
-                            <td className="border-t border-slate-100 px-4 py-3 text-black font-semibold">Observações do Fornecedor</td>
-                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
-                            <td className="border-t border-slate-100 px-4 py-3 text-black text-center">-</td>
-                            {proposals.map((proposal) => (
-                                <td
-                                    key={`obs-${proposal.id}`}
-                                    className="border-t border-slate-100 px-4 py-3 text-center text-slate-600 text-xs whitespace-pre-wrap break-words max-w-[16rem]"
-                                >
-                                    {proposal.observacoes || "-"}
-                                </td>
-                            ))}
-                        </tr>
-                        <tr className="bg-slate-900/90 text-white">
-                            <td className="px-4 py-3 text-sm font-semibold">Total Mercadoria</td>
-                            <td className="px-4 py-3 text-center">-</td>
-                            <td className="px-4 py-3 text-center">R$</td>
-                            {proposals.map((proposal) => (
-                                <td key={`total-${proposal.id}`} className="px-4 py-3 text-center text-sm font-semibold">
-                                    R$ {proposal.totalValue.toFixed(2)}
                                 </td>
                             ))}
                         </tr>
