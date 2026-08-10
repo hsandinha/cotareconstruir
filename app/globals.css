@@ -244,3 +244,18 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .lp-marquee, .lp-blink, .lp-pulse-badge { animation: none; }
 }
+
+/* Pausa do letreiro (WCAG 2.2.2) e kill-switch de movimento na landing */
+.lp-marquee:hover,
+.lp-marquee:focus-within {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-root *,
+  .lp-root *::before,
+  .lp-root *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

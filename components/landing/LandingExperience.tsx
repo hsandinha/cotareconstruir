@@ -12,7 +12,7 @@
  */
 
 import Link from "next/link";
-import { useInView, useScrollProgress, useTilt, useCountUp, usePrefersReducedMotion } from "./hooks";
+import { useInView, useScrollProgress, useTilt, useCountUp, usePrefersReducedMotion, useShortViewport } from "./hooks";
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const seg = (p: number, start: number, len: number) => clamp01((p - start) / len);
@@ -24,7 +24,7 @@ const brl = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2,
 
 function SectionLabel({ children, dark = false }: { children: React.ReactNode; dark?: boolean }) {
     return (
-        <p className={`text-xs font-semibold uppercase tracking-[0.25em] ${dark ? "text-orange-400" : "text-[#C2410C]"}`}>
+        <p className={`text-xs font-semibold uppercase tracking-[0.25em] ${dark ? "text-orange-400" : "text-[#9A3412]"}`}>
             {children}
         </p>
     );
@@ -96,7 +96,7 @@ function Hero() {
         <section id="hero" ref={ref} className="lp-paper-grain relative overflow-hidden bg-[#FAF8F5] px-6 pb-20 pt-32 md:pt-40">
             <div className="mx-auto grid max-w-7xl items-center gap-14 lg:grid-cols-2">
                 <div className={`transition-all duration-700 ${inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"}`}>
-                    <SectionLabel>Suprimentos da construção, automatizados</SectionLabel>
+                    <SectionLabel>Suprimentos de obra, sem telefone ocupado</SectionLabel>
                     <h1 className="mt-4 text-5xl font-extrabold leading-[1.05] tracking-tight text-[#1C1917] md:text-6xl">
                         Cotar obra ainda é trabalho braçal.{" "}
                         <span className="relative inline-block">
@@ -106,14 +106,14 @@ function Hero() {
                     </h1>
                     <p className="mt-6 max-w-xl text-lg leading-relaxed text-[#44403C]">
                         O Cotar e Construir pega sua lista de materiais, cota com fornecedores da região e devolve o
-                        mapa comparativo pronto — no mesmo formato que suprimentos usa há 30 anos. Você compara, clica,
+                        mapa comparativo pronto — no mesmo formato que suprimentos usa há mais de 30 anos. Você compara, clica,
                         e a ordem de compra sai formal, com aceite e data. Economia de até{" "}
                         <span className="font-mono font-bold text-[#15803D]">31%</span>, demonstrada linha a linha.
                     </p>
                     <div className="mt-8 flex flex-wrap items-center gap-4">
                         <Link
                             href="/login"
-                            className="rounded-lg bg-[#F97316] px-7 py-3.5 text-base font-bold text-white shadow-[4px_4px_0_#1C1917] transition-transform hover:-translate-y-0.5 hover:bg-[#C2410C]"
+                            className="rounded-lg bg-[#F97316] px-7 py-3.5 text-base font-bold text-[#1C1917] shadow-[4px_4px_0_#1C1917] transition-transform hover:-translate-y-0.5 hover:bg-[#FB923C]"
                         >
                             Montar minha lista
                         </Link>
@@ -124,7 +124,7 @@ function Hero() {
                             Sou fornecedor
                         </Link>
                     </div>
-                    <p className="mt-6 font-mono text-xs uppercase tracking-widest text-[#A8A29E]">
+                    <p className="mt-6 font-mono text-xs uppercase tracking-widest text-[#57534E]">
                         ↓ role e assista uma cotação acontecer
                     </p>
                 </div>
@@ -132,6 +132,7 @@ function Hero() {
                 {/* Mock do mapa comparativo com tilt 3D */}
                 <div style={{ perspective: 1200 }}>
                     <div
+                        onMouseEnter={reduced ? undefined : tilt.onMouseEnter}
                         onMouseMove={reduced ? undefined : tilt.onMouseMove}
                         onMouseLeave={reduced ? undefined : tilt.onMouseLeave}
                         style={{ transform: reduced ? undefined : tilt.transform, transformStyle: "preserve-3d" }}
@@ -141,9 +142,10 @@ function Hero() {
                             <p className="font-mono text-[11px] font-bold uppercase tracking-widest text-[#1C1917]">
                                 Mapa Comparativo · Nº 0347
                             </p>
-                            <p className="font-mono text-[10px] uppercase text-[#A8A29E]">3 propostas</p>
+                            <p className="font-mono text-[10px] uppercase text-[#57534E]">3 propostas</p>
                         </div>
-                        <table className="mt-3 w-full border-collapse text-left">
+                        <div className="overflow-x-auto">
+                        <table className="mt-3 w-full min-w-[440px] border-collapse text-left">
                             <thead>
                                 <tr className="border-b border-[#D6D3D1] font-mono text-[10px] uppercase tracking-wider text-[#78716C]">
                                     <th className="py-1.5 pr-2 font-semibold">Item</th>
@@ -151,7 +153,7 @@ function Hero() {
                                         <Tarja>Fornecedor A</Tarja>
                                     </th>
                                     <th className="bg-[#F97316]/[0.08] px-2 py-1.5 text-center font-semibold">
-                                        <span className="block text-[9px] font-bold text-[#C2410C]">🏆 melhor preço total</span>
+                                        <span className="block text-[10px] font-bold text-[#9A3412]"><span aria-hidden>🏆</span> melhor preço total</span>
                                         <span className="text-[10px] font-bold text-[#1C1917]">{WINNER_NAME}</span>
                                     </th>
                                     <th className="px-2 py-1.5 text-center font-semibold">
@@ -171,7 +173,7 @@ function Hero() {
                                     </tr>
                                 ))}
                                 <tr className="font-bold text-[#1C1917]">
-                                    <td className="py-2 pr-2 font-sans text-[11px] uppercase tracking-wide">Total + frete</td>
+                                    <td className="py-2 pr-2 font-sans text-[11px] uppercase tracking-wide">Total (6 itens) + frete</td>
                                     <td className="px-2 py-2 text-center">{brl(colTotal(0))}</td>
                                     <td className="border-2 border-[#F97316] bg-[#F97316]/[0.08] px-2 py-2 text-center">
                                         {brl(colTotal(1))}
@@ -180,6 +182,7 @@ function Hero() {
                                 </tr>
                             </tbody>
                         </table>
+                        </div>
                         <p className="mt-2 text-right font-mono text-[11px] font-bold text-[#15803D]">
                             diferença entre propostas: R$ {brl(DELTA_PROPOSTAS)}
                         </p>
@@ -196,9 +199,6 @@ function Hero() {
 
 function Dor() {
     const { ref, inView } = useInView<HTMLDivElement>(0.25);
-    const enter = (delay: number, rotate: number) =>
-        `${inView ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0"} transition-all duration-700` +
-        ` [transition-delay:${delay}ms]`;
 
     return (
         <section className="bg-[#F1EDE7] px-6 py-24">
@@ -215,7 +215,7 @@ function Dor() {
 
                 {/* Bancada vista de cima */}
                 <div className="relative mt-14 grid gap-6 md:grid-cols-3">
-                    <div className={enter(0, -2)} style={{ transform: inView ? "rotate(-2deg)" : "rotate(-6deg) translateY(40px)" }}>
+                    <div className="transition-all duration-700" style={{ transitionDelay: "0ms", opacity: inView ? 1 : 0, transform: inView ? "rotate(-2deg)" : "rotate(-6deg) translateY(40px)" }}>
                         <div className="rounded-sm border border-[#D6D3D1] bg-white p-4 shadow-[6px_6px_0_rgba(28,25,23,0.12)]">
                             <p className="border-b border-[#D6D3D1] pb-1 font-mono text-[10px] uppercase tracking-widest text-[#78716C]">
                                 cotacao_obra_FINAL_v3(2).xlsx
@@ -231,14 +231,14 @@ function Dor() {
                             </div>
                         </div>
                     </div>
-                    <div className={enter(150, 3)} style={{ transform: inView ? "rotate(2deg)" : "rotate(7deg) translateY(40px)" }}>
+                    <div className="transition-all duration-700" style={{ transitionDelay: "150ms", opacity: inView ? 1 : 0, transform: inView ? "rotate(2deg)" : "rotate(7deg) translateY(40px)" }}>
                         <div className="rounded-sm bg-[#FEF3C7] p-5 shadow-[6px_6px_0_rgba(28,25,23,0.12)]">
                             <p className="font-mono text-sm font-bold uppercase text-[#92400E]">Ligar de novo p/ depósito ☎️</p>
                             <p className="mt-2 font-mono text-xs text-[#92400E]">frete?? condições?? — perguntar CNPJ</p>
                             <p className="mt-4 text-right font-mono text-[10px] text-[#B45309]">seg, 7h40</p>
                         </div>
                     </div>
-                    <div className={enter(300, -1)} style={{ transform: inView ? "rotate(-1deg)" : "rotate(-5deg) translateY(40px)" }}>
+                    <div className="transition-all duration-700" style={{ transitionDelay: "300ms", opacity: inView ? 1 : 0, transform: inView ? "rotate(-1deg)" : "rotate(-5deg) translateY(40px)" }}>
                         <div className="rounded-2xl border border-[#D6D3D1] bg-[#1C1917] p-4 text-white shadow-[6px_6px_0_rgba(28,25,23,0.12)]">
                             <p className="font-mono text-[10px] uppercase tracking-widest text-[#A8A29E]">chamadas</p>
                             <div className="mt-2 space-y-1.5 text-sm">
@@ -269,15 +269,17 @@ const XLSX_ROWS = [
 function Lista() {
     const { ref, progress } = useScrollProgress<HTMLDivElement>();
     const reduced = usePrefersReducedMotion();
-    const p = reduced ? 1 : progress;
+    const shortVp = useShortViewport();
+    const staticMode = reduced || shortVp;
+    const p = staticMode ? 1 : progress;
 
     return (
-        <section id="solucao" ref={ref} className="relative bg-[#FAF8F5]" style={{ height: "220vh" }}>
-            <div className="sticky top-0 flex min-h-screen flex-col justify-center overflow-hidden px-6 py-24">
+        <section id="solucao" ref={ref} className="relative bg-[#FAF8F5]" style={{ height: staticMode ? "auto" : "220vh" }}>
+            <div className={`${staticMode ? "" : "sticky top-0 min-h-screen"} flex flex-col justify-center overflow-hidden px-6 py-24`}>
                 <div className="mx-auto w-full max-w-6xl">
                     <SectionLabel>Passo 1 · a lista</SectionLabel>
                     <h2 className="mt-3 max-w-3xl text-3xl font-extrabold tracking-tight text-[#1C1917] md:text-5xl">
-                        Chegue com a planilha que você já usa. A gente entende ela.
+                        Chegue com a planilha que você já usa — do jeito que ela está.
                     </h2>
                     <p className="mt-5 max-w-2xl text-lg leading-relaxed text-[#44403C]">
                         Importe seu Excel do jeito que ele está — o sistema identifica o grupo de cada material
@@ -298,7 +300,7 @@ function Lista() {
                                     return (
                                         <p
                                             key={row.cru}
-                                            className="font-mono text-sm text-[#44403C] transition-all duration-300"
+                                            className="font-mono text-sm text-[#44403C]"
                                             style={{ opacity: 1 - rp * 0.65, textDecoration: rp > 0.9 ? "line-through" : "none" }}
                                         >
                                             {row.cru}
@@ -318,12 +320,12 @@ function Lista() {
                                     return (
                                         <div
                                             key={row.limpo}
-                                            className="flex items-center justify-between gap-2 transition-all duration-300"
+                                            className="flex items-center justify-between gap-2"
                                             style={{ opacity: rp, transform: `translateX(${(1 - rp) * 24}px)` }}
                                         >
                                             <p className="text-sm font-medium text-[#1C1917]">{row.limpo}</p>
                                             <span
-                                                className="shrink-0 rounded-sm border border-[#F97316] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-[#C2410C] transition-transform duration-200"
+                                                className="shrink-0 rounded-sm border border-[#F97316] px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-[#9A3412]"
                                                 style={{ transform: `scale(${rp > 0.85 ? 1 : 1.4})`, opacity: rp > 0.7 ? 1 : 0 }}
                                             >
                                                 {row.grupo}
@@ -337,7 +339,7 @@ function Lista() {
 
                     {/* Letreiro do catálogo */}
                     <div className="mt-10 overflow-hidden border-y border-[#D6D3D1] py-2" aria-hidden>
-                        <div className="lp-marquee flex w-max gap-8 font-mono text-xs uppercase tracking-wider text-[#A8A29E]">
+                        <div className="lp-marquee flex w-max gap-8 font-mono text-xs uppercase tracking-wider text-[#57534E]">
                             {[0, 1].map((half) => (
                                 <span key={half} className="flex gap-8">
                                     <span>vergalhão CA-50 10mm</span><span>·</span><span>CP II 50kg</span><span>·</span>
@@ -378,7 +380,7 @@ function Madrugada() {
                 </h2>
                 <p className="mt-5 max-w-2xl text-lg leading-relaxed text-[#44403C]">
                     O disparo é automático, por grupo de insumo, direto no WhatsApp de quem vende — um toque na mensagem
-                    e ele está dentro da cotação. Ele responde preço, frete, condição de pagamento livre
+                    e ele está dentro da cotação. Ele responde preço, frete, a condição de pagamento que ele quiser
                     (&ldquo;28/56 dias&rdquo;), anexa ficha técnica. Agregado ele cota por tonelada; a conversão para m³
                     a plataforma faz.
                 </p>
@@ -393,7 +395,7 @@ function Madrugada() {
                                 style={{ transitionDelay: `${i * 180}ms`, opacity: inView ? 1 : 0, transform: inView ? "none" : "translateY(16px)" }}
                             >
                                 <span className="absolute -left-[7px] mt-1.5 block h-3 w-3 rounded-full border-2 border-[#F97316] bg-[#F1EDE7]" aria-hidden />
-                                <p className="font-mono text-sm font-bold text-[#C2410C]">{t.hora}</p>
+                                <p className="font-mono text-sm font-bold text-[#9A3412]">{t.hora}</p>
                                 <p className="text-[#44403C]">{t.texto}</p>
                             </li>
                         ))}
@@ -401,6 +403,7 @@ function Madrugada() {
 
                     {/* Mock de WhatsApp */}
                     <div
+                        aria-hidden="true"
                         className="rounded-2xl bg-[#E7E0D8] p-4 shadow-[0_16px_40px_-20px_rgba(28,25,23,0.35)] transition-all duration-700"
                         style={{ transitionDelay: "250ms", opacity: inView ? 1 : 0, transform: inView ? "scale(1)" : "scale(0.94)" }}
                     >
@@ -408,18 +411,18 @@ function Madrugada() {
                             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#25D366] font-bold text-white">C</span>
                             <div>
                                 <p className="text-sm font-bold text-[#1C1917]">Cotar e Construir</p>
-                                <p className="font-mono text-[10px] text-[#78716C]">mensagem automática · 22h05</p>
+                                <p className="font-mono text-[10px] text-[#57534E]">mensagem automática · 22h05</p>
                             </div>
                             {inView && <span className="lp-pulse-badge ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-[#25D366] text-[10px] font-bold text-white">1</span>}
                         </div>
                         <div className="max-w-[85%] rounded-lg rounded-tl-none bg-white p-3 text-sm text-[#1C1917] shadow-sm">
                             <p className="font-semibold">Você recebeu uma solicitação de cotação 📋</p>
                             <p className="mt-1 text-[#44403C]">
-                                Grupo: <span className="font-mono font-semibold">Agregados</span> · 4 itens · Região: sua praça
+                                Grupo: <span className="font-mono font-semibold">Agregados</span> · 1 item · Região: sua praça
                             </p>
-                            <button className="mt-3 w-full rounded-md bg-[#25D366] py-2 text-sm font-bold text-white" type="button" tabIndex={-1}>
+                            <span className="mt-3 block w-full rounded-md bg-[#25D366] py-2 text-center text-sm font-bold text-white">
                                 Responder cotação
-                            </button>
+                            </span>
                         </div>
                         <div className="mt-3 ml-auto max-w-[85%] rounded-lg rounded-tr-none bg-[#DCF8C6] p-3 text-sm text-[#1C1917] shadow-sm">
                             <p>
@@ -469,7 +472,7 @@ function Etica() {
                                     style={{ transform: winner && inView ? "rotateY(180deg)" : winner ? "rotateY(0deg)" : inView ? "translateZ(-16px) scale(0.97)" : "none", transitionDelay: winner ? "400ms" : "0ms" }}
                                 >
                                     {/* Frente: anônimo */}
-                                    <div className="absolute inset-0 flex flex-col justify-between rounded-md border border-white/15 bg-[#1C1917] p-5 [backface-visibility:hidden]">
+                                    <div aria-hidden={winner && inView} className="absolute inset-0 flex flex-col justify-between rounded-md border border-white/15 bg-[#1C1917] p-5 [backface-visibility:hidden]">
                                         <Tarja hachura>{winner ? "Fornecedor B" : nome}</Tarja>
                                         <div>
                                             <p className="font-mono text-[10px] uppercase tracking-widest text-[#A8A29E]">total + frete</p>
@@ -478,10 +481,10 @@ function Etica() {
                                     </div>
                                     {/* Verso: revelado por mérito */}
                                     {winner && (
-                                        <div className="absolute inset-0 flex flex-col justify-between rounded-md border-2 border-[#F97316] bg-[#1C1917] p-5 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                                        <div aria-hidden={!inView} className="absolute inset-0 flex flex-col justify-between rounded-md border-2 border-[#F97316] bg-[#1C1917] p-5 [backface-visibility:hidden] [transform:rotateY(180deg)]">
                                             <div className="flex items-start justify-between gap-2">
                                                 <p className="text-sm font-bold uppercase leading-tight">{nome}</p>
-                                                <span className="flex h-14 w-14 shrink-0 rotate-[-8deg] items-center justify-center rounded-full border-2 border-[#F97316] text-center font-mono text-[7px] font-bold uppercase leading-tight text-[#F97316]">
+                                                <span aria-hidden className="flex h-16 w-16 shrink-0 rotate-[-8deg] items-center justify-center rounded-full border-2 border-[#F97316] text-center font-mono text-[9px] font-bold uppercase leading-tight text-[#F97316]">
                                                     melhor preço · todos os itens
                                                 </span>
                                             </div>
@@ -511,19 +514,21 @@ function Etica() {
 function MapaCentral() {
     const { ref, progress } = useScrollProgress<HTMLDivElement>();
     const reduced = usePrefersReducedMotion();
-    const p = reduced ? 1 : progress;
+    const shortVp = useShortViewport();
+    const staticMode = reduced || shortVp;
+    const p = staticMode ? 1 : progress;
 
     const rise = seg(p, 0, 0.22); // grade levanta
     const reveal = seg(p, 0.78, 0.16); // tarja abre
     const deltaP = seg(p, 0.92, 0.08); // linha verde
 
     return (
-        <section id="metodologia" ref={ref} className="relative bg-[#FAF8F5]" style={{ height: "320vh" }}>
-            <div className="sticky top-0 flex min-h-screen flex-col justify-center overflow-hidden px-6 py-20">
+        <section id="metodologia" ref={ref} className="relative bg-[#FAF8F5]" style={{ height: staticMode ? "auto" : "320vh" }}>
+            <div className={`${staticMode ? "" : "sticky top-0 min-h-screen"} flex flex-col justify-center overflow-hidden px-6 py-20`}>
                 <div className="mx-auto w-full max-w-6xl">
                     <SectionLabel>A cena central</SectionLabel>
                     <h2 className="mt-3 max-w-3xl text-3xl font-extrabold tracking-tight text-[#1C1917] md:text-5xl">
-                        O mesmo mapa de preços de 30 anos de suprimentos. Preenchido em minutos, não em semanas.
+                        O mesmo mapa de preços de mais de 30 anos de suprimentos. Preenchido em minutos, não em semanas.
                     </h2>
 
                     <div style={{ perspective: 1400 }} className="mt-10">
@@ -535,7 +540,7 @@ function MapaCentral() {
                                 <p className="font-mono text-xs font-bold uppercase tracking-widest text-[#1C1917]">
                                     Mapa Comparativo Nº 0347 · Obra Residencial Vila Nova
                                 </p>
-                                <p className="font-mono text-[10px] uppercase text-[#A8A29E]">itens nas linhas · fornecedores nas colunas</p>
+                                <p className="font-mono text-[10px] uppercase text-[#57534E]">itens nas linhas · fornecedores nas colunas</p>
                             </div>
 
                             <div className="overflow-x-auto">
@@ -548,9 +553,10 @@ function MapaCentral() {
                                                 <th key={col} className={`px-3 py-2 text-center font-semibold ${col === WINNER_COL && reveal > 0 ? "bg-[#F97316]/[0.08]" : ""}`}>
                                                     {col === WINNER_COL ? (
                                                         <span className="relative inline-block">
-                                                            <Tarja hachura>Fornecedor B</Tarja>
+                                                            <span aria-hidden={reveal > 0}><Tarja hachura>Fornecedor B</Tarja></span>
                                                             <span
-                                                                className="absolute inset-0 flex items-center justify-center overflow-hidden whitespace-nowrap bg-[#F97316] px-1 font-mono text-[10px] font-bold uppercase text-white"
+                                                                aria-hidden={reveal === 0}
+                                                                className="absolute inset-0 flex items-center justify-center overflow-hidden whitespace-nowrap bg-[#F97316] px-1 font-mono text-[10px] font-bold uppercase text-[#1C1917]"
                                                                 style={{ clipPath: `inset(0 ${100 - reveal * 100}% 0 0)` }}
                                                             >
                                                                 {WINNER_NAME}
@@ -575,7 +581,7 @@ function MapaCentral() {
                                                     return (
                                                         <td
                                                             key={col}
-                                                            className={`px-3 py-2 text-center transition-colors ${col === WINNER_COL && reveal > 0 ? "bg-[#F97316]/[0.08] font-bold text-[#1C1917]" : ""}`}
+                                                            className={`px-3 py-2 text-center ${col === WINNER_COL && reveal > 0 ? "bg-[#F97316]/[0.08] font-bold text-[#1C1917]" : ""}`}
                                                             style={{ opacity: cellP }}
                                                         >
                                                             {brl(item.precos[col])}
@@ -613,7 +619,7 @@ function MapaCentral() {
                                 <p className="font-mono text-[11px] text-[#78716C]">
                                     condições lado a lado: à vista −3% · 28 dias · 28/56
                                 </p>
-                                <p className="font-mono text-sm font-bold text-[#15803D] transition-opacity" style={{ opacity: deltaP }}>
+                                <p className="font-mono text-sm font-bold text-[#15803D]" style={{ opacity: deltaP }}>
                                     <span className="border-b-2 border-[#15803D]">
                                         diferença entre maior e menor total: R$ {brl(DELTA_PROPOSTAS)}
                                     </span>
@@ -623,9 +629,9 @@ function MapaCentral() {
                     </div>
 
                     <p className="mt-6 max-w-2xl text-base leading-relaxed text-[#44403C]">
-                        Unitário, total, frete, impostos e condições — lado a lado, sem truque. Você enxerga onde cada
-                        real está e quanto deixa de gastar: em obras acompanhadas por 30 anos de suprimentos, a
-                        diferença chega a <span className="font-mono font-bold text-[#15803D]">31%</span>.
+                        Unitário, total, frete e condições — lado a lado, sem truque. Você enxerga onde cada real
+                        está e quanto deixa de gastar: entre a pior e a melhor proposta, a diferença chega a{" "}
+                        <span className="font-mono font-bold text-[#15803D]">até 31%</span>.
                     </p>
                 </div>
             </div>
@@ -666,12 +672,12 @@ function OrdemDeCompra() {
                         </div>
                         <div className="mt-4 grid gap-4 text-xs sm:grid-cols-2">
                             <div className="border border-[#D6D3D1] p-3">
-                                <p className="font-mono text-[9px] uppercase tracking-widest text-[#78716C]">Fornecedor · revelado</p>
+                                <p className="font-mono text-[10px] uppercase tracking-widest text-[#78716C]">Fornecedor · revelado</p>
                                 <p className="mt-1 font-bold text-[#1C1917]">{WINNER_NAME}</p>
                                 <p className="text-[#44403C]">CNPJ 00.000.000/0001-00 · Belo Horizonte/MG</p>
                             </div>
                             <div className="border border-[#D6D3D1] p-3">
-                                <p className="font-mono text-[9px] uppercase tracking-widest text-[#78716C]">Faturar para</p>
+                                <p className="font-mono text-[10px] uppercase tracking-widest text-[#78716C]">Faturar para</p>
                                 <p className="mt-1 font-bold text-[#1C1917]">Construtora Vila Nova Ltda</p>
                                 <p className="text-[#44403C]">Obra Residencial Vila Nova · entrega no canteiro</p>
                             </div>
@@ -685,8 +691,12 @@ function OrdemDeCompra() {
                                         <td className="px-2 py-1.5 text-right">{brl(item.precos[WINNER_COL])}</td>
                                     </tr>
                                 ))}
+                                <tr className="border-b border-[#EDE9E3] text-[11px] italic text-[#78716C]">
+                                    <td className="py-1.5 pr-2 font-sans" colSpan={2}>… + 3 itens · frete R$ 280,00</td>
+                                    <td />
+                                </tr>
                                 <tr className="font-bold text-[#1C1917]">
-                                    <td className="py-2 pr-2 font-sans text-[12px] uppercase">Valor total da nota</td>
+                                    <td className="py-2 pr-2 font-sans text-[12px] uppercase">Valor total da nota (6 itens + frete)</td>
                                     <td />
                                     <td className="px-2 py-2 text-right">R$ {brl(colTotal(WINNER_COL))}</td>
                                 </tr>
@@ -707,7 +717,7 @@ function OrdemDeCompra() {
 
                     {/* Cronograma */}
                     <div className="lg:col-span-2">
-                        <p className="font-mono text-[10px] uppercase tracking-widest text-[#78716C]">acompanhamento do pedido</p>
+                        <p className="font-mono text-[10px] uppercase tracking-widest text-[#57534E]">acompanhamento do pedido</p>
                         <ol className="mt-4 space-y-5">
                             {[
                                 { label: "Pedido aceito", data: "10/08 · 09h41", done: true },
@@ -717,13 +727,17 @@ function OrdemDeCompra() {
                             ].map((step, i) => (
                                 <li key={step.label} className="flex items-center gap-3">
                                     <span
-                                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 font-mono text-xs font-bold transition-all duration-500 ${step.done ? "border-[#F97316] bg-[#F97316] text-white" : "border-[#D6D3D1] bg-white text-[#A8A29E]"}`}
+                                        aria-hidden
+                                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 font-mono text-xs font-bold transition-all duration-500 ${step.done ? "border-[#F97316] bg-[#F97316] text-[#1C1917]" : "border-[#D6D3D1] bg-white text-[#78716C]"}`}
                                         style={{ transitionDelay: `${400 + i * 200}ms`, transform: inView ? "scale(1)" : "scale(0.6)", opacity: inView ? 1 : 0 }}
                                     >
                                         {step.done ? "✓" : "4"}
                                     </span>
                                     <div>
-                                        <p className="text-sm font-semibold text-[#1C1917]">{step.label}</p>
+                                        <p className="text-sm font-semibold text-[#1C1917]">
+                                            {step.label}
+                                            <span className="sr-only">{step.done ? " — concluído" : " — pendente"}</span>
+                                        </p>
                                         <p className="font-mono text-[11px] text-[#78716C]">{step.data}</p>
                                     </div>
                                 </li>
@@ -753,17 +767,17 @@ function Contracapa() {
         <section id="beneficios" className="bg-[#292524] px-6 py-28 text-[#FAF8F5]">
             <div ref={ref} className="mx-auto max-w-5xl">
                 <div className="relative">
-                    <span className="absolute -left-4 -top-10 select-none font-serif text-[120px] leading-none text-[#F97316]/70 md:-left-14" aria-hidden>
+                    <span className="absolute -left-2 -top-12 select-none font-serif text-[80px] leading-none text-[#F97316]/70 md:-left-14 md:text-[120px]" aria-hidden>
                         &ldquo;
                     </span>
                     <blockquote
-                        className="text-2xl font-medium italic leading-relaxed text-[#FAF8F5] transition-all duration-700 md:text-4xl"
+                        className="relative z-10 text-2xl font-medium italic leading-relaxed text-[#FAF8F5] transition-all duration-700 md:text-4xl"
                         style={{ opacity: inView ? 1 : 0, transform: inView ? "none" : "translateY(16px)" }}
                     >
                         Eu não sabia quanto eu perdia. Agora eu sei quanto eu economizo.
                     </blockquote>
                     <p className="mt-6 font-mono text-xs uppercase tracking-[0.25em] text-[#A8A29E]">
-                        Quem compra obra há 30 anos — e destilou isso num processo
+                        Comprador de obra há mais de 30 anos
                     </p>
                 </div>
 
@@ -777,14 +791,14 @@ function Contracapa() {
                 <div className="mt-16 border-t-4 border-double border-[#FAF8F5]/40 pt-8">
                     <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
                         {[
-                            { valor: 31, sufixo: "%", legenda: "economia máxima demonstrada" },
-                            { valor: 19000, sufixo: "+", legenda: "materiais catalogados" },
-                            { valor: 30, sufixo: "+", legenda: "anos de suprimentos" },
-                            { valor: 100, sufixo: "%", legenda: "acompanhamento transparente" },
+                            { valor: 31, sufixo: "%", prefixo: "até ", legenda: "de economia comparando propostas" },
+                            { valor: 19000, sufixo: "+", prefixo: "", legenda: "materiais catalogados" },
+                            { valor: 30, sufixo: "+", prefixo: "", legenda: "anos de suprimentos" },
+                            { valor: 100, sufixo: "%", prefixo: "", legenda: "acompanhamento transparente" },
                         ].map((stat) => (
                             <div key={stat.legenda}>
                                 <p className="font-mono text-4xl font-bold tabular-nums md:text-5xl">
-                                    <Counter target={stat.valor} start={inView} />
+                                    <Counter target={stat.valor} prefix={stat.prefixo} start={inView} />
                                     <span className="text-[#F97316]">{stat.sufixo}</span>
                                 </p>
                                 <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#A8A29E]">
@@ -814,8 +828,8 @@ function Cta() {
                 </h2>
                 <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-[#D6D3D1]">
                     Suba sua planilha ou busque no catálogo — em minutos os fornecedores da sua região estão cotando, e
-                    a primeira cotação já sai comparada no mapa. Fornecedor de materiais? Entre para a rede: aqui você
-                    disputa pelo preço, não pelo assédio, e ganha pelo mérito.
+                    a primeira cotação já sai comparada no mapa. Fornecedor de materiais? Entre para a rede: aqui a
+                    disputa é no preço, não no assédio — e quem ganha, ganha pelo mérito.
                 </p>
 
                 {/* Primeira linha de uma lista vazia */}
@@ -831,7 +845,7 @@ function Cta() {
                 <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
                     <Link
                         href="/login"
-                        className="rounded-lg bg-[#F97316] px-8 py-4 text-base font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.4)] transition-transform hover:-translate-y-0.5 hover:bg-[#C2410C]"
+                        className="rounded-lg bg-[#F97316] px-8 py-4 text-base font-bold text-[#1C1917] shadow-[4px_4px_0_rgba(0,0,0,0.4)] transition-transform hover:-translate-y-0.5 hover:bg-[#FB923C]"
                     >
                         Montar minha lista grátis
                     </Link>
@@ -852,7 +866,7 @@ function Cta() {
 
 export function LandingExperience() {
     return (
-        <main className="bg-[#FAF8F5] text-[#1C1917]">
+        <main className="lp-root bg-[#FAF8F5] text-[#1C1917]">
             <Hero />
             <Thread />
             <Dor />
