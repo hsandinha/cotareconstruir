@@ -1587,7 +1587,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                         <span>{getDisplaySupplierName(proposal.supplierId)}</span>
                                         {isRevealedSupplier(proposal.supplierId) && (
                                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 normal-case">
-                                                🏆 Melhor preço total — nome revelado
+                                                🏆 Melhor preço total
                                             </span>
                                         )}
                                         {proposal.numero && (

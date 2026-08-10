@@ -1,26 +1,13 @@
 import { Header } from "../components/Header";
-import { HeroSection } from "../components/HeroSection";
-import { ChallengesSection } from "../components/ChallengesSection";
-import { SolutionSection } from "../components/SolutionSection";
-import { MethodologySection } from "../components/MethodologySection";
-import { BenefitsSection } from "../components/BenefitsSection";
-import { CtaSection } from "../components/CtaSection";
 import { Footer } from "../components/Footer";
 import { FloatingWhatsapp } from "../components/FloatingWhatsapp";
+import { LandingExperience } from "../components/landing/LandingExperience";
 
 export default function HomePage() {
   return (
-    <div className="relative overflow-hidden landing-bg text-slate-50">
-      <div className="absolute inset-x-0 top-0 h-[600px] bg-gradient-to-b from-blue-500/20 via-transparent to-transparent pointer-events-none" />
+    <div className="relative bg-[#FAF8F5]">
       <Header />
-      <main className="mt-24 space-y-32 md:space-y-36">
-        <HeroSection />
-        <ChallengesSection />
-        <SolutionSection />
-        <MethodologySection />
-        <BenefitsSection />
-        <CtaSection />
-      </main>
+      <LandingExperience />
       <Footer />
       <FloatingWhatsapp />
     </div>

@@ -199,3 +199,48 @@ body {
     transform: scale(1);
   }
 }
+
+/* ============================================================
+   Landing page "O Mapa na Mesa" — animações utilitárias
+   ============================================================ */
+@keyframes lp-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.lp-marquee { animation: lp-marquee 36s linear infinite; }
+
+@keyframes lp-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.lp-blink { animation: lp-blink 1.1s steps(1) infinite; }
+
+@keyframes lp-pulse-badge {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.25); }
+}
+.lp-pulse-badge { animation: lp-pulse-badge 1.6s ease-in-out 2; }
+
+/* Grão de papel sutil */
+.lp-paper-grain {
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(28, 25, 23, 0.015) 0px,
+    rgba(28, 25, 23, 0.015) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+/* Tarja de sigilo hachurada */
+.lp-tarja-hachura {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(249, 115, 22, 0.35) 0 2px,
+    transparent 2px 6px
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-marquee, .lp-blink, .lp-pulse-badge { animation: none; }
+}

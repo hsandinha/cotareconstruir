@@ -17,9 +17,10 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 
 export const navLinks = [
-  { label: "Solução", href: "#solucao" },
-  { label: "Metodologia", href: "#metodologia" },
-  { label: "Benefícios", href: "#beneficios" },
+  { label: "Como Funciona", href: "#solucao" },
+  { label: "A Regra da Casa", href: "#etica" },
+  { label: "O Mapa", href: "#metodologia" },
+  { label: "Resultados", href: "#beneficios" },
   { label: "Contato", href: "#contato" },
 ] as const;
 
@@ -102,8 +103,8 @@ export const supplierProcess = [
 ] as const;
 
 export const intelligencePoints = [
-  { icon: faEyeSlash, label: "Duplo anonimato estratégico." },
-  { icon: faScaleBalanced, label: "Competição saudável controlada." },
+  { icon: faScaleBalanced, label: "Fomento à concorrência sem ferir a ética entre parceiros fornecedores." },
+  { icon: faEyeSlash, label: "Fornecedores competem de forma anônima; o melhor preço com cobertura total é revelado por mérito." },
   { icon: faShield, label: "Segurança e transparência em toda a jornada." },
 ] as const;
 
