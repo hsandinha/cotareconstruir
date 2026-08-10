@@ -1,23 +1,34 @@
 "use client";
 
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 
-/** True quando o usuário prefere menos movimento (desliga efeitos pesados). */
+function useMediaQuery(query: string): boolean {
+    return useSyncExternalStore(
+        (onChange) => {
+            const mq = window.matchMedia(query);
+            mq.addEventListener("change", onChange);
+            return () => mq.removeEventListener("change", onChange);
+        },
+        () => window.matchMedia(query).matches,
+        () => false
+    );
+}
+
+/** True quando o usuário prefere menos movimento (síncrono, sem frame animado). */
 export function usePrefersReducedMotion(): boolean {
-    const [reduced, setReduced] = useState(false);
-    useEffect(() => {
-        const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-        setReduced(mq.matches);
-        const onChange = () => setReduced(mq.matches);
-        mq.addEventListener("change", onChange);
-        return () => mq.removeEventListener("change", onChange);
-    }, []);
-    return reduced;
+    return useMediaQuery("(prefers-reduced-motion: reduce)");
+}
+
+/** Viewport baixa (landscape mobile etc.): cenas sticky viram estáticas. */
+export function useShortViewport(): boolean {
+    return useMediaQuery("(max-height: 700px)");
 }
 
 /**
  * Revela o elemento quando entra na viewport (uma única vez).
- * Uso: const { ref, inView } = useInView(); className={inView ? '...' : '...'}
+ * O threshold pedido é limitado ao alcançável: elementos mais altos que a
+ * viewport nunca atingem ratios altos, então o limite real é ajustado à
+ * proporção viewport/elemento (senão a seção ficaria invisível para sempre).
  */
 export function useInView<T extends HTMLElement = HTMLDivElement>(threshold = 0.2) {
     const ref = useRef<T | null>(null);
@@ -26,6 +37,8 @@ export function useInView<T extends HTMLElement = HTMLDivElement>(threshold = 0.
     useEffect(() => {
         const el = ref.current;
         if (!el) return;
+        const elHeight = el.getBoundingClientRect().height || 1;
+        const reachable = Math.max(0.02, Math.min(threshold, (window.innerHeight * 0.5) / elHeight));
         const observer = new IntersectionObserver(
             (entries) => {
                 if (entries[0]?.isIntersecting) {
@@ -33,7 +46,7 @@ export function useInView<T extends HTMLElement = HTMLDivElement>(threshold = 0.
                     observer.disconnect();
                 }
             },
-            { threshold }
+            { threshold: reachable }
         );
         observer.observe(el);
         return () => observer.disconnect();
@@ -43,9 +56,10 @@ export function useInView<T extends HTMLElement = HTMLDivElement>(threshold = 0.
 }
 
 /**
- * Progresso de scroll (0→1) de uma seção "sticky stage": 0 quando o topo da
- * seção encosta no topo da viewport, 1 quando o final da seção sai.
- * A seção deve ser mais alta que a viewport (ex.: h-[300vh]) com um filho sticky.
+ * Progresso de scroll (0→1) de uma seção "sticky stage".
+ * O travel considera a altura REAL do filho sticky (primeiro filho), não a
+ * viewport: se o conteúdo pinado for mais alto que a tela, o progresso ainda
+ * completa 1 antes de despinar (senão o final da coreografia nunca acontece).
  */
 export function useScrollProgress<T extends HTMLElement = HTMLDivElement>(): {
     ref: RefObject<T | null>;
@@ -60,13 +74,14 @@ export function useScrollProgress<T extends HTMLElement = HTMLDivElement>(): {
             const el = ref.current;
             if (!el) return;
             const rect = el.getBoundingClientRect();
-            const total = rect.height - window.innerHeight;
+            const sticky = el.firstElementChild as HTMLElement | null;
+            const pinned = Math.max(sticky?.offsetHeight || 0, window.innerHeight);
+            const total = rect.height - pinned;
             if (total <= 0) {
                 setProgress(rect.top < 0 ? 1 : 0);
                 return;
             }
-            const raw = -rect.top / total;
-            setProgress(Math.min(1, Math.max(0, raw)));
+            setProgress(Math.min(1, Math.max(0, -rect.top / total)));
         };
         const onScroll = () => {
             cancelAnimationFrame(frame.current);
@@ -86,21 +101,29 @@ export function useScrollProgress<T extends HTMLElement = HTMLDivElement>(): {
 }
 
 /**
- * Tilt 3D com o mouse: devolve handlers + transform para aplicar em um card
- * com `transform-style: preserve-3d` dentro de um wrapper com `perspective`.
+ * Tilt 3D com o mouse. O rect é medido no mouseenter (antes do transform) e
+ * reutilizado durante o movimento — medir o elemento já rotacionado gera um
+ * bounding box errado e o card treme perto das bordas.
  */
 export function useTilt(maxDeg = 7) {
     const [transform, setTransform] = useState("rotateX(0deg) rotateY(0deg)");
+    const rectRef = useRef<DOMRect | null>(null);
 
+    const onMouseEnter = (e: React.MouseEvent<HTMLElement>) => {
+        rectRef.current = e.currentTarget.getBoundingClientRect();
+    };
     const onMouseMove = (e: React.MouseEvent<HTMLElement>) => {
-        const rect = e.currentTarget.getBoundingClientRect();
+        const rect = rectRef.current ?? e.currentTarget.getBoundingClientRect();
         const px = (e.clientX - rect.left) / rect.width - 0.5;
         const py = (e.clientY - rect.top) / rect.height - 0.5;
         setTransform(`rotateX(${(-py * maxDeg).toFixed(2)}deg) rotateY(${(px * maxDeg).toFixed(2)}deg)`);
     };
-    const onMouseLeave = () => setTransform("rotateX(0deg) rotateY(0deg)");
+    const onMouseLeave = () => {
+        rectRef.current = null;
+        setTransform("rotateX(0deg) rotateY(0deg)");
+    };
 
-    return { transform, onMouseMove, onMouseLeave };
+    return { transform, onMouseEnter, onMouseMove, onMouseLeave };
 }
 
 /** Contador animado: conta de 0 até `target` quando `start` vira true. */
@@ -108,6 +131,10 @@ export function useCountUp(target: number, start: boolean, durationMs = 1400): n
     const [value, setValue] = useState(0);
     useEffect(() => {
         if (!start) return;
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            setValue(target);
+            return;
+        }
         let raf = 0;
         const t0 = performance.now();
         const tick = (now: number) => {
