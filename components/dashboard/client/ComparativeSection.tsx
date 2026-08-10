@@ -872,6 +872,27 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     )}
                 </div>
                 )}
+
+                {/* Este branch retorna antes do render principal, então os modais
+                    precisam ser renderizados aqui também */}
+                {reportModal && (
+                    <ReportModal
+                        isOpen={reportModal.isOpen}
+                        onClose={() => setReportModal(null)}
+                        targetType="fornecedor"
+                        targetId={reportModal.supplierId}
+                        contextName={reportModal.supplierName}
+                    />
+                )}
+                {reviewModal && (
+                    <ReviewModal
+                        isOpen={reviewModal.isOpen}
+                        onClose={() => setReviewModal(null)}
+                        supplierId={reviewModal.supplierId}
+                        supplierName={reviewModal.supplierName}
+                        orderId={orderId}
+                    />
+                )}
             </div>
         );
     }
@@ -978,6 +999,23 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
     const getItemTotal = (proposal: any, itemId: string | number) => {
         const item = proposal.items.find((i: any) => i.itemId === itemId);
         return item ? parseFloat(item.price) * item.quantity : 0;
+    };
+
+    // Revelação por mérito: APENAS o fornecedor que cotou TODOS os itens e tem
+    // o melhor preço total tem o nome real revelado no mapa; os demais
+    // permanecem ocultos até o fechamento do pedido.
+    const revealedSupplierId = (() => {
+        const best = getBestTotalStrategy();
+        return best.supplierId ? String(best.supplierId) : null;
+    })();
+    const isRevealedSupplier = (supplierId: string | number) =>
+        revealedSupplierId !== null && String(supplierId) === revealedSupplierId;
+    const getDisplaySupplierName = (supplierId: string | number) => {
+        if (isRevealedSupplier(supplierId)) {
+            const revealed = proposals.find((p: any) => String(p.supplierId) === revealedSupplierId);
+            if (revealed?.supplierName) return revealed.supplierName;
+        }
+        return getAnonymousName(supplierId);
     };
 
     const getItemAvailability = (proposal: any, itemId: string | number): string => {
@@ -1346,7 +1384,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
                 {Object.entries(itemsBySupplier).map(([supplierId, items]) => {
                     const proposal = findProposalBySupplierId(supplierId);
-                    const supplierLabel = getAnonymousName(supplierId);
+                    const supplierLabel = getDisplaySupplierName(supplierId);
                     const supplierTotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
                     const freight = proposal?.freightPrice || 0;
                     const deliveryDays = proposal?.deliveryDays;
@@ -1431,6 +1469,27 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         </button>
                     </div>
                 </div>
+
+                {/* Este branch retorna antes do render principal, então os modais
+                    precisam ser renderizados aqui também */}
+                {reviewModal && (
+                    <ReviewModal
+                        isOpen={reviewModal.isOpen}
+                        onClose={() => setReviewModal(null)}
+                        supplierId={reviewModal.supplierId}
+                        supplierName={reviewModal.supplierName}
+                        orderId={orderId}
+                    />
+                )}
+                {reportModal && (
+                    <ReportModal
+                        isOpen={reportModal.isOpen}
+                        onClose={() => setReportModal(null)}
+                        targetType="fornecedor"
+                        targetId={reportModal.supplierId}
+                        contextName={reportModal.supplierName}
+                    />
+                )}
             </div>
         );
     }
@@ -1476,7 +1535,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
             {(() => {
                 const bestTotal = getBestTotalStrategy();
                 const bestPerItem = getBestPerItemStrategy();
-                const bestSupplierName = bestTotal.supplierId ? getAnonymousName(bestTotal.supplierId) : 'Sem cobertura total';
+                const bestSupplierName = bestTotal.supplierId ? getDisplaySupplierName(bestTotal.supplierId) : 'Sem cobertura total';
 
                 return (
                     <div className="mt-6 sticky top-4 z-20 rounded-2xl border border-slate-200 bg-slate-50/95 backdrop-blur-sm p-4 shadow-sm">
@@ -1525,7 +1584,12 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             {proposals.map((proposal) => (
                                 <th key={proposal.id} colSpan={2} className="border-b border-l border-slate-200 px-4 py-2 text-black text-center">
                                     <div className="flex flex-col items-center gap-1">
-                                        <span>{getAnonymousName(proposal.supplierId)}</span>
+                                        <span>{getDisplaySupplierName(proposal.supplierId)}</span>
+                                        {isRevealedSupplier(proposal.supplierId) && (
+                                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 normal-case">
+                                                🏆 Melhor preço total — nome revelado
+                                            </span>
+                                        )}
                                         {proposal.numero && (
                                             <span className="text-xs text-gray-600 font-normal">
                                                 {proposal.numero}

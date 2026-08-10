@@ -56,7 +56,7 @@ export function ClientProfileSection() {
         let total = 0;
         let filled = 0;
 
-        const cpfFields = [person.name, person.email, person.phone, person.cpf, address.cep, address.logradouro, address.numero, address.cidade, address.estado];
+        const cpfFields = [person.name, person.email, person.whatsapp, person.cpf, address.cep, address.logradouro, address.numero, address.cidade, address.estado];
         const cnpjFields = [...cpfFields, company.razaoSocial, company.cnpj];
 
         const fields = profileType === "cpf" ? cpfFields : cnpjFields;
@@ -202,6 +202,11 @@ export function ClientProfileSection() {
 
     const handleSave = async () => {
         if (!user?.id) return;
+
+        if (!person.whatsapp?.replace(/\D/g, '')) {
+            showToast("error", "Informe o número de WhatsApp.");
+            return;
+        }
 
         if (profileType === "cpf" && person.cpf && !isValidCPF(person.cpf)) {
             showToast("error", "CPF inválido. Por favor, verifique o número digitado.");
@@ -484,18 +489,7 @@ export function ClientProfileSection() {
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
-                                    <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> Telefone *</span>
-                                </label>
-                                <input
-                                    value={person.phone}
-                                    onChange={(e) => setPerson({ ...person, phone: formatPhoneBr(e.target.value) })}
-                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
-                                    placeholder="(00) 00000-0000"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
-                                    <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> WhatsApp</span>
+                                    <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> WhatsApp *</span>
                                 </label>
                                 <input
                                     value={person.whatsapp}
@@ -504,6 +498,17 @@ export function ClientProfileSection() {
                                     placeholder="(00) 00000-0000"
                                 />
                                 <p className="mt-1 text-[11px] text-slate-400">Usado nas notificações de propostas via WhatsApp.</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                                    <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> Telefone</span>
+                                </label>
+                                <input
+                                    value={person.phone}
+                                    onChange={(e) => setPerson({ ...person, phone: formatPhoneBr(e.target.value) })}
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                    placeholder="(00) 00000-0000"
+                                />
                             </div>
                         </div>
 
