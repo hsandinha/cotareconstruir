@@ -212,9 +212,15 @@ function Dor() {
                     ter erro de unidade. No fim, ninguém compara nada de verdade — compara-se o que deu tempo. É aí que
                     a economia vai embora sem fazer barulho.
                 </p>
+                <p className="mt-4 max-w-2xl text-lg leading-relaxed text-[#44403C]">
+                    E o pior: o processo corre solto, sem dono. Sem um cadastro dos seus melhores fornecedores por
+                    grupo de insumo e por fase da obra, cada cotação começa do zero — ninguém sabe o que já foi cotado,
+                    com quem, por quanto. Isso não é falta de esforço.{" "}
+                    <span className="font-semibold text-[#1C1917]">É falta de controle.</span>
+                </p>
 
                 {/* Bancada vista de cima */}
-                <div className="relative mt-14 grid gap-6 md:grid-cols-3">
+                <div className="relative mt-14 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
                     <div className="transition-all duration-700" style={{ transitionDelay: "0ms", opacity: inView ? 1 : 0, transform: inView ? "rotate(-2deg)" : "rotate(-6deg) translateY(40px)" }}>
                         <div className="rounded-sm border border-[#D6D3D1] bg-white p-4 shadow-[6px_6px_0_rgba(28,25,23,0.12)]">
                             <p className="border-b border-[#D6D3D1] pb-1 font-mono text-[10px] uppercase tracking-widest text-[#78716C]">
@@ -245,6 +251,18 @@ function Dor() {
                                 <p className="flex justify-between"><span>Depósito do João</span><span className="font-mono text-red-400">7 perdidas</span></p>
                                 <p className="flex justify-between"><span>Areial BH</span><span className="font-mono text-[#A8A29E]">ocupado</span></p>
                                 <p className="flex justify-between"><span>Ferragens Sul</span><span className="font-mono text-[#A8A29E]">&ldquo;amanhã&rdquo;</span></p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="transition-all duration-700" style={{ transitionDelay: "450ms", opacity: inView ? 1 : 0, transform: inView ? "rotate(1.5deg)" : "rotate(6deg) translateY(40px)" }}>
+                        <div className="rounded-sm border border-[#D6D3D1] bg-[#FFFBEB] p-4 shadow-[6px_6px_0_rgba(28,25,23,0.12)]">
+                            <p className="border-b border-[#D6D3D1] pb-1 font-mono text-[10px] uppercase tracking-widest text-[#92400E]">
+                                &ldquo;cadastro&rdquo; de fornecedores
+                            </p>
+                            <div className="mt-2 space-y-1 text-sm text-[#44403C]">
+                                <p>o da laje boa? <span className="font-mono text-[#92400E]">tá no celular antigo</span></p>
+                                <p>areia confiável? <span className="font-mono text-[#92400E]">cartão na gaveta</span></p>
+                                <p>elétrica/hidráulica? <span className="font-mono text-[#92400E]">&ldquo;pergunta pro mestre&rdquo;</span></p>
                             </div>
                         </div>
                     </div>
@@ -433,6 +451,99 @@ function Madrugada() {
                             </p>
                         </div>
                     </div>
+                </div>
+            </div>
+        </section>
+    );
+}
+
+/* ------------------------------------------------------------------ */
+/* 4b. Seus fornecedores entram no jogo                                */
+/* ------------------------------------------------------------------ */
+
+const CARTEIRA_CHIPS = [
+    { nome: "Depósito do João", tag: "Agregados · Fundação" },
+    { nome: "Ferragens Sul", tag: "Aços · Estrutura" },
+] as const;
+
+const REDE_CHIPS = [
+    { nome: "Fornecedor homologado", tag: "Alvenaria" },
+    { nome: "Fornecedor homologado", tag: "Hidráulica" },
+] as const;
+
+function SeusFornecedores() {
+    const { ref, inView } = useInView<HTMLDivElement>(0.3);
+
+    return (
+        <section className="bg-[#FAF8F5] px-6 py-24">
+            <div ref={ref} className="mx-auto max-w-6xl">
+                <SectionLabel>Sua carteira + a nossa rede</SectionLabel>
+                <h2 className="mt-3 max-w-3xl text-3xl font-extrabold tracking-tight text-[#1C1917] md:text-5xl">
+                    Seus melhores fornecedores entram no mapa. Concorrendo com os nossos.
+                </h2>
+                <p className="mt-5 max-w-2xl text-lg leading-relaxed text-[#44403C]">
+                    Aquele fornecedor em quem você confia há anos não fica de fora: cadastre os seus melhores,
+                    organizados por grupo de insumo e fase da obra, e eles passam a receber as suas cotações — lado a
+                    lado com a rede qualificada do Cotar e Construir, no mesmo mapa e nas mesmas regras.
+                </p>
+
+                <div className="mt-12 grid items-stretch gap-6 md:grid-cols-2">
+                    {/* Sua carteira */}
+                    <div
+                        className="rounded-md border border-[#D6D3D1] bg-white p-5 transition-all duration-700"
+                        style={{ opacity: inView ? 1 : 0, transform: inView ? "none" : "translateX(-32px)" }}
+                    >
+                        <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#9A3412]">
+                            ★ sua carteira — você cadastra
+                        </p>
+                        <div className="mt-3 space-y-2">
+                            {CARTEIRA_CHIPS.map((chip) => (
+                                <div key={chip.tag} className="flex items-center justify-between gap-2 rounded-sm border border-[#F97316]/50 bg-[#F97316]/[0.06] px-3 py-2">
+                                    <p className="text-sm font-semibold text-[#1C1917]">{chip.nome}</p>
+                                    <span className="font-mono text-[10px] uppercase tracking-wider text-[#9A3412]">{chip.tag}</span>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="mt-3 text-sm text-[#57534E]">
+                            Organizados por grupo e por fase — nunca mais &ldquo;tá no celular antigo&rdquo;.
+                        </p>
+                    </div>
+
+                    {/* Rede qualificada */}
+                    <div
+                        className="rounded-md border border-[#D6D3D1] bg-white p-5 transition-all duration-700"
+                        style={{ transitionDelay: "150ms", opacity: inView ? 1 : 0, transform: inView ? "none" : "translateX(32px)" }}
+                    >
+                        <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#57534E]">
+                            rede qualificada Cotar e Construir
+                        </p>
+                        <div className="mt-3 space-y-2">
+                            {REDE_CHIPS.map((chip) => (
+                                <div key={chip.tag} className="flex items-center justify-between gap-2 rounded-sm border border-[#D6D3D1] bg-[#FAF8F5] px-3 py-2">
+                                    <p className="text-sm font-semibold text-[#1C1917]">{chip.nome}</p>
+                                    <span className="font-mono text-[10px] uppercase tracking-wider text-[#57534E]">{chip.tag}</span>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="mt-3 text-sm text-[#57534E]">
+                            Selecionados por região e grupo de insumo, com histórico na plataforma.
+                        </p>
+                    </div>
+                </div>
+
+                {/* Convergência: todo mundo no mesmo mapa */}
+                <div
+                    className="mt-6 rounded-md border-2 border-[#1C1917] bg-white p-4 text-center transition-all duration-700"
+                    style={{ transitionDelay: "350ms", opacity: inView ? 1 : 0, transform: inView ? "none" : "translateY(16px)" }}
+                >
+                    <p className="font-mono text-[11px] font-bold uppercase tracking-widest text-[#1C1917]">
+                        ↓ todos no mesmo mapa comparativo, nas mesmas regras ↓
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-[#1C1917]">
+                        Quanto mais fornecedores qualificados comparando,{" "}
+                        <span className="bg-[#F97316]/30 px-1">melhor a sua condição</span>: mais cobertura, mais
+                        concorrência, melhor resultado.
+                    </p>
                 </div>
             </div>
         </section>
@@ -873,6 +984,7 @@ export function LandingExperience() {
             <Lista />
             <Thread />
             <Madrugada />
+            <SeusFornecedores />
             <Etica />
             <MapaCentral />
             <Thread />
