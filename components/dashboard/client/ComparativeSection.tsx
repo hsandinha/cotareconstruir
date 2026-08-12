@@ -1727,7 +1727,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                 </tr>
                             );
                         })}
-                        {/* Rodapé no formato do Mapa de Preços da Cotar e Construir */}
+                        {/* Rodapé no formato do Mapa de Preços da Comprar e Construir */}
                         {[
                             { key: 'desconto', label: 'Desconto à vista', render: (_p: any) => '—' },
                             { key: 'impostos', label: 'Impostos', render: (p: any) => (p.impostos > 0 ? `R$ ${p.impostos.toFixed(2)}` : '-') },

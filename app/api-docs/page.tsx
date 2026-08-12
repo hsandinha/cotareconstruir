@@ -4,8 +4,8 @@ import { marked, type Tokens } from "marked";
 import ApiDocsClient, { type TocItem } from "./ApiDocsClient";
 
 export const metadata = {
-    title: "Documentação da API · Cotar e Construir",
-    description: "Documentação técnica da API de fornecedores da plataforma Cotar e Construir.",
+    title: "Documentação da API · Comprar e Construir",
+    description: "Documentação técnica da API de fornecedores da plataforma Comprar e Construir.",
 };
 
 function slugify(text: string): string {

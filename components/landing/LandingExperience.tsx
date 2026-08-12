@@ -105,7 +105,7 @@ function Hero() {
                         </span>
                     </h1>
                     <p className="mt-6 max-w-xl text-lg leading-relaxed text-[#44403C]">
-                        O Cotar e Construir pega sua lista de materiais, cota com fornecedores da região e devolve o
+                        A Comprar e Construir pega sua lista de materiais, cota com fornecedores da região e devolve o
                         mapa comparativo pronto — no mesmo formato que suprimentos usa há mais de 30 anos. Você compara, clica,
                         e a ordem de compra sai formal, com aceite e data. Economia de até{" "}
                         <span className="font-mono font-bold text-[#15803D]">31%</span>, demonstrada linha a linha.
@@ -330,7 +330,7 @@ function Lista() {
                         {/* Lista classificada */}
                         <div className="rounded-sm border border-[#D6D3D1] bg-white p-4 shadow-[0_16px_40px_-20px_rgba(28,25,23,0.3)]">
                             <p className="border-b border-[#D6D3D1] pb-2 font-mono text-[10px] uppercase tracking-widest text-[#C2410C]">
-                                sua lista no Cotar e Construir
+                                sua lista na Comprar e Construir
                             </p>
                             <div className="mt-3 space-y-2">
                                 {XLSX_ROWS.map((row, i) => {
@@ -428,7 +428,7 @@ function Madrugada() {
                         <div className="mb-3 flex items-center gap-2 border-b border-[#D6D3D1] pb-2">
                             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#25D366] font-bold text-white">C</span>
                             <div>
-                                <p className="text-sm font-bold text-[#1C1917]">Cotar e Construir</p>
+                                <p className="text-sm font-bold text-[#1C1917]">Comprar e Construir</p>
                                 <p className="font-mono text-[10px] text-[#57534E]">mensagem automática · 22h05</p>
                             </div>
                             {inView && <span className="lp-pulse-badge ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-[#25D366] text-[10px] font-bold text-white">1</span>}
@@ -484,7 +484,7 @@ function SeusFornecedores() {
                 <p className="mt-5 max-w-2xl text-lg leading-relaxed text-[#44403C]">
                     Aquele fornecedor em quem você confia há anos não fica de fora: cadastre os seus melhores,
                     organizados por grupo de insumo e fase da obra, e eles passam a receber as suas cotações — lado a
-                    lado com a rede qualificada do Cotar e Construir, no mesmo mapa e nas mesmas regras.
+                    lado com a rede qualificada da Comprar e Construir, no mesmo mapa e nas mesmas regras.
                 </p>
 
                 <div className="mt-12 grid items-stretch gap-6 md:grid-cols-2">
@@ -515,7 +515,7 @@ function SeusFornecedores() {
                         style={{ transitionDelay: "150ms", opacity: inView ? 1 : 0, transform: inView ? "none" : "translateX(32px)" }}
                     >
                         <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#57534E]">
-                            rede qualificada Cotar e Construir
+                            rede qualificada Comprar e Construir
                         </p>
                         <div className="mt-3 space-y-2">
                             {REDE_CHIPS.map((chip) => (

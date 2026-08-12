@@ -125,10 +125,10 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
                     <div style="padding:0 28px 28px 28px;color:#111827;font-family:Arial,sans-serif;">
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;"><strong>Prezado(a) Parceiro(a) Fornecedor(a),</strong></p>
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
-                            Aqui é Leonardo Nogueira, diretor comercial da Cotar e Construir.
+                            Aqui é Leonardo Nogueira, diretor comercial da Comprar e Construir.
                         </p>
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
-                            Com base em nossa sólida experiência de 38 anos no atendimento a milhares de clientes, a Cotar e Construir tem o prazer de apresentar a evolução de nossos serviços: a comprareconstruir.com, nossa plataforma especializada em suprimentos para a construção civil. Esta iniciativa visa otimizar o processo de compras e expandir o alcance de empresas construtoras, engenheiros, arquitetos autônomos e consumidores finais que buscam fornecedores qualificados.
+                            Com base em nossa sólida experiência de 38 anos no atendimento a milhares de clientes, a Comprar e Construir tem o prazer de apresentar a evolução de nossos serviços: a comprareconstruir.com, nossa plataforma especializada em suprimentos para a construção civil. Esta iniciativa visa otimizar o processo de compras e expandir o alcance de empresas construtoras, engenheiros, arquitetos autônomos e consumidores finais que buscam fornecedores qualificados.
                         </p>
                         <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;">
                             <strong>Uma Plataforma Que Prioriza o Seu Negócio (e é Gratuita):</strong>
@@ -176,7 +176,7 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
                             <p style="margin:0 0 10px 0;">Atenciosamente,</p>
                             <p style="margin:0;">Leonardo Nogueira</p>
                             <p style="margin:0;">Diretor Comercial</p>
-                            <p style="margin:0;">Cotar e Construir</p>
+                            <p style="margin:0;">Comprar e Construir</p>
                         </div>
                     </div>
                 </div>
@@ -191,10 +191,10 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
         text: [
             'Prezado(a) Parceiro(a) Fornecedor(a),',
             '',
-            'Aqui é Leonardo Nogueira, diretor comercial da Cotar e Construir.',
+            'Aqui é Leonardo Nogueira, diretor comercial da Comprar e Construir.',
             '',
             'Com base em nossa sólida experiência de 38 anos no atendimento a milhares de clientes,',
-            'a Cotar e Construir tem o prazer de apresentar a evolução de nossos serviços:',
+            'a Comprar e Construir tem o prazer de apresentar a evolução de nossos serviços:',
             'a comprareconstruir.com, nossa plataforma especializada em suprimentos para a',
             'construção civil. Esta iniciativa visa otimizar o processo de compras e expandir o alcance de',
             'empresas construtoras, engenheiros, arquitetos autônomos e consumidores finais que',
@@ -244,7 +244,7 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
             'Atenciosamente,',
             'Leonardo Nogueira',
             'Diretor Comercial',
-            'Cotar e Construir',
+            'Comprar e Construir',
         ].join('\n'),
     };
 }

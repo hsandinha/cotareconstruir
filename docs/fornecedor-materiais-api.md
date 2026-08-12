@@ -1,6 +1,6 @@
 # API de Fornecedores
 
-Documentação técnica para fornecedores integrarem ERP, e-commerce ou backoffice com a plataforma Cotar e Construir.
+Documentação técnica para fornecedores integrarem ERP, e-commerce ou backoffice com a plataforma Comprar e Construir.
 
 Base v1:
 

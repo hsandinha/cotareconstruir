@@ -230,14 +230,14 @@ export default function ApiDocsClient({ html, toc }: Props) {
                         <Link href="/" className="flex items-center gap-2">
                             <Image
                                 src="/logo.png"
-                                alt="Cotar e Construir"
+                                alt="Comprar e Construir"
                                 width={36}
                                 height={36}
                                 className="h-9 w-9 rounded-lg object-contain"
                                 priority
                             />
                             <div className="flex flex-col leading-tight">
-                                <span className="text-sm font-bold text-slate-900">Cotar e Construir</span>
+                                <span className="text-sm font-bold text-slate-900">Comprar e Construir</span>
                                 <span className="text-[11px] font-medium uppercase tracking-wider text-emerald-700">
                                     API Docs · v1
                                 </span>
@@ -340,7 +340,7 @@ export default function ApiDocsClient({ html, toc }: Props) {
                                         className="h-5 w-5 rounded object-contain"
                                     />
                                     <span>
-                                        © {new Date().getFullYear()} Cotar e Construir · API v1
+                                        © {new Date().getFullYear()} Comprar e Construir · API v1
                                     </span>
                                 </div>
                                 <div className="flex items-center gap-4 text-xs">
