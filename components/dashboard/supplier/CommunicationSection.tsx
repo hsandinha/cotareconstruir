@@ -254,7 +254,7 @@ export function SupplierCommunicationSection() {
                     </div>
                     <div>
                         <span className="font-medium text-gray-700">WhatsApp Suporte:</span>
-                        <div className="text-gray-900">(11) 9999-9999</div>
+                        <div className="text-gray-900">(31) 9 9219-4237</div>
                     </div>
                     <div>
                         <span className="font-medium text-gray-700">Horário:</span>

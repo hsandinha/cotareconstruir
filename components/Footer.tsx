@@ -62,7 +62,7 @@ export function Footer() {
               </div>
               <div className="flex items-center space-x-3">
                 <FontAwesomeIcon icon={faPhone} className="text-blue-400" />
-                <span>(11) 9999-9999</span>
+                <span>(31) 9 9219-4237</span>
               </div>
             </div>
             <div className="flex space-x-5 pt-2 text-lg text-slate-400">

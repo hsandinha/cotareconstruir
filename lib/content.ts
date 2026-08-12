@@ -224,7 +224,7 @@ export const ctaContent = {
 } as const;
 
 export const floatingWhatsApp = {
-  phone: "5511999999999",
+  phone: "5531992194237",
   message: "Olá! Gostaria de falar com a Comprar & Construir.",
   label: "Fale pelo WhatsApp",
 } as const;
