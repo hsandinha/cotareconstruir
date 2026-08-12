@@ -98,7 +98,7 @@ function Hero() {
                 <div className={`transition-all duration-700 ${inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"}`}>
                     <SectionLabel>Suprimentos de obra, sem telefone ocupado</SectionLabel>
                     <h1 className="mt-4 text-5xl font-extrabold leading-[1.05] tracking-tight text-[#1C1917] md:text-6xl">
-                        Cotar obra ainda é trabalho braçal.{" "}
+                        Cotar Materiais ainda é trabalho braçal.{" "}
                         <span className="relative inline-block">
                             <span className="relative z-10">Era.</span>
                             <span className="absolute inset-x-0 bottom-1 z-0 h-[45%] bg-[#F97316]/40" aria-hidden />
@@ -106,7 +106,7 @@ function Hero() {
                     </h1>
                     <p className="mt-6 max-w-xl text-lg leading-relaxed text-[#44403C]">
                         A Comprar e Construir pega sua lista de materiais, cota com fornecedores da região e devolve o
-                        mapa comparativo pronto — no mesmo formato que suprimentos usa há mais de 30 anos. Você compara, clica,
+                        mapa comparativo pronto, tecnica utilizada há mais de 30 anos pela Cotar e Construir. Você compara, clica,
                         e a ordem de compra sai formal, com aceite e data. Economia de até{" "}
                         <span className="font-mono font-bold text-[#15803D]">31%</span>, demonstrada linha a linha.
                     </p>
