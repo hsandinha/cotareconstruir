@@ -209,12 +209,12 @@ function Dor() {
                 </h2>
                 <p className="mt-5 max-w-2xl text-lg leading-relaxed text-[#44403C]">
                     Cotar do jeito antigo é caçar fornecedor no telefone, montar comparativo na mão e torcer para não
-                    ter erro de unidade. No fim, ninguém compara nada de verdade — compara-se o que deu tempo. É aí que
+                    ter erro de unidade. No fim, ninguém compara nada de verdade: compara-se o que deu tempo. É aí que
                     a economia vai embora sem fazer barulho.
                 </p>
                 <p className="mt-4 max-w-2xl text-lg leading-relaxed text-[#44403C]">
                     E o pior: o processo corre solto, sem dono. Sem um cadastro dos seus melhores fornecedores por
-                    grupo de insumo e por fase da obra, cada cotação começa do zero — ninguém sabe o que já foi cotado,
+                    grupo de insumo e por fase da obra, cada cotação começa do zero. Ninguém sabe o que já foi cotado,
                     com quem, por quanto. Isso não é falta de esforço.{" "}
                     <span className="font-semibold text-[#1C1917]">É falta de controle.</span>
                 </p>
@@ -240,7 +240,7 @@ function Dor() {
                     <div className="transition-all duration-700" style={{ transitionDelay: "150ms", opacity: inView ? 1 : 0, transform: inView ? "rotate(2deg)" : "rotate(7deg) translateY(40px)" }}>
                         <div className="rounded-sm bg-[#FEF3C7] p-5 shadow-[6px_6px_0_rgba(28,25,23,0.12)]">
                             <p className="font-mono text-sm font-bold uppercase text-[#92400E]">Ligar de novo p/ depósito ☎️</p>
-                            <p className="mt-2 font-mono text-xs text-[#92400E]">frete?? condições?? — perguntar CNPJ</p>
+                            <p className="mt-2 font-mono text-xs text-[#92400E]">frete?? condições?? perguntar CNPJ</p>
                             <p className="mt-4 text-right font-mono text-[10px] text-[#B45309]">seg, 7h40</p>
                         </div>
                     </div>
@@ -278,7 +278,7 @@ function Dor() {
 
 const XLSX_ROWS = [
     { cru: "CIM CP2 50kg", limpo: "Cimento CP II-E-32 50kg", grupo: "AGLOMERANTES" },
-    { cru: "areia media 20m3", limpo: "Areia média lavada — 20 m³", grupo: "AGREGADOS" },
+    { cru: "areia media 20m3", limpo: "Areia média lavada, 20 m³", grupo: "AGREGADOS" },
     { cru: "bloco ceramico 9x19", limpo: "Bloco cerâmico 9×19×39", grupo: "ALVENARIA" },
     { cru: "tubo pvc 50", limpo: "Tubo PVC solda 50mm 6m", grupo: "HIDRÁULICA" },
     { cru: "vergalhao 10", limpo: "Vergalhão CA-50 10mm 12m", grupo: "AÇOS" },
@@ -297,10 +297,10 @@ function Lista() {
                 <div className="mx-auto w-full max-w-6xl">
                     <SectionLabel>Passo 1 · a lista</SectionLabel>
                     <h2 className="mt-3 max-w-3xl text-3xl font-extrabold tracking-tight text-[#1C1917] md:text-5xl">
-                        Chegue com a planilha que você já usa — do jeito que ela está.
+                        Chegue com a planilha que você já usa, do jeito que ela está.
                     </h2>
                     <p className="mt-5 max-w-2xl text-lg leading-relaxed text-[#44403C]">
-                        Importe seu Excel do jeito que ele está — o sistema identifica o grupo de cada material
+                        Importe seu Excel do jeito que ele está. O sistema identifica o grupo de cada material
                         automaticamente. Ou monte a lista no catálogo com mais de{" "}
                         <span className="font-mono font-bold text-[#1C1917]">19.000 materiais</span>, navegando pelas
                         fases da obra: da fundação ao acabamento, sem redigitar nada.
@@ -310,7 +310,7 @@ function Lista() {
                         {/* Excel cru */}
                         <div className="rounded-sm border border-[#D6D3D1] bg-white p-4 shadow-sm">
                             <p className="border-b border-[#D6D3D1] pb-2 font-mono text-[10px] uppercase tracking-widest text-[#78716C]">
-                                minha_lista.xlsx — como chegou
+                                minha_lista.xlsx (como chegou)
                             </p>
                             <div className="mt-3 space-y-2">
                                 {XLSX_ROWS.map((row, i) => {
@@ -397,7 +397,7 @@ function Madrugada() {
                     Enquanto você dorme, sua cotação bate na porta dos fornecedores da região.
                 </h2>
                 <p className="mt-5 max-w-2xl text-lg leading-relaxed text-[#44403C]">
-                    O disparo é automático, por grupo de insumo, direto no WhatsApp de quem vende — um toque na mensagem
+                    O disparo é automático, por grupo de insumo, direto no WhatsApp de quem vende. Um toque na mensagem
                     e ele está dentro da cotação. Ele responde preço, frete, a condição de pagamento que ele quiser
                     (&ldquo;28/56 dias&rdquo;), anexa ficha técnica. Agregado ele cota por tonelada; a conversão para m³
                     a plataforma faz.
@@ -483,7 +483,7 @@ function SeusFornecedores() {
                 </h2>
                 <p className="mt-5 max-w-2xl text-lg leading-relaxed text-[#44403C]">
                     Aquele fornecedor em quem você confia há anos não fica de fora: cadastre os seus melhores,
-                    organizados por grupo de insumo e fase da obra, e eles passam a receber as suas cotações — lado a
+                    organizados por grupo de insumo e fase da obra, e eles passam a receber as suas cotações, lado a
                     lado com a rede qualificada da Comprar e Construir, no mesmo mapa e nas mesmas regras.
                 </p>
 
@@ -494,7 +494,7 @@ function SeusFornecedores() {
                         style={{ opacity: inView ? 1 : 0, transform: inView ? "none" : "translateX(-32px)" }}
                     >
                         <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#9A3412]">
-                            ★ sua carteira — você cadastra
+                            ★ sua carteira: você cadastra
                         </p>
                         <div className="mt-3 space-y-2">
                             {CARTEIRA_CHIPS.map((chip) => (
@@ -505,7 +505,7 @@ function SeusFornecedores() {
                             ))}
                         </div>
                         <p className="mt-3 text-sm text-[#57534E]">
-                            Organizados por grupo e por fase — nunca mais &ldquo;tá no celular antigo&rdquo;.
+                            Organizados por grupo e por fase. Nunca mais &ldquo;tá no celular antigo&rdquo;.
                         </p>
                     </div>
 
@@ -568,7 +568,7 @@ function Etica() {
                 <p className="mt-6 max-w-3xl text-lg leading-relaxed text-[#D6D3D1]">
                     Fomento à concorrência sem ferir a ética entre parceiros fornecedores: os preços chegam anônimos,
                     sem assédio comercial nem leilão predatório. Só o fornecedor que cota todos os itens com o melhor
-                    preço total tem o nome revelado no mapa —{" "}
+                    preço total tem o nome revelado no mapa. É a{" "}
                     <span className="bg-[#F97316]/30 px-1 font-semibold text-white">revelação por mérito</span>. No
                     fechamento, cliente e fornecedor se apresentam de verdade.
                 </p>
@@ -740,7 +740,7 @@ function MapaCentral() {
                     </div>
 
                     <p className="mt-6 max-w-2xl text-base leading-relaxed text-[#44403C]">
-                        Unitário, total, frete e condições — lado a lado, sem truque. Você enxerga onde cada real
+                        Unitário, total, frete e condições, lado a lado, sem truque. Você enxerga onde cada real
                         está e quanto deixa de gastar: entre a pior e a melhor proposta, a diferença chega a{" "}
                         <span className="font-mono font-bold text-[#15803D]">até 31%</span>.
                     </p>
@@ -765,7 +765,7 @@ function OrdemDeCompra() {
                     Um clique e vira ordem de compra. Com data, aceite e nome dos dois lados.
                 </h2>
                 <p className="mt-5 max-w-2xl text-lg leading-relaxed text-[#44403C]">
-                    A OC sai formal: dados completos de fornecedor e cliente, autorização sua, aceite dele — tudo
+                    A OC sai formal: dados completos de fornecedor e cliente, autorização sua, aceite dele, tudo
                     datado. No fechamento, os dois lados se revelam. Daí em diante você acompanha faturamento, separação
                     e entrega em um só lugar, 100% transparente, até o material bater no canteiro.
                 </p>
@@ -847,7 +847,7 @@ function OrdemDeCompra() {
                                     <div>
                                         <p className="text-sm font-semibold text-[#1C1917]">
                                             {step.label}
-                                            <span className="sr-only">{step.done ? " — concluído" : " — pendente"}</span>
+                                            <span className="sr-only">{step.done ? ", concluído" : ", pendente"}</span>
                                         </p>
                                         <p className="font-mono text-[11px] text-[#78716C]">{step.data}</p>
                                     </div>
@@ -894,7 +894,7 @@ function Contracapa() {
 
                 <p className="mt-10 max-w-3xl text-lg leading-relaxed text-[#D6D3D1]">
                     Quem compra obra passou a vida negociando no grito e conferindo no olho. A mudança não é só o número
-                    no fim do mês — é decidir com o mapa aberto na mesa. São mais de 30 anos de suprimentos destilados
+                    no fim do mês. É decidir com o mapa aberto na mesa. São mais de 30 anos de suprimentos destilados
                     num processo que qualquer equipe opera no primeiro dia.
                 </p>
 
@@ -938,9 +938,9 @@ function Cta() {
                     Monte sua primeira lista. A cotação a gente dispara hoje.
                 </h2>
                 <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-[#D6D3D1]">
-                    Suba sua planilha ou busque no catálogo — em minutos os fornecedores da sua região estão cotando, e
+                    Suba sua planilha ou busque no catálogo. Em minutos os fornecedores da sua região estão cotando, e
                     a primeira cotação já sai comparada no mapa. Fornecedor de materiais? Entre para a rede: aqui a
-                    disputa é no preço, não no assédio — e quem ganha, ganha pelo mérito.
+                    disputa é na Qualidade e preço, não no assédio. E quem ganha, ganha pelo mérito.
                 </p>
 
                 {/* Primeira linha de uma lista vazia */}
