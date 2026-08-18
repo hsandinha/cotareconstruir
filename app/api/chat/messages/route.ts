@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { analyzeChatMessage } from '@/lib/chatModeration';
-import { getSupplierAccessOwnerUserId, listUserSupplierAccess, userHasSupplierAccess } from '@/lib/supplierAccessServer';
+import { getSupplierAccessUserIds, listUserSupplierAccess, userHasSupplierAccess } from '@/lib/supplierAccessServer';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
@@ -37,7 +37,7 @@ async function getAuthUser(req: NextRequest) {
 function deniedChatAccess() {
     return {
         allowed: false,
-        recipientId: null as string | null,
+        recipientIds: [] as string[],
         clienteId: null as string | null,
         fornecedorId: null as string | null,
         cotacaoId: null as string | null,
@@ -89,13 +89,14 @@ async function resolveChatAccess(roomId: string, userId: string, requestedFornec
             return deniedChatAccess();
         }
 
-        const supplierUserId = await getSupplierAccessOwnerUserId(supabaseAdmin, fornecedorId);
-        if (!supplierUserId) {
+        const supplierUserIds = await getSupplierAccessUserIds(supabaseAdmin, fornecedorId);
+        if (supplierUserIds.length === 0) {
             return deniedChatAccess();
         }
 
         const isClient = userId === cotacao.user_id;
-        const isSupplier = userId === supplierUserId;
+        // Multiempresa: qualquer usuário vinculado ao fornecedor participa do chat
+        const isSupplier = supplierUserIds.includes(userId);
 
         if (!isClient && !isSupplier) {
             return deniedChatAccess();
@@ -103,7 +104,7 @@ async function resolveChatAccess(roomId: string, userId: string, requestedFornec
 
         return {
             allowed: true,
-            recipientId: isClient ? supplierUserId : cotacao.user_id,
+            recipientIds: isClient ? supplierUserIds : [cotacao.user_id],
             clienteId: cotacao.user_id,
             fornecedorId,
             cotacaoId: cotacao.id,
@@ -123,17 +124,17 @@ async function resolveChatAccess(roomId: string, userId: string, requestedFornec
         }
 
         const clientId = pedido.user_id;
-        const supplierUserId = pedido.fornecedor_id
-            ? await getSupplierAccessOwnerUserId(supabaseAdmin, pedido.fornecedor_id)
-            : null;
+        const supplierUserIds = pedido.fornecedor_id
+            ? await getSupplierAccessUserIds(supabaseAdmin, pedido.fornecedor_id)
+            : [];
 
         const isClient = userId === clientId;
-        const isSupplier = !!supplierUserId && userId === supplierUserId;
+        const isSupplier = supplierUserIds.includes(userId);
 
         if (isClient || isSupplier) {
             return {
                 allowed: true,
-                recipientId: isClient ? supplierUserId : clientId,
+                recipientIds: isClient ? supplierUserIds : [clientId],
                 clienteId: clientId,
                 fornecedorId: pedido.fornecedor_id || null,
                 cotacaoId: pedido.cotacao_id || null,
@@ -169,15 +170,15 @@ async function resolveChatAccess(roomId: string, userId: string, requestedFornec
             return deniedChatAccess();
         }
 
-        const supplierUserId = await getSupplierAccessOwnerUserId(supabaseAdmin, requestedSupplierId);
-        if (!supplierUserId) {
+        const supplierUserIds = await getSupplierAccessUserIds(supabaseAdmin, requestedSupplierId);
+        if (supplierUserIds.length === 0) {
             return deniedChatAccess();
         }
 
         if (isClient) {
             return {
                 allowed: true,
-                recipientId: supplierUserId,
+                recipientIds: supplierUserIds,
                 clienteId: cotacao.user_id,
                 fornecedorId: requestedSupplierId,
                 cotacaoId: cotacao.id,
@@ -185,14 +186,15 @@ async function resolveChatAccess(roomId: string, userId: string, requestedFornec
             };
         }
 
+        // Basta ter acesso ao fornecedor: exigir ser o titular bloqueava usuários secundários
         const canUseRequestedSupplier = await userHasSupplierAccess(supabaseAdmin, userId, requestedSupplierId);
-        if (!canUseRequestedSupplier || supplierUserId !== userId) {
+        if (!canUseRequestedSupplier) {
             return deniedChatAccess();
         }
 
         return {
             allowed: true,
-            recipientId: cotacao.user_id,
+            recipientIds: [cotacao.user_id],
             clienteId: cotacao.user_id,
             fornecedorId: requestedSupplierId,
             cotacaoId: cotacao.id,
@@ -209,10 +211,10 @@ async function resolveChatAccess(roomId: string, userId: string, requestedFornec
             .maybeSingle();
 
         if (supplierProposal?.fornecedor_id) {
-            const supplierUserId = await getSupplierAccessOwnerUserId(supabaseAdmin, supplierProposal.fornecedor_id);
+            const supplierUserIds = await getSupplierAccessUserIds(supabaseAdmin, supplierProposal.fornecedor_id);
             return {
                 allowed: true,
-                recipientId: supplierUserId || null,
+                recipientIds: supplierUserIds,
                 clienteId: cotacao.user_id,
                 fornecedorId: supplierProposal.fornecedor_id,
                 cotacaoId: cotacao.id,
@@ -222,7 +224,7 @@ async function resolveChatAccess(roomId: string, userId: string, requestedFornec
 
         return {
             allowed: true,
-            recipientId: null as string | null,
+            recipientIds: [] as string[],
             clienteId: cotacao.user_id,
             fornecedorId: null as string | null,
             cotacaoId: cotacao.id,
@@ -249,7 +251,7 @@ async function resolveChatAccess(roomId: string, userId: string, requestedFornec
 
     return {
         allowed: true,
-        recipientId: cotacao.user_id,
+        recipientIds: [cotacao.user_id],
         clienteId: cotacao.user_id,
         fornecedorId: matchedSupplierIds[0],
         cotacaoId: cotacao.id,
@@ -424,7 +426,9 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        if (access.recipientId) {
+        // Notifica todos os destinatários (um fornecedor pode ter vários usuários)
+        const recipientIds = (access.recipientIds || []).filter((id) => id && id !== user.id);
+        if (recipientIds.length > 0) {
             // Resolve sender name for notification
             let senderName = '';
             const { data: senderData } = await supabaseAdmin
@@ -434,17 +438,23 @@ export async function POST(req: NextRequest) {
                 .single();
             senderName = senderData?.nome || senderData?.email || '';
 
-            const link = await buildChatNotificationLink(access.recipientId, roomId, user.id, senderName, access.fornecedorId);
-            await supabaseAdmin
+            const notifications = await Promise.all(recipientIds.map(async (recipientId) => ({
+                user_id: recipientId,
+                titulo: 'Nova mensagem no chat',
+                mensagem: `Nova mensagem de ${senderName || 'um usuário'} em uma negociação.`,
+                tipo: 'info',
+                lida: false,
+                link: await buildChatNotificationLink(recipientId, roomId, user.id, senderName, access.fornecedorId),
+            })));
+
+            const { error: notifyError } = await supabaseAdmin
                 .from('notificacoes')
-                .insert({
-                    user_id: access.recipientId,
-                    titulo: 'Nova mensagem no chat',
-                    mensagem: `Nova mensagem de ${senderName || 'um usuário'} em uma negociação.`,
-                    tipo: 'info',
-                    lida: false,
-                    link
-                });
+                .insert(notifications);
+
+            // A mensagem já foi gravada: falha de notificação não pode derrubar o envio
+            if (notifyError) {
+                console.error('Erro ao notificar destinatários do chat:', notifyError);
+            }
         }
 
         return NextResponse.json({ success: true, data: inserted });

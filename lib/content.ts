@@ -149,7 +149,7 @@ export const footerLinks = {
     { label: "Ajuda / FAQ", href: "/ajuda" },
   ],
   company: [
-    { label: "Sobre Nós", href: "/#hero" },
+    { label: "Sobre Nós", href: "/sobre" },
     { label: "Termos de Uso", href: "/termos" },
     { label: "Política de Privacidade", href: "/privacidade" },
   ],

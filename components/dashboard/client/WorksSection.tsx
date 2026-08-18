@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/useAuth";
 import { formatCepBr } from "../../../lib/utils";
 import { useConfirmModal } from "../../ConfirmModal";
 import { useToast } from "@/components/ToastProvider";
+import { dedupeObraEtapas, etapaJaNoCronograma } from "@/lib/obraEtapas";
 import {
     Building2, MapPin, Calendar, Clock, Plus, Pencil, Trash2, ChevronDown, ChevronUp,
     CheckCircle2, Circle, AlertCircle, Loader2, Save, X, Search, Eye, EyeOff
@@ -187,6 +188,10 @@ export function ClientWorksSection() {
                     }
                     etapasPorObra[etapa.obra_id].push(etapa);
                 });
+                // Bases anteriores à trava de unicidade podem ter a mesma fase repetida
+                Object.keys(etapasPorObra).forEach((obraId) => {
+                    etapasPorObra[obraId] = dedupeObraEtapas(etapasPorObra[obraId]);
+                });
                 setObraEtapas(etapasPorObra);
             }
         } catch (error) {
@@ -281,7 +286,7 @@ export function ClientWorksSection() {
         if (!fase) return;
 
         // Evita duplicidade: cada fase entra uma única vez no cronograma
-        const jaExiste = (obraEtapas[selectedObraId] || []).some(et => et.fase_id === etapaForm.fase_id);
+        const jaExiste = etapaJaNoCronograma(obraEtapas[selectedObraId], etapaForm.fase_id, fase.nome);
         if (jaExiste) {
             showToast("error", `A fase "${fase.nome}" já está no cronograma desta obra.`);
             return;
@@ -323,9 +328,15 @@ export function ClientWorksSection() {
 
             resetEtapaForm();
             await loadData();
-        } catch (error) {
-            console.error("Erro ao adicionar etapa:", error);
-            showToast("error", "Erro ao adicionar etapa.");
+        } catch (error: any) {
+            // 23505 = índice único do banco barrou a fase repetida (duplo clique, outra aba)
+            if (error?.code === '23505') {
+                showToast("error", `A fase "${fase.nome}" já está no cronograma desta obra.`);
+                await loadData();
+            } else {
+                console.error("Erro ao adicionar etapa:", error);
+                showToast("error", "Erro ao adicionar etapa.");
+            }
         } finally {
             setSavingEtapa(false);
         }

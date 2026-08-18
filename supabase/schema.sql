@@ -380,7 +380,7 @@ CREATE TABLE public.pedidos (
     obra_id UUID REFERENCES public.obras(id) ON DELETE SET NULL,
     
     numero TEXT UNIQUE,
-    status TEXT DEFAULT 'pendente' CHECK (status IN ('pendente', 'confirmado', 'em_preparacao', 'enviado', 'entregue', 'cancelado')),
+    status TEXT DEFAULT 'pendente' CHECK (status IN ('pendente', 'aprovado', 'confirmado', 'em_preparacao', 'enviado', 'entregue', 'cancelado')),
     
     valor_total DECIMAL(12,2) NOT NULL,
     impostos DECIMAL(12,2) DEFAULT 0,

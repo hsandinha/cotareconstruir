@@ -6,7 +6,7 @@ import {
 } from '@/lib/supplierApiErrors';
 
 const QUOTE_VISIBLE_STATUSES = new Set(['enviada', 'respondida', 'fechada']);
-const ORDER_STATUSES = new Set(['pendente', 'confirmado', 'em_preparacao', 'enviado', 'entregue', 'cancelado']);
+const ORDER_STATUSES = new Set(['pendente', 'aprovado', 'confirmado', 'em_preparacao', 'enviado', 'entregue', 'cancelado']);
 
 function parseIsoDate(value: unknown, field: string) {
     if (value === undefined || value === null || value === '') return null;
@@ -243,7 +243,7 @@ export async function upsertSupplierProposal(
 
         if (pedidoError) throw pedidoError;
         linkedPedido = pedidoData || null;
-        canEditProposal = !!linkedPedido && ['pendente', 'confirmado'].includes(linkedPedido.status);
+        canEditProposal = !!linkedPedido && ['pendente', 'aprovado', 'confirmado'].includes(linkedPedido.status);
     }
 
     if (!canEditProposal) {
@@ -375,7 +375,7 @@ export async function upsertSupplierProposal(
             });
     }
 
-    if (linkedPedido && ['pendente', 'confirmado'].includes(linkedPedido.status)) {
+    if (linkedPedido && ['pendente', 'aprovado', 'confirmado'].includes(linkedPedido.status)) {
         await supabase
             .from('pedidos')
             .update({
@@ -510,7 +510,9 @@ export async function updateSupplierOrderStatus(
         const parsedDate = parseIsoDate(params.dataPrevisaoEntrega, 'data_previsao_entrega');
         updateData.data_previsao_entrega = parsedDate?.slice(0, 10);
     }
-    if (status === 'confirmado') updateData.data_confirmacao = new Date().toISOString();
+    if ((status === 'aprovado' || status === 'confirmado') && !pedido?.data_confirmacao) {
+        updateData.data_confirmacao = new Date().toISOString();
+    }
     if (status === 'entregue') updateData.data_entrega = new Date().toISOString();
 
     if (Object.keys(summaryUpdate).length > 0) {

@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect, useRef, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
+import { dedupeObraEtapas } from "@/lib/obraEtapas";
 import { sendEmail } from "../../../app/actions/email";
 import {
     buildCsv,
@@ -242,6 +243,27 @@ export function ClientSolicitationSection() {
             .normalize("NFD")
             .replace(/[\u0300-\u036f]/g, "");
 
+    /**
+     * "Produto-base" de um item importado: os primeiros termos do nome até a
+     * primeira medida/código (ex.: "Cabo flex 750V 25mm2 PR" → "cabo flex").
+     * Serve para aplicar o mesmo grupo de insumo a todas as variações de uma vez.
+     */
+    const baseProdutoKey = (nome: string | null | undefined) => {
+        const tokens = normalizeText(nome)
+            .replace(/[^a-z0-9\s]/g, " ")
+            .split(/\s+/)
+            .filter(Boolean);
+
+        const semMedida: string[] = [];
+        for (const token of tokens) {
+            if (/\d/.test(token)) break;
+            semMedida.push(token);
+        }
+
+        const base = semMedida.length >= 2 ? semMedida : tokens.slice(0, 2);
+        return base.join(" ");
+    };
+
     const escapeIlikePattern = (value: string) =>
         value.replace(/[\\%_]/g, "");
 
@@ -418,8 +440,7 @@ export function ClientSolicitationSection() {
             if (error) {
                 console.error("Erro ao carregar etapas:", error);
             }
-            console.log("Etapas carregadas:", data);
-            setObraEtapas(data || []);
+            setObraEtapas(dedupeObraEtapas(data));
         };
 
         loadObraEtapas();
@@ -1160,6 +1181,64 @@ export function ClientSolicitationSection() {
             setUploadingList(false);
         }
     };
+
+    /**
+     * Define o grupo de uma linha do modal.
+     *
+     * O valor é lido ANTES do setState: o updater do React roda depois do
+     * handler e, num modal com dezenas de linhas, o <select> controlado já
+     * podia ter voltado ao valor antigo ("") quando o updater lia
+     * e.target.value — por isso a seleção "não pegava" e o contador
+     * ficava travado.
+     */
+    const setGroupFixRowGroup = (index: number, grupo: string) => {
+        setGroupFixRows(prev => prev
+            ? prev.map((r, i) => (i === index ? { ...r, grupo } : r))
+            : prev
+        );
+    };
+
+    /** Aplica o grupo a todas as variações do mesmo produto-base ainda sem grupo. */
+    const applyGroupToSimilarRows = (index: number) => {
+        setGroupFixRows(prev => {
+            if (!prev) return prev;
+            const origem = prev[index];
+            if (!origem?.grupo) return prev;
+
+            const base = baseProdutoKey(origem.nome);
+            if (!base) return prev;
+
+            return prev.map((r, i) => {
+                if (i === index || r.grupo) return r;
+                return baseProdutoKey(r.nome) === base ? { ...r, grupo: origem.grupo } : r;
+            });
+        });
+    };
+
+    /** Aplica o grupo a todas as linhas ainda sem grupo, independente do produto. */
+    const applyGroupToAllRows = (grupo: string) => {
+        if (!grupo) return;
+        setGroupFixRows(prev => prev
+            ? prev.map(r => (r.grupo ? r : { ...r, grupo }))
+            : prev
+        );
+    };
+
+    /** Quantas linhas sem grupo seriam preenchidas por "aplicar aos semelhantes". */
+    const countSimilarPendingRows = (index: number) => {
+        if (!groupFixRows) return 0;
+        const origem = groupFixRows[index];
+        if (!origem?.grupo) return 0;
+        const base = baseProdutoKey(origem.nome);
+        if (!base) return 0;
+        return groupFixRows.filter((r, i) => i !== index && !r.grupo && baseProdutoKey(r.nome) === base).length;
+    };
+
+    /** Options do seletor de grupo: memoizadas e reaproveitadas por todas as linhas. */
+    const grupoOptionElements = useMemo(
+        () => availableGroups.map(g => <option key={g} value={g}>{g}</option>),
+        [availableGroups]
+    );
 
     // Confirma o modal de correção: adiciona os itens cujo grupo foi escolhido
     const confirmGroupFixRows = () => {
@@ -2664,6 +2743,25 @@ export function ClientSolicitationSection() {
                             </button>
                         </div>
 
+                        {groupFixRows.some(r => !r.grupo) && (
+                            <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-5 py-3">
+                                <span className="text-xs font-medium text-slate-600">
+                                    Aplicar a todos os {groupFixRows.filter(r => !r.grupo).length} itens sem grupo:
+                                </span>
+                                <select
+                                    value=""
+                                    onChange={e => {
+                                        const grupo = e.target.value;
+                                        applyGroupToAllRows(grupo);
+                                    }}
+                                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                >
+                                    <option value="">Escolher grupo...</option>
+                                    {grupoOptionElements}
+                                </select>
+                            </div>
+                        )}
+
                         <div className="p-5 space-y-3 overflow-y-auto">
                             {groupFixRows.map((row, index) => (
                                 <div key={index} className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3">
@@ -2678,19 +2776,35 @@ export function ClientSolicitationSection() {
                                             )}
                                         </p>
                                     </div>
-                                    <select
-                                        value={row.grupo}
-                                        onChange={e => setGroupFixRows(prev => prev
-                                            ? prev.map((r, i) => i === index ? { ...r, grupo: e.target.value } : r)
-                                            : prev
-                                        )}
-                                        className={`rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 ${row.grupo ? 'border-slate-200 text-slate-700' : 'border-amber-300 bg-amber-50 text-amber-800'}`}
-                                    >
-                                        <option value="">Escolher grupo...</option>
-                                        {availableGroups.map(g => (
-                                            <option key={g} value={g}>{g}</option>
-                                        ))}
-                                    </select>
+                                    <div className="flex flex-col items-start gap-1">
+                                        <select
+                                            value={row.grupo}
+                                            onChange={e => {
+                                                // Lê o valor antes do setState: o updater roda
+                                                // depois do handler e o select controlado já
+                                                // pode ter voltado ao valor anterior.
+                                                const grupo = e.target.value;
+                                                setGroupFixRowGroup(index, grupo);
+                                            }}
+                                            className={`rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 ${row.grupo ? 'border-slate-200 text-slate-700' : 'border-amber-300 bg-amber-50 text-amber-800'}`}
+                                        >
+                                            <option value="">Escolher grupo...</option>
+                                            {grupoOptionElements}
+                                        </select>
+                                        {(() => {
+                                            const semelhantes = countSimilarPendingRows(index);
+                                            if (semelhantes === 0) return null;
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => applyGroupToSimilarRows(index)}
+                                                    className="text-[11px] font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                                                >
+                                                    Aplicar a +{semelhantes} item(ns) semelhante(s)
+                                                </button>
+                                            );
+                                        })()}
+                                    </div>
                                     <button
                                         onClick={() => setGroupFixRows(prev => {
                                             const next = (prev || []).filter((_, i) => i !== index);
@@ -2706,24 +2820,39 @@ export function ClientSolicitationSection() {
                         </div>
 
                         <div className="flex items-center justify-between gap-3 border-t border-slate-200 p-5">
-                            <p className="text-xs text-slate-500">
-                                {groupFixRows.filter(r => r.grupo).length} de {groupFixRows.length} com grupo escolhido
-                            </p>
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setGroupFixRows(null)}
-                                    className="rounded-xl px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
-                                >
-                                    Descartar
-                                </button>
-                                <button
-                                    onClick={confirmGroupFixRows}
-                                    className="flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
-                                >
-                                    <Plus className="w-4 h-4" />
-                                    Adicionar ao carrinho
-                                </button>
-                            </div>
+                            {(() => {
+                                const comGrupo = groupFixRows.filter(r => r.grupo).length;
+                                const semGrupo = groupFixRows.length - comGrupo;
+                                return (
+                                    <>
+                                        <p className="text-xs text-slate-500">
+                                            {comGrupo} de {groupFixRows.length} com grupo escolhido
+                                            {semGrupo > 0 && (
+                                                <span className="block text-amber-600">
+                                                    {semGrupo} item(ns) sem grupo serão descartados.
+                                                </span>
+                                            )}
+                                        </p>
+                                        <div className="flex gap-3">
+                                            <button
+                                                onClick={() => setGroupFixRows(null)}
+                                                className="rounded-xl px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                                            >
+                                                Descartar
+                                            </button>
+                                            <button
+                                                onClick={confirmGroupFixRows}
+                                                disabled={comGrupo === 0}
+                                                title={comGrupo === 0 ? "Escolha o grupo de pelo menos um item" : undefined}
+                                                className="flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                <Plus className="w-4 h-4" />
+                                                {comGrupo > 0 ? `Adicionar ${comGrupo} ao carrinho` : "Adicionar ao carrinho"}
+                                            </button>
+                                        </div>
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>

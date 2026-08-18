@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
                     .single();
 
                 linkedPedido = pedidoData || null;
-                canEditProposal = !!linkedPedido && ['pendente', 'confirmado'].includes(linkedPedido.status);
+                canEditProposal = !!linkedPedido && ['pendente', 'aprovado', 'confirmado'].includes(linkedPedido.status);
             }
 
             if (!canEditProposal) {
@@ -238,7 +238,7 @@ export async function POST(req: NextRequest) {
             }
 
             // 2.1 If there's a linked won order still negotiable, sync pedido with updated negotiated values
-            const shouldSyncPedido = linkedPedido && ['pendente', 'confirmado'].includes(linkedPedido.status);
+            const shouldSyncPedido = linkedPedido && ['pendente', 'aprovado', 'confirmado'].includes(linkedPedido.status);
             if (shouldSyncPedido) {
                 const pedidoId = linkedPedido.id;
 

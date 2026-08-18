@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 
 import { ChatInterface } from "../../ChatInterface";
+import { printOrdemCompra, formatPrazoEntrega, formatDataEntrega, type OrdemCompraDoc } from "@/lib/ordemCompraDoc";
 import { ReviewModal } from "../../ReviewModal";
 import { getQuotationStatusBadge } from "./quotationStatus";
 import { supabase } from "@/lib/supabaseAuth";
@@ -96,6 +97,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 if (cotacaoData) {
                     setQuotation({
                         id: cotacaoData.id,
+                        numero: cotacaoData.numero || null,
                         obra_id: cotacaoData.obra_id,
                         status: cotacaoData.status,
                         clientCode: cotacaoData.user_id,
@@ -323,10 +325,120 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         if (orderStatus === 'confirmado') {
             return { label: 'Em faturamento', color: 'bg-purple-100 text-purple-800' };
         }
+        if (orderStatus === 'aprovado') {
+            return { label: 'Aprovado pelo fornecedor', color: 'bg-orange-100 text-orange-800' };
+        }
         if (orderStatus === 'cancelado') {
             return { label: 'Cancelado', color: 'bg-red-100 text-red-800' };
         }
         return { label: 'Aguardando confirmação', color: 'bg-yellow-100 text-yellow-800' };
+    };
+
+    // ── Ordem de Compra imprimível ───────────────────────────────────
+    const enderecoCliente = () => [
+        [clientInfo?.logradouro, clientInfo?.numero].filter(Boolean).join(', '),
+        clientInfo?.complemento,
+        clientInfo?.bairro,
+        [clientInfo?.cidade, clientInfo?.estado].filter(Boolean).join('/'),
+        clientInfo?.cep ? `CEP: ${clientInfo.cep}` : ''
+    ].filter(Boolean).join(' - ');
+
+    const enderecoObra = () => [
+        [obraInfo?.logradouro, obraInfo?.numero].filter(Boolean).join(', '),
+        obraInfo?.complemento,
+        obraInfo?.bairro,
+        [obraInfo?.cidade, obraInfo?.estado].filter(Boolean).join('/'),
+        obraInfo?.cep ? `CEP: ${obraInfo.cep}` : ''
+    ].filter(Boolean).join(' - ');
+
+    const compradorParaOc = () => ({
+        nome: clientInfo?.razao_social || clientInfo?.nome || 'Cliente',
+        documento: clientInfo?.cpf_cnpj || null,
+        email: clientInfo?.email || null,
+        telefone: clientInfo?.whatsapp || clientInfo?.telefone || null,
+        endereco: enderecoCliente(),
+    });
+
+    const obraParaOc = () => ({
+        nome: obraInfo?.nome || null,
+        endereco: enderecoObra() || enderecoCliente(),
+        horarioEntrega: obraInfo?.horario_entrega || null,
+    });
+
+    const itensParaOc = (items: any[]) => (items || []).map((item: any) => ({
+        descricao: item.name || item.descricao || item.nome,
+        quantidade: item.quantity ?? item.quantidade,
+        unidade: item.unidade || item.unit || '',
+        precoUnitario: item.unitPrice,
+        total: item.total,
+    }));
+
+    /** OC de um subpedido já confirmado (dados vindos de pedidos). */
+    const handlePrintOcPedido = (order: any) => {
+        const doc: OrdemCompraDoc = {
+            numero: String(order.numero || order.id || '').slice(0, 20),
+            emitidaEm: order.createdAt || order.dataConfirmacao || new Date().toISOString(),
+            statusLabel: getOrderStatusMeta(order.status).label,
+            comprador: compradorParaOc(),
+            fornecedor: {
+                nome: order.supplierDetails?.name || order.supplierName,
+                documento: order.supplierDetails?.document,
+                email: order.supplierDetails?.email,
+                telefone: order.supplierDetails?.phone,
+                endereco: order.supplierDetails?.address,
+            },
+            obra: obraParaOc(),
+            itens: itensParaOc(order.items),
+            frete: order.freight,
+            impostos: order.summary?.impostos,
+            total: order.total,
+            condicoes: {
+                pagamento: order.paymentMethod,
+                prazoEntrega: formatPrazoEntrega(order.deliveryDays),
+                previsaoEntrega: formatDataEntrega(order.dataPrevisaoEntrega),
+                observacoes: order.summary?.observacoes || null,
+            },
+        };
+
+        if (!printOrdemCompra(doc)) {
+            showToast("error", "Não foi possível abrir a Ordem de Compra para impressão.");
+        }
+    };
+
+    /** OC ainda em rascunho, montada a partir da seleção no mapa. */
+    const handlePrintOcPreview = (supplierId: string, items: any[]) => {
+        const proposal = findProposalBySupplierId(supplierId);
+        const supplierTotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
+        const freight = proposal?.freightPrice || 0;
+
+        const doc: OrdemCompraDoc = {
+            numero: `${quotation?.numero || String(orderId || '').slice(0, 8)}-${String(supplierId).slice(0, 4)}`,
+            emitidaEm: new Date().toISOString(),
+            statusLabel: 'Prévia — pedido ainda não finalizado',
+            comprador: compradorParaOc(),
+            fornecedor: {
+                nome: getDisplaySupplierName(supplierId),
+                documento: proposal?.supplierDetails?.document || null,
+                email: proposal?.supplierDetails?.email || null,
+                telefone: proposal?.supplierDetails?.phone || null,
+                endereco: proposal?.supplierDetails?.address || null,
+            },
+            obra: obraParaOc(),
+            itens: itensParaOc(items),
+            frete: freight,
+            impostos: proposal?.impostos,
+            total: supplierTotal + freight,
+            condicoes: {
+                pagamento: proposal?.paymentMethod,
+                prazoEntrega: formatPrazoEntrega(proposal?.deliveryDays),
+                previsaoEntrega: null,
+                observacoes: 'Prévia da Ordem de Compra. Os valores são confirmados ao finalizar o pedido.',
+            },
+        };
+
+        if (!printOrdemCompra(doc)) {
+            showToast("error", "Não foi possível abrir a Ordem de Compra para impressão.");
+        }
     };
 
     const getSuborderStepState = (orderStatus: string) => {
@@ -334,7 +446,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         const pickingDone = ['enviado', 'entregue'].includes(orderStatus);
         const deliveryDone = orderStatus === 'entregue';
 
-        const billingActive = orderStatus === 'confirmado' || orderStatus === 'pendente';
+        const billingActive = ['pendente', 'aprovado', 'confirmado'].includes(orderStatus);
         const pickingActive = orderStatus === 'em_preparacao';
         const deliveryActive = orderStatus === 'enviado';
 
@@ -663,6 +775,16 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                                 </span>
                                             </div>
                                         )}
+                                        <div>
+                                            <button
+                                                type="button"
+                                                onClick={() => handlePrintOcPedido(order)}
+                                                className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-gray-800"
+                                            >
+                                                <Download className="h-3.5 w-3.5" />
+                                                Baixar PDF da OC
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="p-6">
@@ -1331,9 +1453,13 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             </table>
 
                             <div className="flex justify-end">
-                                <button className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+                                <button
+                                    type="button"
+                                    onClick={() => handlePrintOcPedido(order)}
+                                    className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                                >
                                     <Download className="h-4 w-4" />
-                                    Exportar PDF
+                                    Baixar PDF da OC
                                 </button>
                             </div>
                         </div>
@@ -1447,9 +1573,13 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             </table>
 
                             <div className="flex justify-end">
-                                <button className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+                                <button
+                                    type="button"
+                                    onClick={() => handlePrintOcPreview(supplierId, items)}
+                                    className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                                >
                                     <Download className="h-4 w-4" />
-                                    Exportar PDF
+                                    Baixar PDF da OC
                                 </button>
                             </div>
                         </div>

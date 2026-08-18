@@ -35,6 +35,14 @@ function computeExpectedDeliveryDate(pedido: any): Date | null {
 }
 
 function getClientStatusNotification(status: string, pedidoNumero: string) {
+    if (status === 'aprovado') {
+        return {
+            titulo: 'Subpedido aprovado',
+            mensagem: `O fornecedor aprovou o subpedido #${pedidoNumero}.`,
+            tipo: 'success'
+        };
+    }
+
     if (status === 'confirmado') {
         return {
             titulo: 'Subpedido em faturamento',
@@ -308,7 +316,7 @@ export async function POST(req: NextRequest) {
             // Verify ownership
             const { data: pedido } = await supabaseAdmin
                 .from('pedidos')
-                .select('id, fornecedor_id, user_id, cotacao_id, numero, status, created_at, data_previsao_entrega, endereco_entrega')
+                .select('id, fornecedor_id, user_id, cotacao_id, numero, status, created_at, data_confirmacao, data_previsao_entrega, endereco_entrega')
                 .eq('id', pedido_id)
                 .eq('fornecedor_id', fornecedorId)
                 .single();
@@ -464,7 +472,8 @@ export async function POST(req: NextRequest) {
                 };
             }
 
-            if (status === 'confirmado') {
+            // A confirmação é carimbada na aprovação; 'confirmado' só preenche pedidos legados
+            if ((status === 'aprovado' || status === 'confirmado') && !(pedido as any)?.data_confirmacao) {
                 updateData.data_confirmacao = new Date().toISOString();
             }
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
+import { dedupeObraEtapas } from "@/lib/obraEtapas";
 import {
     Building2, Tag, Clock, ShoppingCart, Package,
     Loader2, AlertCircle, ChevronRight, Gift, TrendingDown, ArrowLeft
@@ -134,7 +135,7 @@ export function ClientOpportunitiesSection() {
                 .order('ordem');
 
             if (!error && data) {
-                setObraEtapas(data as ObraEtapa[]);
+                setObraEtapas(dedupeObraEtapas(data as ObraEtapa[]));
             }
         };
 

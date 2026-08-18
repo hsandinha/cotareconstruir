@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseAuth";
 import { decodeLoginRef, quotationDeepLinkPath } from "@/lib/quotationLink";
@@ -12,6 +13,7 @@ function LoginPageContent() {
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showSignupHint, setShowSignupHint] = useState(false);
     const autoRedirectRef = useRef(false);
 
     // Token enviado nos links de notificação (WhatsApp/email): ?wa=<token>
@@ -44,6 +46,38 @@ function LoginPageContent() {
             }
         });
     }, [nextPath]);
+
+    /**
+     * O Supabase responde "Invalid login credentials" para conta inexistente,
+     * senha errada e conta só com login social. Aqui perguntamos ao servidor
+     * qual é o caso real para orientar o usuário em vez de repetir o erro genérico.
+     */
+    const explainFailedLogin = async (normalizedEmail: string): Promise<string> => {
+        try {
+            const res = await fetch("/api/auth/account-status", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: normalizedEmail }),
+            });
+            const json = await res.json();
+
+            switch (json?.status) {
+                case "not_found":
+                    setShowSignupHint(true);
+                    return "Não encontramos uma conta com este e-mail. Crie sua conta gratuitamente.";
+                case "oauth_only":
+                    return "Esta conta foi criada com login do Google. Use o botão \"Entrar com Google\" abaixo.";
+                case "email_unconfirmed":
+                    return "Confirme seu e-mail antes de entrar. Verifique sua caixa de entrada e o spam.";
+                case "suspended":
+                    return "Esta conta está desativada. Fale com o suporte.";
+                default:
+                    return "Senha incorreta. Use \"Esqueci minha senha\" se precisar redefinir.";
+            }
+        } catch {
+            return "Email ou senha incorretos.";
+        }
+    };
 
     const getFriendlyErrorMessage = (errorMessage: string) => {
         if (errorMessage.includes("Invalid login credentials")) {
@@ -180,10 +214,16 @@ function LoginPageContent() {
         e.preventDefault();
         setLoading(true);
         setError(null);
+        setShowSignupHint(false);
+
+        // O Supabase não normaliza o e-mail no sign-in: espaço colado do
+        // preenchimento automático ou letra maiúscula derrubavam o login.
+        const normalizedEmail = email.trim().toLowerCase();
+        if (normalizedEmail !== email) setEmail(normalizedEmail);
 
         try {
             const { data, error } = await supabase.auth.signInWithPassword({
-                email,
+                email: normalizedEmail,
                 password,
             });
 
@@ -196,7 +236,13 @@ function LoginPageContent() {
             }
         } catch (err: any) {
             console.error(err);
-            setError(getFriendlyErrorMessage(err.message));
+            const message = String(err?.message || "");
+
+            if (message.includes("Invalid login credentials")) {
+                setError(await explainFailedLogin(normalizedEmail));
+            } else {
+                setError(getFriendlyErrorMessage(message));
+            }
             setLoading(false);
         }
     }
@@ -239,7 +285,19 @@ function LoginPageContent() {
                         />
                     </div>
 
-                    {error && <p className="text-sm text-red-400">{error}</p>}
+                    {error && (
+                        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2">
+                            <p className="text-sm text-red-300">{error}</p>
+                            {showSignupHint && (
+                                <Link
+                                    href={`/cadastro?email=${encodeURIComponent(email.trim().toLowerCase())}`}
+                                    className="mt-2 inline-block text-sm font-semibold text-blue-400 hover:text-blue-300"
+                                >
+                                    Criar minha conta →
+                                </Link>
+                            )}
+                        </div>
+                    )}
 
                     <div className="flex flex-col gap-4">
                         <button
@@ -283,6 +341,13 @@ function LoginPageContent() {
                             </svg>
                             Entrar com Google
                         </button>
+
+                        <p className="text-center text-sm text-slate-300">
+                            Ainda não tem conta?{" "}
+                            <Link href="/cadastro" className="font-semibold text-blue-400 hover:text-blue-300">
+                                Criar conta grátis
+                            </Link>
+                        </p>
 
                         <button
                             type="button"

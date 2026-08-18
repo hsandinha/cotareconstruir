@@ -108,7 +108,7 @@ function FornecedorDashboardContent() {
                 activeConsultations: cotacoesAbertas.length,
                 sentProposals: cotacoesData.filter((c: any) => c._proposta_status).length,
                 registeredMaterials: materiaisData.length,
-                approvals: pedidosData.filter((p: any) => p.status === 'confirmado' || p.status === 'entregue').length,
+                approvals: pedidosData.filter((p: any) => ['aprovado', 'confirmado', 'entregue'].includes(p.status)).length,
             });
         } catch (error) {
             console.error("Error fetching stats:", error);

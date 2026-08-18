@@ -51,12 +51,12 @@ function Thread() {
     );
 }
 
-function Counter({ target, suffix = "", prefix = "", start }: { target: number; suffix?: string; prefix?: string; start: boolean }) {
-    const value = useCountUp(target, start);
+function Counter({ target, suffix = "", prefix = "", start, decimals = 0 }: { target: number; suffix?: string; prefix?: string; start: boolean; decimals?: number }) {
+    const value = useCountUp(target, start, 1400, decimals);
     return (
         <span className="font-mono tabular-nums">
             {prefix}
-            {value.toLocaleString("pt-BR")}
+            {value.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}
             {suffix}
         </span>
     );
@@ -107,21 +107,15 @@ function Hero() {
                     <p className="mt-6 max-w-xl text-lg leading-relaxed text-[#44403C]">
                         A Comprar e Construir pega sua lista de materiais, cota com fornecedores da região e devolve o
                         mapa comparativo pronto, tecnica utilizada há mais de 30 anos pela Cotar e Construir. Você compara, clica,
-                        e a ordem de compra sai formal, com aceite e data. Economia de até{" "}
-                        <span className="font-mono font-bold text-[#15803D]">31%</span>, demonstrada linha a linha.
+                        e a ordem de compra sai formal, com aceite e data. Economia de{" "}
+                        <span className="font-mono font-bold text-[#15803D]">24,62%</span>, “Média Histórica”.
                     </p>
                     <div className="mt-8 flex flex-wrap items-center gap-4">
                         <Link
-                            href="/login"
+                            href="/cadastro"
                             className="rounded-lg bg-[#F97316] px-7 py-3.5 text-base font-bold text-[#1C1917] shadow-[4px_4px_0_#1C1917] transition-transform hover:-translate-y-0.5 hover:bg-[#FB923C]"
                         >
                             Montar minha lista
-                        </Link>
-                        <Link
-                            href="/login"
-                            className="rounded-lg border border-[#D6D3D1] px-7 py-3.5 text-base font-semibold text-[#44403C] transition-colors hover:border-[#F97316] hover:text-[#C2410C]"
-                        >
-                            Sou fornecedor
                         </Link>
                     </div>
                     <p className="mt-6 font-mono text-xs uppercase tracking-widest text-[#57534E]">
@@ -475,7 +469,7 @@ function SeusFornecedores() {
     const { ref, inView } = useInView<HTMLDivElement>(0.3);
 
     return (
-        <section className="bg-[#FAF8F5] px-6 py-24">
+        <section id="meus-fornecedores" className="bg-[#FAF8F5] px-6 py-24">
             <div ref={ref} className="mx-auto max-w-6xl">
                 <SectionLabel>Sua carteira + a nossa rede</SectionLabel>
                 <h2 className="mt-3 max-w-3xl text-3xl font-extrabold tracking-tight text-[#1C1917] md:text-5xl">
@@ -658,7 +652,7 @@ function MapaCentral() {
                                 <table className="mt-3 w-full min-w-[640px] border-collapse">
                                     <thead>
                                         <tr className="border-b border-[#D6D3D1] font-mono text-[10px] uppercase tracking-wider text-[#78716C]">
-                                            <th className="py-2 pr-3 text-left font-semibold">Item</th>
+                                            <th className="py-2 pr-3 text-left font-semibold">Descrição</th>
                                             <th className="px-2 py-2 text-center font-semibold">Qtd</th>
                                             {[0, 1, 2].map((col) => (
                                                 <th key={col} className={`px-3 py-2 text-center font-semibold ${col === WINNER_COL && reveal > 0 ? "bg-[#F97316]/[0.08]" : ""}`}>
@@ -683,7 +677,10 @@ function MapaCentral() {
                                     <tbody className="font-mono text-sm tabular-nums text-[#44403C]">
                                         {MAP_ITEMS.map((item, rowIdx) => (
                                             <tr key={item.nome} className="border-b border-[#EDE9E3]">
-                                                <td className="py-2 pr-3 font-sans text-[13px] font-medium text-[#1C1917]">{item.nome}</td>
+                                                <td className="py-2 pr-3 font-sans text-[13px] font-medium text-[#1C1917]">
+                                                    <span className="mr-2 font-mono text-[11px] font-bold text-[#78716C]">{rowIdx + 1}</span>
+                                                    {item.nome}
+                                                </td>
                                                 <td className="px-2 py-2 text-center text-[#78716C]">
                                                     {item.qtd} {item.un}
                                                 </td>
@@ -741,8 +738,8 @@ function MapaCentral() {
 
                     <p className="mt-6 max-w-2xl text-base leading-relaxed text-[#44403C]">
                         Unitário, total, frete e condições, lado a lado, sem truque. Você enxerga onde cada real
-                        está e quanto deixa de gastar: entre a pior e a melhor proposta, a diferença chega a{" "}
-                        <span className="font-mono font-bold text-[#15803D]">até 31%</span>.
+                        está e quanto deixa de gastar: entre a pior e a melhor proposta, a diferença pode chegar{" "}
+                        <span className="font-mono font-bold text-[#15803D]">acima de 30%</span>, em algumas fases da obra.
                     </p>
                 </div>
             </div>
@@ -888,28 +885,30 @@ function Contracapa() {
                         Eu não sabia quanto eu perdia. Agora eu sei quanto eu economizo.
                     </blockquote>
                     <p className="mt-6 font-mono text-xs uppercase tracking-[0.25em] text-[#A8A29E]">
-                        Comprador de obra há mais de 30 anos
+                        Gestão de Suprimentos e Compras de Materiais para Obras há mais de 30 anos
                     </p>
                 </div>
 
                 <p className="mt-10 max-w-3xl text-lg leading-relaxed text-[#D6D3D1]">
-                    Quem compra obra passou a vida negociando no grito e conferindo no olho. A mudança não é só o número
-                    no fim do mês. É decidir com o mapa aberto na mesa. São mais de 30 anos de suprimentos destilados
-                    num processo que qualquer equipe opera no primeiro dia.
+                    Quem compra materiais para obra no método tradicional passou a vida negociando no grito e
+                    conferindo no olho. A mudança não é só o número no fim do mês — é decidir com o mapa aberto na
+                    tela do computador, sem depender de “te respondo amanhã”. São mais de 30 anos de Gestão de
+                    Suprimentos e Compras destilados num processo que qualquer equipe opera no primeiro dia, sem
+                    manual e sem estagiário.
                 </p>
 
                 {/* Rodapé de relatório impresso */}
                 <div className="mt-16 border-t-4 border-double border-[#FAF8F5]/40 pt-8">
                     <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
                         {[
-                            { valor: 31, sufixo: "%", prefixo: "até ", legenda: "de economia comparando propostas" },
-                            { valor: 19000, sufixo: "+", prefixo: "", legenda: "materiais catalogados" },
-                            { valor: 30, sufixo: "+", prefixo: "", legenda: "anos de suprimentos" },
-                            { valor: 100, sufixo: "%", prefixo: "", legenda: "acompanhamento transparente" },
+                            { valor: 24.62, sufixo: "%", prefixo: "", decimais: 2, legenda: "média histórica de economia comparando propostas" },
+                            { valor: 19000, sufixo: "+", prefixo: "", decimais: 0, legenda: "materiais catalogados" },
+                            { valor: 30, sufixo: "+", prefixo: "", decimais: 0, legenda: "anos de suprimentos" },
+                            { valor: 100, sufixo: "%", prefixo: "", decimais: 0, legenda: "acompanhamento transparente" },
                         ].map((stat) => (
                             <div key={stat.legenda}>
                                 <p className="font-mono text-4xl font-bold tabular-nums md:text-5xl">
-                                    <Counter target={stat.valor} prefix={stat.prefixo} start={inView} />
+                                    <Counter target={stat.valor} prefix={stat.prefixo} decimals={stat.decimais} start={inView} />
                                     <span className="text-[#F97316]">{stat.sufixo}</span>
                                 </p>
                                 <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#A8A29E]">
@@ -925,45 +924,117 @@ function Contracapa() {
 }
 
 /* ------------------------------------------------------------------ */
-/* 9. CTA — comece pela lista                                          */
+/* 9. CTA — teste gratuito de 1 mês                                    */
 /* ------------------------------------------------------------------ */
 
+const PROCESSO = [
+    "Mais de 500 fornecedores qualificados, filtrados por três décadas de suprimentos na Grande BH e no Norte de Minas, organizados por fase e serviço da obra.",
+    "Suba sua planilha do jeito que ela está, ou monte a lista no catálogo com mais de 19.000 materiais.",
+    "Em minutos, os fornecedores da sua região começam a cotar — e a primeira proposta já aparece no Mapa Comparativo na tela do seu computador.",
+    "Mapa pronto, Ordem de Compra formal com data e aceite, e acompanhamento até o material bater no canteiro.",
+    "Suporte técnico e comercial com resposta em até 24h, de segunda a sexta, das 7h às 17h.",
+] as const;
+
+/** Condições de uso — abre ao clicar, sem sair da página. */
+function CondicoesDeUso() {
+    return (
+        <details className="mx-auto mt-6 max-w-xl text-left">
+            <summary className="cursor-pointer list-none text-center font-mono text-xs uppercase tracking-widest text-[#A8A29E] underline decoration-[#F97316] decoration-2 underline-offset-4 transition-colors hover:text-[#FAF8F5]">
+                Condições de uso
+            </summary>
+
+            <div className="mt-5 space-y-6 rounded-md border border-white/15 bg-[#1C1917] p-6 text-sm leading-relaxed text-[#D6D3D1]">
+                <div>
+                    <p className="font-semibold text-[#FAF8F5]">O que você tem no teste gratuito:</p>
+                    <ul className="mt-3 list-disc space-y-2 pl-5 marker:text-[#F97316]">
+                        <li>Cotações e fechamentos ilimitados para uma obra cadastrada.</li>
+                        <li>
+                            Possibilidade de cadastrar os fornecedores de sua preferência —{" "}
+                            <Link
+                                href="/#meus-fornecedores"
+                                className="font-semibold text-[#FAF8F5] underline decoration-[#F97316] decoration-2 underline-offset-4 hover:text-white"
+                            >
+                                saiba como
+                            </Link>
+                            .
+                        </li>
+                        <li>Suporte técnico e comercial em até 24h (seg–sex, 7h–17h), por e-mail, WhatsApp ou pela plataforma.</li>
+                        <li>Acompanhamento próximo da sua obra durante o período de lançamento, para garantir fluidez no processo.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <p className="font-semibold text-[#FAF8F5]">Sobre o lançamento:</p>
+                    <ul className="mt-3 list-disc space-y-2 pl-5 marker:text-[#F97316]">
+                        <li>O teste gratuito está limitado aos 20 primeiros construtores desta turma.</li>
+                        <li>Após preencher as vagas, novos cadastros entram em fila de espera.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <p className="font-semibold text-[#FAF8F5]">E depois dos 30 dias?</p>
+                    <ul className="mt-3 list-disc space-y-2 pl-5 marker:text-[#F97316]">
+                        <li>Optando por permanecer, o valor mensal por obra é de R$ 490,00.</li>
+                        <li>Bônus de +30 dias ao validar o resultado com um depoimento.</li>
+                        <li>Bônus de +30 dias ao indicar 3 parceiros.</li>
+                    </ul>
+                </div>
+            </div>
+        </details>
+    );
+}
+
 function Cta() {
-    const { ref, inView } = useInView<HTMLDivElement>(0.3);
+    const { ref, inView } = useInView<HTMLDivElement>(0.2);
 
     return (
         <section className="border-t border-white/10 bg-[#292524] px-6 py-28 text-[#FAF8F5]">
             <div ref={ref} className="mx-auto max-w-3xl text-center">
-                <h2 className="text-3xl font-extrabold tracking-tight md:text-5xl">
-                    Monte sua primeira lista. A cotação a gente dispara hoje.
+                <SectionLabel dark>Turma de lançamento</SectionLabel>
+
+                <h2 className="mt-4 text-3xl font-extrabold tracking-tight md:text-5xl">
+                    Teste gratuito de 1 mês
                 </h2>
-                <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-[#D6D3D1]">
-                    Suba sua planilha ou busque no catálogo. Em minutos os fornecedores da sua região estão cotando, e
-                    a primeira cotação já sai comparada no mapa. Fornecedor de materiais? Entre para a rede: aqui a
-                    disputa é na Qualidade e preço, não no assédio. E quem ganha, ganha pelo mérito.
+                <p className="mx-auto mt-5 max-w-2xl text-lg font-semibold leading-relaxed text-[#FAF8F5]">
+                    Ilimitado, sem compromisso, sem cartão e sem fidelidade.
+                </p>
+                <p className="mx-auto mt-2 max-w-2xl text-lg leading-relaxed text-[#D6D3D1]">
+                    Cadastre uma obra e compare propostas no mapa antes de decidir.
+                </p>
+                <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-[#A8A29E]">
+                    <span className="font-semibold text-[#FAF8F5]">Turma de lançamento:</span> estamos abrindo a
+                    plataforma para os 20 primeiros construtores, com acompanhamento próximo de cada obra durante o
+                    período gratuito. Depois disso, o acesso passa a ser por fila de espera.
                 </p>
 
-                {/* Primeira linha de uma lista vazia */}
+                {/* O processo, em cinco linhas de lista */}
                 <div
-                    className="mx-auto mt-10 flex max-w-xl items-center gap-3 rounded-md border border-white/20 bg-[#1C1917] px-5 py-4 text-left font-mono text-sm text-[#A8A29E] transition-all duration-700"
+                    className="mx-auto mt-10 max-w-xl rounded-md border border-white/20 bg-[#1C1917] p-6 text-left transition-all duration-700"
                     style={{ opacity: inView ? 1 : 0, transform: inView ? "none" : "translateY(12px)" }}
                 >
-                    <span className="text-[#F97316]">001</span>
-                    <span>o que sua obra precisa?</span>
-                    <span className="lp-blink ml-0.5 inline-block h-4 w-[2px] bg-[#F97316]" aria-hidden />
+                    <p className="font-mono text-xs font-bold uppercase tracking-widest text-[#F97316]">
+                        o processo é simples
+                    </p>
+                    <ul className="mt-4 space-y-3">
+                        {PROCESSO.map((linha, i) => (
+                            <li key={linha} className="flex gap-3 text-sm leading-relaxed text-[#D6D3D1]">
+                                <span className="font-mono text-xs text-[#F97316]">{String(i + 1).padStart(3, "0")}</span>
+                                <span>{linha}</span>
+                            </li>
+                        ))}
+                    </ul>
                 </div>
 
-                <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+                <div className="mt-8 flex justify-center">
                     <Link
-                        href="/login"
-                        className="rounded-lg bg-[#F97316] px-8 py-4 text-base font-bold text-[#1C1917] shadow-[4px_4px_0_rgba(0,0,0,0.4)] transition-transform hover:-translate-y-0.5 hover:bg-[#FB923C]"
+                        href="/cadastro"
+                        className="rounded-lg bg-[#F97316] px-8 py-4 text-base font-bold uppercase tracking-wide text-[#1C1917] shadow-[4px_4px_0_rgba(0,0,0,0.4)] transition-transform hover:-translate-y-0.5 hover:bg-[#FB923C]"
                     >
-                        Montar minha lista grátis
-                    </Link>
-                    <Link href="/login" className="text-base font-semibold text-[#D6D3D1] underline decoration-[#F97316] decoration-2 underline-offset-4 hover:text-white">
-                        Quero cotar como fornecedor
+                        Quero testar gratuitamente
                     </Link>
                 </div>
+
+                <CondicoesDeUso />
 
                 <p className="mt-12 font-mono text-sm italic tracking-wide text-[#A8A29E]">
                     economizamos para você<span className="text-[#F97316]">.</span>

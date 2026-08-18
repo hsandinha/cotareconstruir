@@ -48,7 +48,7 @@ export function SupplierTransactionsSection() {
     const stats = useMemo(() => {
         const total = transactions.length;
         const delivered = transactions.filter(t => t.status === 'entregue').length;
-        const inProgress = transactions.filter(t => ['confirmado', 'em_preparacao', 'enviado'].includes(t.status)).length;
+        const inProgress = transactions.filter(t => ['aprovado', 'confirmado', 'em_preparacao', 'enviado'].includes(t.status)).length;
         const totalValue = transactions.reduce((acc, t) => acc + Number(t.valor_total || 0), 0);
 
         return { total, delivered, inProgress, totalValue };
@@ -56,6 +56,7 @@ export function SupplierTransactionsSection() {
 
     const getStatusColor = (status: string) => {
         switch (status) {
+            case 'aprovado': return 'bg-orange-100 text-orange-800';
             case 'confirmado': return 'bg-green-100 text-green-800';
             case 'em_preparacao': return 'bg-yellow-100 text-yellow-800';
             case 'enviado': return 'bg-blue-100 text-blue-800';
@@ -67,6 +68,7 @@ export function SupplierTransactionsSection() {
 
     const formatStatus = (status: string) => {
         const map: Record<string, string> = {
+            aprovado: 'Aprovado',
             confirmado: 'Confirmado',
             em_preparacao: 'Em Preparação',
             enviado: 'Enviado',

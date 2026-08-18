@@ -319,25 +319,56 @@ export async function upsertUserSupplierAccessLink(
     return { created: true, id: data?.id };
 }
 
-export async function getSupplierAccessOwnerUserId(supabase: any, fornecedorId: string): Promise<string | null> {
+/**
+ * Todos os usuários com acesso a um fornecedor (N:N + ponteiro legado).
+ * O primeiro da lista é o responsável principal (is_primary, depois o mais antigo).
+ */
+export async function getSupplierAccessUserIds(supabase: any, fornecedorId: string): Promise<string[]> {
+    const ids: string[] = [];
+    const seen = new Set<string>();
+
+    const push = (value: unknown) => {
+        const id = String(value || '').trim();
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        ids.push(id);
+    };
+
     try {
-        const { data: accessRow, error } = await supabase
+        // Um fornecedor pode ter vários usuários (multiempresa): nunca usar maybeSingle aqui,
+        // que devolve erro quando há mais de uma linha e zerava o destinatário das notificações.
+        const { data: accessRows, error } = await supabase
             .from('user_fornecedor_access')
-            .select('user_id')
+            .select('user_id, is_primary, created_at')
             .eq('fornecedor_id', fornecedorId)
+            .order('is_primary', { ascending: false })
+            .order('created_at', { ascending: true });
+
+        if (!error && Array.isArray(accessRows)) {
+            for (const row of accessRows) push((row as any)?.user_id);
+        }
+    } catch {
+        // Tabela pode não existir em ambientes antigos; segue para o fallback
+    }
+
+    // Ponteiro legado em fornecedores.user_id
+    try {
+        const { data: fornecedor } = await supabase
+            .from('fornecedores')
+            .select('user_id')
+            .eq('id', fornecedorId)
             .maybeSingle();
-        if (!error && accessRow?.user_id) return accessRow.user_id;
+        push(fornecedor?.user_id);
     } catch {
         // ignore
     }
 
-    // Legacy fallback
-    const { data: fornecedor } = await supabase
-        .from('fornecedores')
-        .select('user_id')
-        .eq('id', fornecedorId)
-        .maybeSingle();
-    return fornecedor?.user_id || null;
+    return ids;
+}
+
+export async function getSupplierAccessOwnerUserId(supabase: any, fornecedorId: string): Promise<string | null> {
+    const ids = await getSupplierAccessUserIds(supabase, fornecedorId);
+    return ids[0] || null;
 }
 
 export function getServiceSupabaseOrThrow() {

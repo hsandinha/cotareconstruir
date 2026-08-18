@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { getSupplierAccessOwnerUserId, userHasSupplierAccess } from '@/lib/supplierAccessServer';
+import { getSupplierAccessUserIds, userHasSupplierAccess } from '@/lib/supplierAccessServer';
 
 async function getAuthUser(req: NextRequest) {
     if (!supabaseAdmin) return null;
@@ -162,10 +162,11 @@ async function checkRoomBelongsToBothUsers(
             .single();
 
         if (!cotacao) return false;
-        const supplierUserId = await getSupplierAccessOwnerUserId(supabaseAdmin, fornecedorId);
-        if (!supplierUserId) return false;
+        // Multiempresa: todos os usuários vinculados ao fornecedor são participantes
+        const supplierUserIds = await getSupplierAccessUserIds(supabaseAdmin, fornecedorId);
+        if (supplierUserIds.length === 0) return false;
 
-        const participants = [cotacao.user_id, supplierUserId];
+        const participants = [cotacao.user_id, ...supplierUserIds];
         return participants.includes(userA) && participants.includes(userB);
     }
 
@@ -179,12 +180,12 @@ async function checkRoomBelongsToBothUsers(
     if (pedido) {
         if (requestedSupplierId && pedido.fornecedor_id !== requestedSupplierId) return false;
 
-        const supplierUserId = pedido.fornecedor_id
-            ? await getSupplierAccessOwnerUserId(supabaseAdmin, pedido.fornecedor_id)
-            : null;
-        if (!supplierUserId) return false;
+        const supplierUserIds = pedido.fornecedor_id
+            ? await getSupplierAccessUserIds(supabaseAdmin, pedido.fornecedor_id)
+            : [];
+        if (supplierUserIds.length === 0) return false;
 
-        const participants = [pedido.user_id, supplierUserId];
+        const participants = [pedido.user_id, ...supplierUserIds];
         return participants.includes(userA) && participants.includes(userB);
     }
 
@@ -213,9 +214,9 @@ async function checkRoomBelongsToBothUsers(
     for (const proposta of propostas) {
         const fornecedorId = (proposta as any)?.fornecedor_id;
         if (!fornecedorId) continue;
-        const ownerUserId = await getSupplierAccessOwnerUserId(supabaseAdmin, fornecedorId);
-        if (ownerUserId) {
-            participants.add(ownerUserId);
+        const supplierUserIds = await getSupplierAccessUserIds(supabaseAdmin, fornecedorId);
+        for (const supplierUserId of supplierUserIds) {
+            participants.add(supplierUserId);
         }
     }
 

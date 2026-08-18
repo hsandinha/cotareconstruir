@@ -127,7 +127,7 @@ export function useTilt(maxDeg = 7) {
 }
 
 /** Contador animado: conta de 0 até `target` quando `start` vira true. */
-export function useCountUp(target: number, start: boolean, durationMs = 1400): number {
+export function useCountUp(target: number, start: boolean, durationMs = 1400, decimals = 0): number {
     const [value, setValue] = useState(0);
     useEffect(() => {
         if (!start) return;
@@ -135,16 +135,17 @@ export function useCountUp(target: number, start: boolean, durationMs = 1400): n
             setValue(target);
             return;
         }
+        const factor = Math.pow(10, decimals);
         let raf = 0;
         const t0 = performance.now();
         const tick = (now: number) => {
             const t = Math.min(1, (now - t0) / durationMs);
             const eased = 1 - Math.pow(1 - t, 3);
-            setValue(Math.round(target * eased));
+            setValue(Math.round(target * eased * factor) / factor);
             if (t < 1) raf = requestAnimationFrame(tick);
         };
         raf = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(raf);
-    }, [start, target, durationMs]);
+    }, [start, target, durationMs, decimals]);
     return value;
 }

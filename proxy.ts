@@ -14,7 +14,7 @@ export function proxy(request: NextRequest) {
     const mustChangePassword = request.cookies.get('mustChangePassword')?.value
 
     // Rotas públicas que não requerem autenticação
-    const publicRoutes = ['/login', '/termos', '/privacidade', '/ajuda', '/']
+    const publicRoutes = ['/login', '/cadastro', '/forgot-password', '/reset-password', '/termos', '/privacidade', '/ajuda', '/sobre', '/']
     const isPublicRoute = publicRoutes.some(route => pathname === route || pathname === '/')
 
     // Se está em rota pública e já autenticado, redirecionar para dashboard

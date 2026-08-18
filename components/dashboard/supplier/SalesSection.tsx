@@ -7,7 +7,8 @@ import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "../../../lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
 import { useSupplierAccessContext } from "./SupplierAccessContext";
-import { Search, Filter as FunnelIcon, MessageSquare, CheckCircle, Clock, Truck as TruckIcon, CircleDollarSign as CurrencyDollarIcon, FileText } from "lucide-react";
+import { printOrdemCompra, formatPrazoEntrega, formatDataEntrega, type OrdemCompraDoc } from "@/lib/ordemCompraDoc";
+import { Search, Filter as FunnelIcon, MessageSquare, CheckCircle, Clock, Truck as TruckIcon, CircleDollarSign as CurrencyDollarIcon, FileText, Download } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
 
 const MAX_INVOICE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
@@ -90,7 +91,7 @@ interface SaleOrder {
 export function SupplierSalesSection() {
     const { showToast } = useToast();
     const { user, session, initialized } = useAuth();
-    const { activeSupplierId, requiresSelection } = useSupplierAccessContext();
+    const { activeSupplierId, activeSupplier, requiresSelection } = useSupplierAccessContext();
     const [activeTab, setActiveTab] = useState<"all" | WorkflowStep>("all");
     const [selectedOrder, setSelectedOrder] = useState<SaleOrder | null>(null);
     const [openChats, setOpenChats] = useState<Array<{ recipientName: string; recipientId: string; initialRoomId: string; initialRoomTitle?: string }>>([]);
@@ -205,6 +206,7 @@ export function SupplierSalesSection() {
     const mapSupabaseStatus = (status: string): SaleStatus => {
         const statusMap: Record<string, SaleStatus> = {
             'pendente': 'pending',
+            'aprovado': 'approved',
             'confirmado': 'approved',
             'em_preparacao': 'negotiating',
             'enviado': 'negotiating',
@@ -237,6 +239,7 @@ export function SupplierSalesSection() {
         if (rawStatus === 'enviado') return 'em_transporte';
         if (rawStatus === 'em_preparacao') return 'em_separacao';
         if (rawStatus === 'confirmado') return 'emissao_nota';
+        if (rawStatus === 'aprovado') return 'aprovado';
         return 'pendente';
     };
 
@@ -254,8 +257,8 @@ export function SupplierSalesSection() {
 
     const getOrderActionByStep = (step: WorkflowStep) => {
         const actionMap: Record<WorkflowStep, { label: string; nextStatus: string } | null> = {
-            pendente: { label: 'Aprovar pedido', nextStatus: 'confirmado' },
-            aprovado: null,
+            pendente: { label: 'Aprovar pedido', nextStatus: 'aprovado' },
+            aprovado: { label: 'Iniciar emissão de nota', nextStatus: 'confirmado' },
             emissao_nota: { label: 'Anexar nota e avançar', nextStatus: 'em_preparacao' },
             em_separacao: { label: 'Marcar em transporte', nextStatus: 'enviado' },
             em_transporte: { label: 'Marcar entregue', nextStatus: 'entregue' },
@@ -277,6 +280,78 @@ export function SupplierSalesSection() {
         });
     };
 
+    /** Ordem de Compra completa do subpedido, com as condições comerciais fechadas. */
+    const getOrderCommercials = (order: SaleOrder) => {
+        const summary = (order as any)._pedido_summary || {};
+        const proposal = order.proposal;
+        const freight = Number(summary.freight ?? proposal?.freight) || 0;
+        const impostos = Number(summary.impostos) || 0;
+        const deliveryDays = Number.isFinite(Number(summary.deliveryDays))
+            ? Number(summary.deliveryDays)
+            : null;
+
+        return {
+            freight,
+            impostos,
+            deliveryDays,
+            paymentMethod: summary.paymentMethod || proposal?.paymentTerms || null,
+            validity: summary.validity || proposal?.validity || null,
+            observacoes: summary.observacoes || null,
+        };
+    };
+
+    const handlePrintOrdemCompra = (order: SaleOrder) => {
+        const commercials = getOrderCommercials(order);
+
+        const doc: OrdemCompraDoc = {
+            numero: String(order.numero || order.id).slice(0, 20),
+            emitidaEm: order.createdAt || null,
+            statusLabel: getOrderWorkflowLabel(mapOrderWorkflowStatus(order.rawStatus)),
+            comprador: {
+                nome: order.clientDetails?.name || order.clientName || 'Cliente',
+                documento: order.clientDetails?.document,
+                email: order.clientDetails?.email,
+                telefone: order.clientDetails?.phone,
+                endereco: order.location?.fullAddress || order.clientDetails?.address,
+            },
+            fornecedor: {
+                nome: activeSupplier?.nome_fantasia || activeSupplier?.razao_social || 'Fornecedor',
+                documento: activeSupplier?.cnpj,
+                email: null,
+                telefone: null,
+                endereco: null,
+            },
+            obra: {
+                nome: order.workName || null,
+                endereco: order.location?.fullAddress || null,
+                horarioEntrega: null,
+            },
+            itens: (order.items || []).map((item) => {
+                const price = item.unitPrice || order.proposal?.items?.[item.id]?.price || 0;
+                return {
+                    descricao: item.name,
+                    quantidade: item.quantity,
+                    unidade: item.unit,
+                    precoUnitario: price,
+                    total: item.total ?? price * item.quantity,
+                };
+            }),
+            frete: commercials.freight,
+            impostos: commercials.impostos,
+            total: order.totalValue,
+            condicoes: {
+                pagamento: commercials.paymentMethod,
+                prazoEntrega: formatPrazoEntrega(commercials.deliveryDays),
+                previsaoEntrega: formatDataEntrega(order.deadline),
+                observacoes: commercials.observacoes,
+            },
+        };
+
+        if (!printOrdemCompra(doc)) {
+            showToast("error", 'Não foi possível abrir a Ordem de Compra para impressão.');
+        }
+    };
+
     const handleAdvanceOrder = async (order: SaleOrder) => {
         const workflowStatus = mapOrderWorkflowStatus(order.rawStatus);
         const action = getOrderActionByStep(workflowStatus);
@@ -285,7 +360,7 @@ export function SupplierSalesSection() {
         const summaryUpdate: Record<string, any> = {};
         const nowIso = new Date().toISOString();
 
-        if (workflowStatus === 'pendente') summaryUpdate.billingStartedAt = nowIso;
+        if (workflowStatus === 'aprovado') summaryUpdate.billingStartedAt = nowIso;
         if (workflowStatus === 'emissao_nota') {
             summaryUpdate.billingCompletedAt = nowIso;
             summaryUpdate.pickingStartedAt = nowIso;
@@ -847,6 +922,64 @@ export function SupplierSalesSection() {
                                     </div>
                                 </div>
                             )}
+
+                            {/* Ordem de Compra: condições comerciais fechadas com o cliente */}
+                            {(() => {
+                                const commercials = getOrderCommercials(selectedOrder);
+                                return (
+                                    <div className="mb-8 rounded-lg border border-gray-200 bg-white p-4">
+                                        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                                            <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                                                <FileText className="h-5 w-5 text-gray-500" />
+                                                Ordem de Compra Nº {selectedOrder.numero}
+                                            </h3>
+                                            <button
+                                                type="button"
+                                                onClick={() => handlePrintOrdemCompra(selectedOrder)}
+                                                className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+                                            >
+                                                <Download className="h-4 w-4" />
+                                                Baixar PDF da OC
+                                            </button>
+                                        </div>
+                                        <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
+                                            <div>
+                                                <dt className="text-xs uppercase tracking-wide text-gray-500">Pagamento</dt>
+                                                <dd className="font-medium text-gray-900">{commercials.paymentMethod || '—'}</dd>
+                                            </div>
+                                            <div>
+                                                <dt className="text-xs uppercase tracking-wide text-gray-500">Prazo de entrega</dt>
+                                                <dd className="font-medium text-gray-900">{formatPrazoEntrega(commercials.deliveryDays)}</dd>
+                                            </div>
+                                            <div>
+                                                <dt className="text-xs uppercase tracking-wide text-gray-500">Previsão de entrega</dt>
+                                                <dd className="font-medium text-gray-900">{formatDataEntrega(selectedOrder.deadline)}</dd>
+                                            </div>
+                                            <div>
+                                                <dt className="text-xs uppercase tracking-wide text-gray-500">Frete</dt>
+                                                <dd className="font-medium text-gray-900">R$ {commercials.freight.toFixed(2)}</dd>
+                                            </div>
+                                            {commercials.impostos > 0 && (
+                                                <div>
+                                                    <dt className="text-xs uppercase tracking-wide text-gray-500">Impostos</dt>
+                                                    <dd className="font-medium text-gray-900">R$ {commercials.impostos.toFixed(2)}</dd>
+                                                </div>
+                                            )}
+                                            {commercials.validity && (
+                                                <div>
+                                                    <dt className="text-xs uppercase tracking-wide text-gray-500">Validade da proposta</dt>
+                                                    <dd className="font-medium text-gray-900">{commercials.validity}</dd>
+                                                </div>
+                                            )}
+                                        </dl>
+                                        {commercials.observacoes && (
+                                            <p className="mt-3 border-t border-gray-100 pt-3 text-sm text-gray-600">
+                                                <span className="font-medium text-gray-800">Observações:</span> {commercials.observacoes}
+                                            </p>
+                                        )}
+                                    </div>
+                                );
+                            })()}
 
                             {/* Items Table */}
                             <div className="mb-8">
