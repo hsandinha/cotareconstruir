@@ -12,7 +12,7 @@
  */
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useInView, useScrollProgress, useTilt, useCountUp, usePrefersReducedMotion, useShortViewport } from "./hooks";
 
 type StatusTurma = {
@@ -974,6 +974,147 @@ function Contracapa() {
 }
 
 /* ------------------------------------------------------------------ */
+/* 8b. Depoimentos em vídeo — cadastrados no painel do admin           */
+/* ------------------------------------------------------------------ */
+
+type DepoimentoLP = {
+    id: string;
+    nome: string;
+    cargo: string | null;
+    empresa: string | null;
+    obra: string | null;
+    citacao: string | null;
+    video_url: string;
+    poster_url: string | null;
+    duracao_segundos: number | null;
+};
+
+const legendaAutor = (d: DepoimentoLP) =>
+    [d.cargo, d.empresa, d.obra].filter(Boolean).join(" · ");
+
+const duracaoTexto = (segundos: number | null) => {
+    const total = Number(segundos);
+    if (!Number.isFinite(total) || total <= 0) return "";
+    return `${Math.floor(total / 60)}:${String(Math.floor(total % 60)).padStart(2, "0")}`;
+};
+
+/**
+ * Card de depoimento. O vídeo só carrega quando o visitante dá play
+ * (`preload="none"`) — a home tem vários e baixar todos de saída
+ * arrastaria o carregamento da página.
+ */
+function DepoimentoCard({ depoimento }: { depoimento: DepoimentoLP }) {
+    const [tocando, setTocando] = useState(false);
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+
+    const play = () => {
+        setTocando(true);
+        // O elemento só ganha controles depois do play; o autoplay aqui é
+        // resposta a clique, então não esbarra na política do navegador.
+        requestAnimationFrame(() => videoRef.current?.play().catch(() => { /* usuário aperta play */ }));
+    };
+
+    const legenda = legendaAutor(depoimento);
+    const duracao = duracaoTexto(depoimento.duracao_segundos);
+
+    return (
+        <figure className="flex flex-col overflow-hidden rounded-md border border-[#D6D3D1] bg-white shadow-[0_18px_40px_-24px_rgba(28,25,23,0.4)]">
+            <div className="relative aspect-video bg-[#1C1917]">
+                <video
+                    ref={videoRef}
+                    src={depoimento.video_url}
+                    poster={depoimento.poster_url || undefined}
+                    preload="none"
+                    playsInline
+                    controls={tocando}
+                    className="h-full w-full object-cover"
+                    aria-label={`Depoimento de ${depoimento.nome}`}
+                />
+
+                {!tocando && (
+                    <button
+                        type="button"
+                        onClick={play}
+                        className="group absolute inset-0 flex items-center justify-center bg-[#1C1917]/30 transition-colors hover:bg-[#1C1917]/15"
+                        aria-label={`Assistir ao depoimento de ${depoimento.nome}`}
+                    >
+                        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-[#F97316] shadow-[3px_3px_0_#1C1917] transition-transform group-hover:scale-110">
+                            <svg viewBox="0 0 24 24" className="ml-1 h-7 w-7 fill-[#1C1917]" aria-hidden>
+                                <path d="M8 5v14l11-7z" />
+                            </svg>
+                        </span>
+                        {duracao && (
+                            <span className="absolute bottom-3 right-3 rounded bg-[#1C1917]/80 px-2 py-0.5 font-mono text-[11px] text-[#FAF8F5]">
+                                {duracao}
+                            </span>
+                        )}
+                    </button>
+                )}
+            </div>
+
+            <figcaption className="flex flex-1 flex-col gap-3 p-5">
+                {depoimento.citacao && (
+                    <blockquote className="text-base italic leading-relaxed text-[#1C1917]">
+                        &ldquo;{depoimento.citacao}&rdquo;
+                    </blockquote>
+                )}
+                <div className="mt-auto border-t border-[#E7E5E4] pt-3">
+                    <p className="font-bold text-[#1C1917]">{depoimento.nome}</p>
+                    {legenda && (
+                        <p className="mt-0.5 font-mono text-[11px] uppercase tracking-widest text-[#57534E]">
+                            {legenda}
+                        </p>
+                    )}
+                </div>
+            </figcaption>
+        </figure>
+    );
+}
+
+function Depoimentos() {
+    const { ref, inView } = useInView<HTMLDivElement>(0.1);
+    const [depoimentos, setDepoimentos] = useState<DepoimentoLP[]>([]);
+
+    useEffect(() => {
+        let ativo = true;
+        fetch("/api/depoimentos")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((json) => { if (ativo && Array.isArray(json?.data)) setDepoimentos(json.data); })
+            .catch(() => { /* sem depoimentos a seção simplesmente não aparece */ });
+        return () => { ativo = false; };
+    }, []);
+
+    // Nada cadastrado: a seção some em vez de deixar um vazio na página
+    if (depoimentos.length === 0) return null;
+
+    return (
+        <section id="depoimentos" className="scroll-mt-24 bg-[#F1EDE7] px-6 py-28">
+            <div ref={ref} className="mx-auto max-w-6xl">
+                <div
+                    className="max-w-2xl transition-all duration-700"
+                    style={{ opacity: inView ? 1 : 0, transform: inView ? "none" : "translateY(16px)" }}
+                >
+                    <SectionLabel>Quem já comprou assim</SectionLabel>
+                    <h2 className="mt-4 text-3xl font-extrabold tracking-tight text-[#1C1917] md:text-5xl">
+                        Construtor falando com construtor.
+                    </h2>
+                    <p className="mt-5 text-lg leading-relaxed text-[#44403C]">
+                        Sem ator, sem roteiro. São clientes contando o que mudou no canteiro depois que a cotação
+                        virou mapa na tela.
+                    </p>
+                </div>
+
+                <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {depoimentos.map((d) => (
+                        <DepoimentoCard key={d.id} depoimento={d} />
+                    ))}
+                </div>
+            </div>
+        </section>
+    );
+}
+
+/* ------------------------------------------------------------------ */
 /* 9. CTA — teste gratuito de 1 mês                                    */
 /* ------------------------------------------------------------------ */
 
@@ -1148,6 +1289,7 @@ export function LandingExperience() {
             <Thread />
             <OrdemDeCompra />
             <Contracapa />
+            <Depoimentos />
             <Cta />
         </main>
     );

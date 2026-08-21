@@ -20,6 +20,7 @@ import {
     Menu,
     X,
     Rocket,
+    MessageSquareQuote,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
@@ -33,6 +34,7 @@ import SupplierApiKeysManagement from "@/components/dashboard/admin/SupplierApiK
 import { ManufacturersSection } from "@/components/dashboard/admin/ManufacturersSection";
 import { MaterialSynonymsSection } from "@/components/dashboard/admin/MaterialSynonymsSection";
 import { LancamentoManagement } from "@/components/dashboard/admin/LancamentoManagement";
+import { DepoimentosManagement } from "@/components/dashboard/admin/DepoimentosManagement";
 import MaterialRequestsManagement from "@/components/dashboard/admin/MaterialRequestsManagement";
 import OrdersOverviewManagement from "@/components/dashboard/admin/OrdersOverviewManagement";
 import { validatePassword } from "@/lib/validation";
@@ -67,7 +69,8 @@ type AdminTabId =
     | "reports"
     | "profile"
     | "gestao-obra"
-    | "lancamento";
+    | "lancamento"
+    | "depoimentos";
 
 type NavItem = { id: AdminTabId; label: string; icon: React.ComponentType<{ className?: string }>; badge?: number };
 type NavGroup = { title: string; items: NavItem[] };
@@ -126,6 +129,7 @@ export default function AdminDashboard() {
                 { id: "acompanhamento", label: "Acompanhamento", icon: Activity },
                 { id: "users", label: "Usuários", icon: Users },
                 { id: "lancamento", label: "Turma de Lançamento", icon: Rocket },
+                { id: "depoimentos", label: "Depoimentos", icon: MessageSquareQuote },
             ],
         },
         {
@@ -611,6 +615,7 @@ export default function AdminDashboard() {
                         {activeTab === "fabricantes" && <ManufacturersSection />}
                         {activeTab === "sinonimos" && <MaterialSynonymsSection />}
                         {activeTab === "lancamento" && <LancamentoManagement />}
+                        {activeTab === "depoimentos" && <DepoimentosManagement />}
                         {activeTab === "materiais-novos" && <MaterialRequestsManagement />}
                         {activeTab === "acompanhamento" && <OrdersOverviewManagement />}
 
