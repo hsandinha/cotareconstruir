@@ -254,7 +254,7 @@ export function getFornecedorRecadastroEmailTemplate(options: { recipientEmail: 
  */
 export function getWelcomeEmailTemplate(name: string, email: string): { subject: string; html: string; text: string } {
     return {
-        subject: '🎉 Bem-vindo ao Cota Reconstruir!',
+        subject: '🎉 Bem-vindo ao Comprar e Construir!',
         html: `
             <!DOCTYPE html>
             <html>
@@ -272,7 +272,7 @@ export function getWelcomeEmailTemplate(name: string, email: string): { subject:
             <body>
                 <div class="container">
                     <div class="header">
-                        <h1>🏗️ Bem-vindo ao Cota Reconstruir!</h1>
+                        <h1>🏗️ Bem-vindo ao Comprar e Construir!</h1>
                     </div>
                     <div class="content">
                         <p>Olá <strong>${name}</strong>,</p>
@@ -291,14 +291,14 @@ export function getWelcomeEmailTemplate(name: string, email: string): { subject:
                         <p>Se você tiver alguma dúvida, nossa equipe está sempre disponível para ajudar!</p>
                     </div>
                     <div class="footer">
-                        <p>© 2025 Cota Reconstruir. Todos os direitos reservados.</p>
+                        <p>© 2025 Comprar e Construir. Todos os direitos reservados.</p>
                         <p>Este é um email automático, por favor não responda.</p>
                     </div>
                 </div>
             </body>
             </html>
         `,
-        text: `Olá ${name},\n\nBem-vindo ao Cota Reconstruir!\n\nSua conta foi criada com sucesso: ${email}\n\nAcesse: ${process.env.NEXT_PUBLIC_APP_URL}/dashboard\n\nEquipe Cota Reconstruir`,
+        text: `Olá ${name},\n\nBem-vindo ao Comprar e Construir!\n\nSua conta foi criada com sucesso: ${email}\n\nAcesse: ${process.env.NEXT_PUBLIC_APP_URL}/dashboard\n\nEquipe Comprar e Construir`,
     };
 }
 
@@ -307,7 +307,7 @@ export function getWelcomeEmailTemplate(name: string, email: string): { subject:
  */
 export function getPasswordResetEmailTemplate(name: string, resetLink: string): { subject: string; html: string; text: string } {
     return {
-        subject: '🔐 Recuperação de Senha - Cota Reconstruir',
+        subject: '🔐 Recuperação de Senha - Comprar e Construir',
         html: `
             <!DOCTYPE html>
             <html>
@@ -349,14 +349,14 @@ export function getPasswordResetEmailTemplate(name: string, resetLink: string): 
                         </p>
                     </div>
                     <div class="footer">
-                        <p>© 2025 Cota Reconstruir. Todos os direitos reservados.</p>
+                        <p>© 2025 Comprar e Construir. Todos os direitos reservados.</p>
                         <p>Este é um email automático, por favor não responda.</p>
                     </div>
                 </div>
             </body>
             </html>
         `,
-        text: `Olá ${name},\n\nRecebemos uma solicitação para redefinir sua senha.\n\nClique neste link para criar uma nova senha:\n${resetLink}\n\n⚠️ Este link expira em 15 minutos.\n\nSe você não solicitou esta alteração, ignore este email.\n\nEquipe Cota Reconstruir`,
+        text: `Olá ${name},\n\nRecebemos uma solicitação para redefinir sua senha.\n\nClique neste link para criar uma nova senha:\n${resetLink}\n\n⚠️ Este link expira em 15 minutos.\n\nSe você não solicitou esta alteração, ignore este email.\n\nEquipe Comprar e Construir`,
     };
 }
 
@@ -365,7 +365,7 @@ export function getPasswordResetEmailTemplate(name: string, resetLink: string): 
  */
 export function getPasswordChangedEmailTemplate(name: string): { subject: string; html: string; text: string } {
     return {
-        subject: '✅ Senha Alterada - Cota Reconstruir',
+        subject: '✅ Senha Alterada - Comprar e Construir',
         html: `
             <!DOCTYPE html>
             <html>
@@ -397,13 +397,13 @@ export function getPasswordChangedEmailTemplate(name: string): { subject: string
                         📱 WhatsApp: (11) 99999-9999</p>
                     </div>
                     <div class="footer">
-                        <p>© 2025 Cota Reconstruir. Todos os direitos reservados.</p>
+                        <p>© 2025 Comprar e Construir. Todos os direitos reservados.</p>
                     </div>
                 </div>
             </body>
             </html>
         `,
-        text: `Olá ${name},\n\n✅ Sua senha foi alterada com sucesso.\n\nData/Hora: ${new Date().toLocaleString('pt-BR')}\n\nSe você não realizou esta alteração, entre em contato:\nsuporte@comprareconstruir.com\n\nEquipe Cota Reconstruir`,
+        text: `Olá ${name},\n\n✅ Sua senha foi alterada com sucesso.\n\nData/Hora: ${new Date().toLocaleString('pt-BR')}\n\nSe você não realizou esta alteração, entre em contato:\nsuporte@comprareconstruir.com\n\nEquipe Comprar e Construir`,
     };
 }
 
@@ -525,6 +525,45 @@ export async function notifyClientNewProposalEmail(email: string, cotacaoNumero:
         ctaLabel: loginUrl ? 'Ver proposta' : 'Acessar plataforma',
         ctaUrl: loginUrl || PLATFORM_LOGIN_URL,
     });
+    return sendEmail({ to: email, subject: tpl.subject, html: tpl.html, text: tpl.text });
+}
+
+/**
+ * Convite da fila de espera para a turma de lançamento.
+ * `cadastroUrl` já leva o token, que identifica o convidado e garante a
+ * entrada mesmo com as inscrições fechadas (ver lib/lancamentoService).
+ */
+export async function notifyConviteTurmaLancamento(options: {
+    email: string;
+    nome: string;
+    cadastroUrl: string;
+    diasTeste: number;
+    obrasPorConta: number;
+    expiraEm?: string | null;
+}): Promise<SendEmailResult> {
+    const { email, nome, cadastroUrl, diasTeste, obrasPorConta, expiraEm } = options;
+
+    const detalhes = [
+        { label: 'Teste gratuito', value: `${diasTeste} dias` },
+        { label: 'Obras incluídas', value: obrasPorConta === 1 ? '1 obra' : `${obrasPorConta} obras` },
+    ];
+
+    if (expiraEm) {
+        const prazo = new Date(expiraEm);
+        if (!Number.isNaN(prazo.getTime())) {
+            detalhes.push({ label: 'Convite válido até', value: prazo.toLocaleDateString('pt-BR') });
+        }
+    }
+
+    const tpl = buildEventEmail({
+        subject: 'Abriu uma vaga para você na Comprar e Construir',
+        heading: `${nome}, sua vaga está liberada`,
+        intro: 'Você estava na fila de espera da turma de lançamento e abriu uma vaga. Use o link abaixo para criar sua conta e começar o teste gratuito — ele é pessoal e vale enquanto a vaga estiver reservada.',
+        details: detalhes,
+        ctaLabel: 'Criar minha conta',
+        ctaUrl: cadastroUrl,
+    });
+
     return sendEmail({ to: email, subject: tpl.subject, html: tpl.html, text: tpl.text });
 }
 

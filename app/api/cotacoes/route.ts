@@ -251,7 +251,7 @@ export async function GET(req: NextRequest) {
         // Also check which cotações this fornecedor already responded to
         const { data: propostas, error: propostasError } = await supabaseAdmin
             .from('propostas')
-            .select('cotacao_id, status, valor_total, valor_frete, prazo_entrega, condicoes_pagamento, observacoes, proposta_itens(cotacao_item_id, preco_unitario, subtotal, quantidade), proposta_anexos(id, nome, url, tipo, tamanho)')
+            .select('cotacao_id, status, valor_total, valor_frete, impostos, desconto, prazo_entrega, condicoes_pagamento, observacoes, proposta_itens(cotacao_item_id, preco_unitario, subtotal, quantidade), proposta_anexos(id, nome, url, tipo, tamanho)')
             .eq('fornecedor_id', fornecedorId);
 
         if (propostasError) {
@@ -275,7 +275,10 @@ export async function GET(req: NextRequest) {
                     numero: p.numero ?? null,
                     totalValue: parseFloat(p.valor_total) || 0,
                     freightValue: parseFloat(p.valor_frete) || 0,
-                    taxValue: extractTaxesFromObservacoes(p.observacoes),
+                    // Coluna `impostos`; propostas antigas guardavam o valor
+                    // como marcador [IMPOSTOS=...] dentro das observações.
+                    taxValue: parseFloat(p.impostos) || extractTaxesFromObservacoes(p.observacoes),
+                    discountValue: parseFloat(p.desconto) || 0,
                     deliveryDays: Number.isFinite(Number(p.prazo_entrega)) ? Number(p.prazo_entrega) : null,
                     paymentTerms: p.condicoes_pagamento || null,
                     observacoes: String(p.observacoes || '').replace(/\[IMPOSTOS=[^\]]*\]/gi, '').trim() || null,

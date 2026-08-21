@@ -10,6 +10,8 @@
 
 export type OrdemCompraParte = {
     nome?: string | null;
+    /** Pessoa de contato (quem enviou a proposta), não o e-mail da empresa. */
+    contato?: string | null;
     documento?: string | null;
     email?: string | null;
     telefone?: string | null;
@@ -34,6 +36,7 @@ export type OrdemCompraDoc = {
     itens: OrdemCompraItem[];
     frete?: number | null;
     impostos?: number | null;
+    desconto?: number | null;
     total?: number | null;
     condicoes?: {
         pagamento?: string | null;
@@ -83,6 +86,7 @@ function parteHtml(titulo: string, parte: OrdemCompraParte) {
         <h2>${esc(titulo)}</h2>
         <p class="nome">${ou(parte.nome)}</p>
         <dl>
+            <div><dt>Contato</dt><dd>${ou(parte.contato)}</dd></div>
             <div><dt>CPF/CNPJ</dt><dd>${ou(parte.documento)}</dd></div>
             <div><dt>E-mail</dt><dd>${ou(parte.email)}</dd></div>
             <div><dt>Telefone</dt><dd>${ou(parte.telefone)}</dd></div>
@@ -101,9 +105,10 @@ export function buildOrdemCompraHtml(doc: OrdemCompraDoc): string {
 
     const frete = Number(doc.frete) || 0;
     const impostos = Number(doc.impostos) || 0;
+    const desconto = Math.max(Number(doc.desconto) || 0, 0);
     const total = Number.isFinite(Number(doc.total)) && Number(doc.total) > 0
         ? Number(doc.total)
-        : subtotal + frete + impostos;
+        : subtotal - desconto + frete + impostos;
 
     const linhas = itens.map((item, idx) => {
         const qtd = Number(item.quantidade) || 0;
@@ -229,6 +234,7 @@ export function buildOrdemCompraHtml(doc: OrdemCompraDoc): string {
         </tbody>
         <tfoot>
             <tr><td colspan="4" class="right">Subtotal</td><td class="right">${brl(subtotal)}</td></tr>
+            ${desconto > 0 ? `<tr><td colspan="4" class="right">Desconto</td><td class="right">− ${brl(desconto)}</td></tr>` : ""}
             <tr><td colspan="4" class="right">Frete</td><td class="right">${brl(frete)}</td></tr>
             ${impostos > 0 ? `<tr><td colspan="4" class="right">Impostos</td><td class="right">${brl(impostos)}</td></tr>` : ""}
             <tr class="total"><td colspan="4" class="right">Total geral</td><td class="right">${brl(total)}</td></tr>

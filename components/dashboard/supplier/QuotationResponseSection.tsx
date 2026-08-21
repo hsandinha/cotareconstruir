@@ -42,6 +42,8 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
     const [observations, setObservations] = useState("");
     const [freightValue, setFreightValue] = useState("");
     const [taxValue, setTaxValue] = useState("");
+    // Desconto negociado (R$). A condição à vista vai em "Forma de Pagamento".
+    const [discountValue, setDiscountValue] = useState("");
     const [loading, setLoading] = useState(false);
     const [importingCsv, setImportingCsv] = useState(false);
     const [exportingCsv, setExportingCsv] = useState(false);
@@ -60,6 +62,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
 
         setFreightValue(String(resumo.freightValue ?? ""));
         setTaxValue(String(resumo.taxValue ?? ""));
+        setDiscountValue(resumo.discountValue ? String(resumo.discountValue) : "");
         setDeliveryDays(resumo.deliveryDays === null || resumo.deliveryDays === undefined ? "" : String(resumo.deliveryDays));
         setPaymentMethod(formatPaymentTerms(resumo.paymentTerms));
         setObservations(resumo.observacoes || "");
@@ -199,6 +202,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                     prazo_entrega_dias: index === 0 ? deliveryDays : "",
                     valor_frete: index === 0 ? freightValue : "",
                     valor_impostos: index === 0 ? taxValue : "",
+                    valor_desconto: index === 0 ? discountValue : "",
                     observacoes: index === 0 ? observations : "",
                 };
             });
@@ -216,6 +220,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 "prazo_entrega_dias",
                 "valor_frete",
                 "valor_impostos",
+                "valor_desconto",
                 "observacoes",
             ];
 
@@ -276,6 +281,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                         getCsvRowValue(row, ["prazo_entrega_dias", "prazo_entrega"]) ||
                         getCsvRowValue(row, ["valor_frete", "frete"]) ||
                         getCsvRowValue(row, ["valor_impostos", "impostos"]) ||
+                        getCsvRowValue(row, ["valor_desconto", "desconto"]) ||
                         getCsvRowValue(row, ["observacoes", "obs"])
                     );
                     if (hasConfigValues) {
@@ -318,6 +324,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 const nextDelivery = parseFlexibleNumber(getCsvRowValue(firstConfigRow, ["prazo_entrega_dias", "prazo_entrega"]));
                 const nextFreight = parseFlexibleNumber(getCsvRowValue(firstConfigRow, ["valor_frete", "frete"]));
                 const nextTaxes = parseFlexibleNumber(getCsvRowValue(firstConfigRow, ["valor_impostos", "impostos"]));
+                const nextDiscount = parseFlexibleNumber(getCsvRowValue(firstConfigRow, ["valor_desconto", "desconto"]));
                 const nextObs = getCsvRowValue(firstConfigRow, ["observacoes", "obs"]);
 
                 if (nextPayment) setPaymentMethod(nextPayment);
@@ -325,6 +332,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                 if (nextDelivery !== null) setDeliveryDays(String(Math.max(0, Math.trunc(nextDelivery))));
                 if (nextFreight !== null) setFreightValue(String(Math.max(0, nextFreight)));
                 if (nextTaxes !== null) setTaxValue(String(Math.max(0, nextTaxes)));
+                if (nextDiscount !== null) setDiscountValue(String(Math.max(0, nextDiscount)));
                 if (nextObs) setObservations(nextObs);
             }
 
@@ -418,6 +426,8 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
             // Calcular valor do frete
             const freteVal = parseFloat(freightValue) || 0;
             const impostosVal = parseFloat(taxValue) || 0;
+            // O desconto abate a mercadoria e não pode superá-la
+            const descontoVal = Math.min(Math.max(parseFloat(discountValue) || 0, 0), totalValue);
             const prazoEntrega = deliveryDays ? Math.max(0, parseInt(deliveryDays, 10) || 0) : null;
 
             // Send via API route (bypasses RLS)
@@ -429,9 +439,10 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                     action: 'create',
                     fornecedor_id: fornecedorId || undefined,
                     cotacao_id: quotation.id,
-                    valor_total: totalValue + freteVal + impostosVal,
+                    valor_total: totalValue - descontoVal + freteVal + impostosVal,
                     valor_frete: freteVal,
                     valor_impostos: impostosVal,
+                    valor_desconto: descontoVal,
                     prazo_entrega: prazoEntrega,
                     condicoes_pagamento: paymentMethod,
                     observacoes: observations,
@@ -472,6 +483,13 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
             return total;
         }, 0)
         : 0;
+
+    // Desconto exibido no painel: limitado ao valor da mercadoria
+    const descontoAplicado = Math.min(Math.max(parseFloat(discountValue) || 0, 0), materialsTotal);
+    const totalGeralProposta = materialsTotal
+        - descontoAplicado
+        + (parseFloat(freightValue) || 0)
+        + (parseFloat(taxValue) || 0);
 
     return (
         <div className="space-y-6">
@@ -822,11 +840,16 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                                         <div className="text-xs text-gray-500">Impostos</div>
                                         <div className="text-sm font-semibold text-gray-800">R$ {(parseFloat(taxValue) || 0).toFixed(2)}</div>
                                     </div>
+                                    <div className="text-gray-300 text-lg">−</div>
+                                    <div className="text-center">
+                                        <div className="text-xs text-gray-500">Desconto</div>
+                                        <div className="text-sm font-semibold text-amber-700">R$ {descontoAplicado.toFixed(2)}</div>
+                                    </div>
                                     <div className="text-gray-300 text-lg">=</div>
                                 </div>
                                 <div className="text-right bg-white rounded-md px-4 py-2 border border-green-200 shadow-sm">
                                     <div className="text-xs text-gray-500">Total Geral</div>
-                                    <div className="text-lg font-bold text-green-700">R$ {(materialsTotal + (parseFloat(freightValue) || 0) + (parseFloat(taxValue) || 0)).toFixed(2)}</div>
+                                    <div className="text-lg font-bold text-green-700">R$ {totalGeralProposta.toFixed(2)}</div>
                                 </div>
                             </div>
                         </div>
@@ -892,6 +915,20 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                             placeholder="Ex: 15,00"
                         />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Desconto (R$)</label>
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={discountValue}
+                            onChange={(e) => setDiscountValue(e.target.value)}
+                            onFocus={(e) => e.target.select()}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Ex: 150,00"
+                        />
+                        <p className="mt-1 text-xs text-gray-400">Abatido do total. Condição à vista vai em Forma de Pagamento.</p>
                     </div>
                     <div className="md:col-span-4">
                         <label className="block text-xs font-medium text-gray-600 mb-1">Observações</label>

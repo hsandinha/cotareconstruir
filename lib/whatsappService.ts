@@ -360,7 +360,7 @@ export async function notifySupplierOrderApproved(phone: string, pedidoNumero: s
 export async function sendSupplierCredentials(phone: string, email: string, password: string): Promise<WhatsAppSendResult> {
     return sendWhatsAppText({
         to: phone,
-        text: `🏗️ *Bem-vindo ao Cota Reconstruir!*\n\nSuas credenciais de acesso:\n📧 Email: ${email}\n🔑 Senha: ${password}\n\nAcesse: https://comprareconstruir.com/login`
+        text: `🏗️ *Bem-vindo ao Comprar e Construir!*\n\nSuas credenciais de acesso:\n📧 Email: ${email}\n🔑 Senha: ${password}\n\nAcesse: https://comprareconstruir.com/login`
     });
 }
 

@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabaseAuth";
 import { authFetch } from "@/lib/authHeaders";
 import { Download, MessageSquare, Star, ShieldAlert } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirmModal } from "@/components/ConfirmModal";
 import { ReportModal } from "../../ReportModal";
 import { formatPaymentTerms } from "@/lib/paymentTerms";
 
@@ -20,6 +21,7 @@ interface ClientComparativeSectionProps {
 
 export function ClientComparativeSection({ orderId, status }: ClientComparativeSectionProps) {
     const { showToast } = useToast();
+    const { confirm: confirmModal } = useConfirmModal();
     const [quotation, setQuotation] = useState<any>(null);
     const [allProposals, setAllProposals] = useState<any[]>([]);
     const [proposals, setProposals] = useState<any[]>([]);
@@ -116,12 +118,15 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     const frete = parseFloat(p.valor_frete) || 0;
                     const valorTotal = parseFloat(p.valor_total) || 0;
                     const impostos = parseFloat(p.impostos) || 0;
+                    const desconto = parseFloat(p.desconto) || 0;
                     const prazoEntregaParsed = Number.parseInt(String(p.prazo_entrega ?? ''), 10);
                     const prazoEntrega = Number.isFinite(prazoEntregaParsed) && prazoEntregaParsed >= 0
                         ? prazoEntregaParsed
                         : null;
-                    // valor_total do DB já inclui frete, separar mercadoria
-                    const merchandiseTotal = valorTotal - frete;
+                    // valor_total do DB é o total geral (mercadoria − desconto
+                    // + frete + impostos); aqui isolamos só a mercadoria, senão
+                    // os impostos entram duas vezes no Total Global.
+                    const merchandiseTotal = valorTotal - frete - impostos + desconto;
                     return {
                         id: p.id,
                         numero: p.numero || null,
@@ -130,6 +135,9 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         supplierName: p.fornecedor?.nome_fantasia || p.fornecedor?.razao_social || 'Fornecedor',
                         supplierDetails: {
                             name: p.fornecedor?.nome_fantasia || p.fornecedor?.razao_social || 'Fornecedor',
+                            // Pessoa que enviou a proposta (o cabeçalho da OC
+                            // mostrava o e-mail da empresa no lugar do contato)
+                            contato: p.enviada_por_nome || '',
                             document: p.fornecedor?.cnpj || '',
                             email: p.fornecedor?.email || '',
                             phone: p.fornecedor?.telefone || '',
@@ -138,6 +146,8 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         totalValue: merchandiseTotal,
                         freightPrice: frete,
                         impostos: impostos,
+                        desconto: desconto,
+                        grandTotal: merchandiseTotal - desconto + frete + impostos,
                         deliveryDays: prazoEntrega,
                         validity: p.data_validade ? new Date(p.data_validade).toLocaleDateString('pt-BR') : null,
                         paymentMethod: p.condicoes_pagamento,
@@ -154,8 +164,10 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
                 setAllProposals(mappedProposals);
 
+                // Melhores propostas pelo total que o cliente paga de fato
+                // (mercadoria − desconto + frete + impostos)
                 const top3Proposals = [...mappedProposals]
-                    .sort((a, b) => (a.totalValue + (a.freightPrice || 0)) - (b.totalValue + (b.freightPrice || 0)))
+                    .sort((a, b) => a.grandTotal - b.grandTotal)
                     .slice(0, 3);
 
                 setProposals(top3Proposals);
@@ -168,6 +180,8 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         supplierName: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social || 'Fornecedor',
                         supplierDetails: {
                             name: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social,
+                            // Contato = quem enviou a proposta, gravado no pedido
+                            contato: order?.endereco_entrega?.supplierDetails?.contato || null,
                             document: order.fornecedor?.cnpj,
                             email: order.fornecedor?.email,
                             phone: order.fornecedor?.telefone,
@@ -263,6 +277,8 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         supplierName: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social || 'Fornecedor',
                         supplierDetails: {
                             name: order.fornecedor?.nome_fantasia || order.fornecedor?.razao_social,
+                            // Contato = quem enviou a proposta, gravado no pedido
+                            contato: order?.endereco_entrega?.supplierDetails?.contato || null,
                             document: order.fornecedor?.cnpj,
                             email: order.fornecedor?.email,
                             phone: order.fornecedor?.telefone,
@@ -353,11 +369,27 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
     const compradorParaOc = () => ({
         nome: clientInfo?.razao_social || clientInfo?.nome || 'Cliente',
+        contato: clientInfo?.nome || null,
         documento: clientInfo?.cpf_cnpj || null,
         email: clientInfo?.email || null,
         telefone: clientInfo?.whatsapp || clientInfo?.telefone || null,
         endereco: enderecoCliente(),
     });
+
+    /**
+     * Desconto proporcional à fatia comprada do fornecedor.
+     *
+     * O desconto é negociado sobre a proposta inteira. Quando o cliente divide
+     * o pedido e leva só parte dos itens daquele fornecedor, aplicar o desconto
+     * cheio distorceria a comparação — então ele entra rateado.
+     */
+    const rateiaDesconto = (proposal: any, subtotalSelecionado: number) => {
+        const descontoCheio = Number(proposal?.desconto) || 0;
+        const mercadoriaCheia = Number(proposal?.totalValue) || 0;
+        if (descontoCheio <= 0 || mercadoriaCheia <= 0) return 0;
+        const proporcao = Math.min(subtotalSelecionado / mercadoriaCheia, 1);
+        return Math.min(descontoCheio * proporcao, subtotalSelecionado);
+    };
 
     const obraParaOc = () => ({
         nome: obraInfo?.nome || null,
@@ -373,8 +405,34 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         total: item.total,
     }));
 
+    /**
+     * Pede as observações que vão impressas na Ordem de Compra
+     * (recomendações de entrega, referências, contato na obra...).
+     * Retorna `false` quando o cliente cancela a emissão.
+     */
+    const pedirObservacoesDaOc = async (padrao: string | null): Promise<string | null | false> => {
+        const resposta = await confirmModal({
+            title: "Observações da Ordem de Compra",
+            message: "Inclua alguma recomendação para o fornecedor, se necessário. Deixe em branco para emitir sem observações.",
+            promptLabel: "Observações (opcional)",
+            promptDefaultValue: padrao || "",
+            promptPlaceholder: "Ex.: entregar pela portaria dos fundos, falar com o mestre de obras.",
+            confirmLabel: "Gerar OC",
+            cancelLabel: "Cancelar",
+            variant: "info",
+        });
+
+        // Cancelar devolve `false`; confirmar devolve o texto (pode vir vazio,
+        // quando o cliente apaga a observação que estava preenchida).
+        if (typeof resposta !== "string") return false;
+        return resposta.trim() || null;
+    };
+
     /** OC de um subpedido já confirmado (dados vindos de pedidos). */
-    const handlePrintOcPedido = (order: any) => {
+    const handlePrintOcPedido = async (order: any) => {
+        const observacoes = await pedirObservacoesDaOc(order.summary?.observacoes || null);
+        if (observacoes === false) return;
+
         const doc: OrdemCompraDoc = {
             numero: String(order.numero || order.id || '').slice(0, 20),
             emitidaEm: order.createdAt || order.dataConfirmacao || new Date().toISOString(),
@@ -382,6 +440,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
             comprador: compradorParaOc(),
             fornecedor: {
                 nome: order.supplierDetails?.name || order.supplierName,
+                contato: order.supplierDetails?.contato || null,
                 documento: order.supplierDetails?.document,
                 email: order.supplierDetails?.email,
                 telefone: order.supplierDetails?.phone,
@@ -391,12 +450,13 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
             itens: itensParaOc(order.items),
             frete: order.freight,
             impostos: order.summary?.impostos,
+            desconto: order.summary?.desconto,
             total: order.total,
             condicoes: {
                 pagamento: order.paymentMethod,
                 prazoEntrega: formatPrazoEntrega(order.deliveryDays),
                 previsaoEntrega: formatDataEntrega(order.dataPrevisaoEntrega),
-                observacoes: order.summary?.observacoes || null,
+                observacoes,
             },
         };
 
@@ -406,10 +466,14 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
     };
 
     /** OC ainda em rascunho, montada a partir da seleção no mapa. */
-    const handlePrintOcPreview = (supplierId: string, items: any[]) => {
+    const handlePrintOcPreview = async (supplierId: string, items: any[]) => {
         const proposal = findProposalBySupplierId(supplierId);
         const supplierTotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
         const freight = proposal?.freightPrice || 0;
+        const desconto = rateiaDesconto(proposal, supplierTotal);
+
+        const observacoes = await pedirObservacoesDaOc(null);
+        if (observacoes === false) return;
 
         const doc: OrdemCompraDoc = {
             numero: `${quotation?.numero || String(orderId || '').slice(0, 8)}-${String(supplierId).slice(0, 4)}`,
@@ -418,6 +482,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
             comprador: compradorParaOc(),
             fornecedor: {
                 nome: getDisplaySupplierName(supplierId),
+                contato: proposal?.supplierDetails?.contato || null,
                 documento: proposal?.supplierDetails?.document || null,
                 email: proposal?.supplierDetails?.email || null,
                 telefone: proposal?.supplierDetails?.phone || null,
@@ -427,12 +492,14 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
             itens: itensParaOc(items),
             frete: freight,
             impostos: proposal?.impostos,
-            total: supplierTotal + freight,
+            desconto,
+            total: supplierTotal - desconto + freight + (proposal?.impostos || 0),
             condicoes: {
                 pagamento: proposal?.paymentMethod,
                 prazoEntrega: formatPrazoEntrega(proposal?.deliveryDays),
                 previsaoEntrega: null,
-                observacoes: 'Prévia da Ordem de Compra. Os valores são confirmados ao finalizar o pedido.',
+                observacoes: [observacoes, 'Prévia da Ordem de Compra. Os valores são confirmados ao finalizar o pedido.']
+                    .filter(Boolean).join('\n\n'),
             },
         };
 
@@ -656,9 +723,9 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                         </tr>
                                     ))}
                                     {[
-                                        { key: 'desconto', label: 'Desconto à vista', render: (_p: any) => '—' },
-                                        { key: 'impostos', label: 'Impostos', render: (p: any) => (p.impostos > 0 ? `R$ ${p.impostos.toFixed(2)}` : '-') },
                                         { key: 'mercadoria', label: 'Total da Mercadoria', render: (p: any) => `R$ ${p.totalValue.toFixed(2)}` },
+                                        { key: 'desconto', label: 'Desconto', render: (p: any) => (p.desconto > 0 ? `− R$ ${p.desconto.toFixed(2)}` : '-') },
+                                        { key: 'impostos', label: 'Impostos', render: (p: any) => (p.impostos > 0 ? `R$ ${p.impostos.toFixed(2)}` : '-') },
                                         { key: 'frete', label: 'Frete', render: (p: any) => `R$ ${(p.freightPrice || 0).toFixed(2)}` },
                                     ].map((rowDef, rowIdx) => (
                                         <tr key={rowDef.key} className={rowIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
@@ -674,7 +741,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                         <td colSpan={4} className="px-4 py-3 text-right text-sm font-bold">Total Global</td>
                                         {proposals.map((proposal: any) => (
                                             <td key={`total-${proposal.id}`} colSpan={2} className="px-4 py-3 text-center text-sm font-bold border-l border-slate-700">
-                                                R$ {(proposal.totalValue + (proposal.freightPrice || 0) + (proposal.impostos || 0)).toFixed(2)}
+                                                R$ {proposal.grandTotal.toFixed(2)}
                                             </td>
                                         ))}
                                     </tr>
@@ -778,7 +845,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                         <div>
                                             <button
                                                 type="button"
-                                                onClick={() => handlePrintOcPedido(order)}
+                                                onClick={() => { void handlePrintOcPedido(order); }}
                                                 className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-gray-800"
                                             >
                                                 <Download className="h-3.5 w-3.5" />
@@ -1306,6 +1373,11 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
         if (!quotation || !orderId) return;
         if (finalizingOrder) return;
 
+        // Observações do cliente: entram nos pedidos e saem impressas na
+        // Ordem de Compra dos dois lados.
+        const observacoesOc = await pedirObservacoesDaOc(null);
+        if (observacoesOc === false) return;
+
         try {
             setFinalizingOrder(true);
             // Group items by supplier
@@ -1337,6 +1409,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
 
             for (const [supplierId, items] of Object.entries(groupedBySupplier)) {
                 const proposal = findProposalBySupplierId(supplierId);
+                const subtotalDoFornecedor = items.reduce((sum: number, item: any) => sum + item.total, 0);
                 supplierGroups.push({
                     supplierId,
                     proposalId: proposal?.id,
@@ -1344,6 +1417,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     supplierName: proposal?.supplierName || 'Fornecedor',
                     supplierDetails: proposal?.supplierDetails || {
                         name: proposal?.supplierName || 'Fornecedor',
+                        contato: '',
                         document: '',
                         email: '',
                         phone: '',
@@ -1351,6 +1425,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     },
                     freightPrice: proposal?.freightPrice || 0,
                     impostos: proposal?.impostos || 0,
+                    desconto: rateiaDesconto(proposal, subtotalDoFornecedor),
                     deliveryDays: proposal?.deliveryDays ?? null,
                     paymentMethod: proposal?.paymentMethod || null,
                     items
@@ -1364,6 +1439,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     action: 'finalize-order',
                     cotacaoId: orderId,
                     obraId: quotation.obra_id,
+                    observacoes: observacoesOc,
                     itemsBySupplier: supplierGroups
                 })
             });
@@ -1373,7 +1449,13 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                 throw new Error(err.error || 'Erro ao finalizar pedido');
             }
 
-            showToast("success", "Pedidos gerados com sucesso!");
+            const resultado = await res.json().catch(() => ({}));
+            const falhas: string[] = Array.isArray(resultado?.pedidos_com_falha) ? resultado.pedidos_com_falha : [];
+            if (falhas.length > 0) {
+                showToast("error", `Pedidos gerados, mas falhou para: ${falhas.join(', ')}. Tente finalizar novamente.`);
+            } else {
+                showToast("success", "Pedidos gerados com sucesso!");
+            }
             window.location.reload();
 
         } catch (error) {
@@ -1455,7 +1537,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             <div className="flex justify-end">
                                 <button
                                     type="button"
-                                    onClick={() => handlePrintOcPedido(order)}
+                                    onClick={() => { void handlePrintOcPedido(order); }}
                                     className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
                                 >
                                     <Download className="h-4 w-4" />
@@ -1493,7 +1575,8 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
             const supplierTotal = (items as any[]).reduce((itemsSum: number, item: any) => itemsSum + item.total, 0);
             const proposal = findProposalBySupplierId(supplierId);
             const freight = proposal?.freightPrice || 0;
-            return sum + supplierTotal + freight;
+            const desconto = rateiaDesconto(proposal, supplierTotal);
+            return sum + supplierTotal - desconto + freight + (proposal?.impostos || 0);
         }, 0);
 
         return (
@@ -1513,6 +1596,9 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                     const supplierLabel = getDisplaySupplierName(supplierId);
                     const supplierTotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
                     const freight = proposal?.freightPrice || 0;
+                    const impostos = proposal?.impostos || 0;
+                    // Desconto rateado pela fatia comprada deste fornecedor
+                    const desconto = rateiaDesconto(proposal, supplierTotal);
                     const deliveryDays = proposal?.deliveryDays;
                     const paymentMethod = proposal?.paymentMethod;
 
@@ -1525,7 +1611,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                 </div>
                                 <div className="text-right">
                                     <p className="text-sm text-slate-500">Total Pedido</p>
-                                    <p className="text-lg font-bold text-slate-900">R$ {(supplierTotal + freight).toFixed(2)}</p>
+                                    <p className="text-lg font-bold text-slate-900">R$ {(supplierTotal - desconto + freight + impostos).toFixed(2)}</p>
                                     <p className="mt-1 text-sm text-slate-500">
                                         Prazo de entrega: {deliveryDays === null || deliveryDays === undefined
                                             ? 'N/A'
@@ -1565,6 +1651,18 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                             <td className="px-4 py-2 text-right">R$ {item.total.toFixed(2)}</td>
                                         </tr>
                                     ))}
+                                    {desconto > 0 && (
+                                        <tr>
+                                            <td colSpan={3} className="px-4 py-2 text-right font-semibold text-amber-700">Desconto</td>
+                                            <td className="px-4 py-2 text-right font-semibold text-amber-700">− R$ {desconto.toFixed(2)}</td>
+                                        </tr>
+                                    )}
+                                    {impostos > 0 && (
+                                        <tr>
+                                            <td colSpan={3} className="px-4 py-2 text-right font-semibold text-slate-700">Impostos</td>
+                                            <td className="px-4 py-2 text-right font-semibold text-slate-700">R$ {impostos.toFixed(2)}</td>
+                                        </tr>
+                                    )}
                                     <tr>
                                         <td colSpan={3} className="px-4 py-2 text-right font-semibold text-slate-700">Frete</td>
                                         <td className="px-4 py-2 text-right font-semibold text-slate-700">R$ {freight.toFixed(2)}</td>
@@ -1575,7 +1673,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             <div className="flex justify-end">
                                 <button
                                     type="button"
-                                    onClick={() => handlePrintOcPreview(supplierId, items)}
+                                    onClick={() => { void handlePrintOcPreview(supplierId, items); }}
                                     className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
                                 >
                                     <Download className="h-4 w-4" />
@@ -1859,9 +1957,9 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                         })}
                         {/* Rodapé no formato do Mapa de Preços da Comprar e Construir */}
                         {[
-                            { key: 'desconto', label: 'Desconto à vista', render: (_p: any) => '—' },
-                            { key: 'impostos', label: 'Impostos', render: (p: any) => (p.impostos > 0 ? `R$ ${p.impostos.toFixed(2)}` : '-') },
                             { key: 'mercadoria', label: 'Total da Mercadoria', render: (p: any) => `R$ ${p.totalValue.toFixed(2)}`, strong: true },
+                            { key: 'desconto', label: 'Desconto', render: (p: any) => (p.desconto > 0 ? `− R$ ${p.desconto.toFixed(2)}` : '-') },
+                            { key: 'impostos', label: 'Impostos', render: (p: any) => (p.impostos > 0 ? `R$ ${p.impostos.toFixed(2)}` : '-') },
                             { key: 'frete', label: 'Frete', render: (p: any) => `R$ ${(p.freightPrice || 0).toFixed(2)}` },
                         ].map((rowDef, rowIdx) => (
                             <tr key={rowDef.key} className={`${rowIdx % 2 === 0 ? 'bg-slate-50' : 'bg-white'} text-sm`}>
@@ -1881,7 +1979,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                             <td colSpan={4} className="px-4 py-3 text-right text-sm font-bold">Total Global</td>
                             {proposals.map((proposal) => (
                                 <td key={`total-${proposal.id}`} colSpan={2} className="px-4 py-3 text-center text-sm font-bold border-l border-slate-700">
-                                    R$ {(proposal.totalValue + (proposal.freightPrice || 0) + (proposal.impostos || 0)).toFixed(2)}
+                                    R$ {proposal.grandTotal.toFixed(2)}
                                 </td>
                             ))}
                         </tr>

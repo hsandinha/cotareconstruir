@@ -344,6 +344,13 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 });
             }
 
+            // Observações que o cliente escreve ao gerar a Ordem de Compra
+            // (recomendações de entrega, referências, etc.). Vão para o
+            // documento dos dois lados.
+            const observacoesCliente = typeof body.observacoes === 'string' && body.observacoes.trim()
+                ? body.observacoes.trim().slice(0, 2000)
+                : null;
+
             // Fetch client details
             const { data: clientData, error: clientError } = await supabaseAdmin
                 .from('users')
@@ -364,7 +371,7 @@ export async function POST(req: NextRequest) {
 
             const { data: existingOrdersForCotacao, error: existingOrdersError } = await supabaseAdmin
                 .from('pedidos')
-                .select('id, fornecedor_id, proposta_id')
+                .select('id, fornecedor_id, proposta_id, numero')
                 .eq('cotacao_id', cotacaoId)
                 .eq('user_id', user.id);
 
@@ -377,7 +384,48 @@ export async function POST(req: NextRequest) {
                 (existingOrdersForCotacao || []).map((order: any) => String(order.fornecedor_id))
             );
 
+            // ========================================================
+            // Numeração dos pedidos quando a cotação é dividida entre
+            // vários fornecedores.
+            //
+            // O total de fornecedores era calculado DENTRO do laço, DEPOIS
+            // de marcar o fornecedor atual como processado — então dava
+            // sempre 0 ou 1, nenhum pedido recebia o sufixo (.1, .2) e todos
+            // saíam com o mesmo `numero`. Como `pedidos.numero` é UNIQUE, o
+            // segundo insert falhava e só o primeiro fornecedor virava
+            // pedido. Agora o total é apurado ANTES do laço.
+            // ========================================================
+            const fornecedoresNovos = (itemsBySupplier as any[])
+                .map((grupo: any) => String(grupo.supplierId))
+                .filter((id: string, idx: number, arr: string[]) =>
+                    arr.indexOf(id) === idx && !existingOrderKeys.has(id));
+
+            const totalPedidosDaCotacao = existingOrderKeys.size + fornecedoresNovos.length;
+            const numerosUsados = new Set(
+                (existingOrdersForCotacao || [])
+                    .map((order: any) => String(order.numero || ''))
+                    .filter(Boolean)
+            );
+
+            /** Número livre para o próximo pedido desta cotação. */
+            const reservarNumeroPedido = (base: string | null): string | null => {
+                if (!base) return null;
+                if (totalPedidosDaCotacao <= 1 && !numerosUsados.has(base)) {
+                    numerosUsados.add(base);
+                    return base;
+                }
+                for (let sufixo = 1; sufixo <= 999; sufixo++) {
+                    const candidato = `${base}.${sufixo}`;
+                    if (!numerosUsados.has(candidato)) {
+                        numerosUsados.add(candidato);
+                        return candidato;
+                    }
+                }
+                return null;
+            };
+
             const createdOrders: any[] = [];
+            const pedidosComFalha: string[] = [];
             const selectedProposalIds = new Set<string>();
             const processedSupplierKeys = new Set<string>();
 
@@ -424,9 +472,8 @@ export async function POST(req: NextRequest) {
             const cotacaoNumero = cotacaoData?.numero || null;
 
             // Create orders for each supplier
-            let supplierIndex = 0;
             for (const supplierGroup of itemsBySupplier) {
-                const { supplierId, proposalId, supplierUserId, supplierName, supplierDetails, items, freightPrice, impostos, deliveryDays, paymentMethod } = supplierGroup;
+                const { supplierId, proposalId, supplierUserId, supplierName, supplierDetails, items, freightPrice, impostos, desconto, deliveryDays, paymentMethod } = supplierGroup;
 
                 const supplierKey = String(supplierId);
                 if (processedSupplierKeys.has(supplierKey)) {
@@ -445,61 +492,79 @@ export async function POST(req: NextRequest) {
                 const supplierSubtotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
                 const freightValue = parseFloat(freightPrice) || 0;
                 const impostosValue = parseFloat(impostos) || 0;
+                // Desconto negociado pelo fornecedor: abate do total do pedido
+                // e nunca pode passar do próprio subtotal.
+                const descontoValue = Math.min(Math.max(parseFloat(desconto) || 0, 0), supplierSubtotal);
                 const deliveryDaysValue = Number.isInteger(deliveryDays) && deliveryDays >= 0
                     ? deliveryDays
                     : null;
                 const paymentMethodValue = typeof paymentMethod === 'string' && paymentMethod.trim().length > 0
                     ? paymentMethod.trim()
                     : null;
-                const supplierTotal = supplierSubtotal + freightValue + impostosValue;
+                const supplierTotal = supplierSubtotal - descontoValue + freightValue + impostosValue;
 
-                // Usar o mesmo numero da cotação para rastreabilidade
-                // Se houver mais de um fornecedor, adiciona sufixo (.1, .2, etc.)
-                const totalSuppliers = itemsBySupplier.filter((g: any) => !existingOrderKeys.has(String(g.supplierId)) && !processedSupplierKeys.has(String(g.supplierId))).length;
-                let pedidoNumero: string;
-                if (cotacaoNumero) {
-                    pedidoNumero = totalSuppliers > 1 ? `${cotacaoNumero}.${supplierIndex + 1}` : cotacaoNumero;
-                } else {
-                    pedidoNumero = await getNextPedidoNumero();
-                }
-                supplierIndex++;
+                // Mesmo numero da cotação para rastreabilidade; com mais de um
+                // fornecedor, cada pedido ganha um sufixo (.1, .2, ...).
+                const pedidoNumero = reservarNumeroPedido(cotacaoNumero) || await getNextPedidoNumero();
 
                 // Create pedido
-                const { data: orderData, error: orderError } = await supabaseAdmin
+                const montarPedido = (numero: string) => ({
+                    numero,
+                    cotacao_id: cotacaoId,
+                    proposta_id: proposalId,
+                    user_id: user.id,
+                    fornecedor_id: supplierId,
+                    obra_id: obraId,
+                    valor_total: supplierTotal,
+                    impostos: impostosValue,
+                    desconto: descontoValue,
+                    status: 'pendente',
+                    endereco_entrega: {
+                        clientDetails,
+                        supplierDetails,
+                        items,
+                        summary: {
+                            subtotal: supplierSubtotal,
+                            freight: freightValue,
+                            // `impostos` é a chave lida pelas telas; `taxes`
+                            // fica por compatibilidade com pedidos antigos.
+                            impostos: impostosValue,
+                            taxes: impostosValue,
+                            desconto: descontoValue,
+                            deliveryDays: deliveryDaysValue,
+                            paymentMethod: paymentMethodValue,
+                            observacoes: observacoesCliente
+                        }
+                    },
+                    observacoes: observacoesCliente || 'Pedido gerado via mapa comparativo'
+                });
+
+                let { data: orderData, error: orderError } = await supabaseAdmin
                     .from('pedidos')
-                    .insert({
-                        numero: pedidoNumero,
-                        cotacao_id: cotacaoId,
-                        proposta_id: proposalId,
-                        user_id: user.id,
-                        fornecedor_id: supplierId,
-                        obra_id: obraId,
-                        valor_total: supplierTotal,
-                        impostos: impostosValue,
-                        status: 'pendente',
-                        endereco_entrega: {
-                            clientDetails,
-                            supplierDetails,
-                            items,
-                            summary: {
-                                subtotal: supplierSubtotal,
-                                freight: freightValue,
-                                taxes: impostosValue,
-                                deliveryDays: deliveryDaysValue,
-                                paymentMethod: paymentMethodValue
-                            }
-                        },
-                        observacoes: 'Pedido gerado via mapa comparativo'
-                    })
+                    .insert(montarPedido(pedidoNumero))
                     .select()
                     .single();
 
-                if (orderError) {
+                // 23505 = `pedidos.numero` já usado (outra cotação, corrida
+                // entre abas). Cai na sequência independente em vez de
+                // derrubar o pedido do fornecedor.
+                if (orderError && (orderError as any).code === '23505') {
+                    const numeroAlternativo = await getNextPedidoNumero();
+                    const retry = await supabaseAdmin
+                        .from('pedidos')
+                        .insert(montarPedido(numeroAlternativo))
+                        .select()
+                        .single();
+                    orderData = retry.data;
+                    orderError = retry.error;
+                }
+
+                if (orderError || !orderData) {
+                    // Não aborta: os demais fornecedores selecionados ainda
+                    // precisam virar pedido. As falhas voltam na resposta.
                     console.error('Error creating order:', orderError);
-                    return NextResponse.json({
-                        error: 'Erro ao criar pedido para o fornecedor selecionado',
-                        details: orderError.message || null
-                    }, { status: 500 });
+                    pedidosComFalha.push(supplierName || String(supplierId));
+                    continue;
                 }
 
                 createdOrders.push(orderData);
@@ -655,6 +720,9 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({
                 success: true,
                 orders: createdOrders,
+                // Fornecedores selecionados que não viraram pedido — o cliente
+                // precisa saber quais, em vez de a tela mostrar só um deles.
+                pedidos_com_falha: pedidosComFalha,
                 total_propostas_recebidas: totalPropostasRecebidas || 0,
                 propostas_mantidas: top3Ids.length,
                 propostas_removidas: 0

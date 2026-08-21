@@ -258,7 +258,7 @@ export async function GET(req: NextRequest) {
                     ? supabaseAdmin.from('cotacoes').select('id, status, data_validade').in('id', cotacaoIds)
                     : Promise.resolve({ data: [] }),
                 userIds.length > 0
-                    ? supabaseAdmin.from('users').select('id, nome, email, telefone, cpf_cnpj').in('id', userIds)
+                    ? supabaseAdmin.from('users').select('id, nome, email, telefone, cpf_cnpj, cliente_id').in('id', userIds)
                     : Promise.resolve({ data: [] }),
             ]);
 
@@ -266,11 +266,63 @@ export async function GET(req: NextRequest) {
             const cotacaoMap = new Map((cotacoesRes.data || []).map(c => [c.id, c]));
             const userMap = new Map((usersRes.data || []).map(u => [u.id, u]));
 
+            // ========================================================
+            // Cadastro do cliente (tabela `clientes`)
+            //
+            // É dele que saem o CPF/CNPJ e o ENDEREÇO DE COBRANÇA da nota
+            // fiscal — e a UF desse endereço decide a tributação quando o
+            // cliente é de outro estado. `users` não tem endereço, então o
+            // bloco "Dados do Cliente" acabava repetindo o endereço de
+            // entrega da obra.
+            //
+            // O vínculo user↔cliente pode estar em `users.cliente_id`, em
+            // `clientes.user_id` ou só pelo e-mail (ver lib/profileLinkService),
+            // então procuramos pelos três antes de desistir.
+            // ========================================================
+            const CLIENTE_FIELDS = 'id, user_id, email, nome, razao_social, cpf_cnpj, telefone, cep, logradouro, numero, complemento, bairro, cidade, estado';
+            const usersRows: any[] = (usersRes.data || []) as any[];
+            const clientesEncontrados: any[] = [];
+
+            const clienteIds = [...new Set(usersRows.map(u => u.cliente_id).filter(Boolean))];
+            if (clienteIds.length > 0) {
+                const { data } = await supabaseAdmin.from('clientes').select(CLIENTE_FIELDS).in('id', clienteIds);
+                clientesEncontrados.push(...(data || []));
+            }
+            if (userIds.length > 0) {
+                const { data } = await supabaseAdmin.from('clientes').select(CLIENTE_FIELDS).in('user_id', userIds);
+                clientesEncontrados.push(...(data || []));
+            }
+            const emails = [...new Set(usersRows.map(u => u.email).filter(Boolean))];
+            if (emails.length > 0) {
+                const { data } = await supabaseAdmin.from('clientes').select(CLIENTE_FIELDS).in('email', emails);
+                clientesEncontrados.push(...(data || []));
+            }
+
+            const clientePorId = new Map(clientesEncontrados.map((c: any) => [c.id, c]));
+            const clientePorUserId = new Map(
+                clientesEncontrados.filter((c: any) => c.user_id).map((c: any) => [c.user_id, c])
+            );
+            const clientePorEmail = new Map(
+                clientesEncontrados
+                    .filter((c: any) => c.email)
+                    .map((c: any) => [String(c.email).trim().toLowerCase(), c])
+            );
+
+            const cadastroDoUsuario = (userRow: any) => {
+                if (!userRow) return null;
+                return clientePorId.get(userRow.cliente_id)
+                    || clientePorUserId.get(userRow.id)
+                    || clientePorEmail.get(String(userRow.email || '').trim().toLowerCase())
+                    || null;
+            };
+
             // Enrich pedidos
             for (const pedido of pedidos) {
+                const userRow: any = userMap.get(pedido.user_id) || null;
                 (pedido as any)._obra = obraMap.get(pedido.obra_id) || null;
                 (pedido as any)._cotacao = cotacaoMap.get(pedido.cotacao_id) || null;
-                (pedido as any)._cliente = userMap.get(pedido.user_id) || null;
+                (pedido as any)._cliente = userRow;
+                (pedido as any)._cliente_cadastro = cadastroDoUsuario(userRow);
             }
         }
 

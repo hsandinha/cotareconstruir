@@ -11,8 +11,8 @@ import QRCode from 'qrcode';
  */
 export function generate2FASecret(email: string) {
     const secret = speakeasy.generateSecret({
-        name: `Cota Reconstruir (${email})`,
-        issuer: 'Cota Reconstruir',
+        name: `Comprar e Construir (${email})`,
+        issuer: 'Comprar e Construir',
         length: 32,
     });
 

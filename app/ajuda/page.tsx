@@ -12,7 +12,7 @@ export default function FAQPage() {
                 <div className="space-y-6">
                     <div className="rounded-lg border border-slate-200 p-6">
                         <h3 className="text-lg font-semibold text-slate-900">
-                            Como funciona a Cota Reconstruir (
+                            Como funciona a Comprar e Construir (
                             <Link href="https://www.comprareconstruir.com" className="underline decoration-orange-500 underline-offset-2">
                                 comprareconstruir.com
                             </Link>

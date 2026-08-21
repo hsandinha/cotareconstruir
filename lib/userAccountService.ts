@@ -96,7 +96,7 @@ async function sendCredentials({
     const message = `
 Olá ${name}!
 
-Sua conta foi criada no sistema Cota Reconstruir.
+Sua conta foi criada no sistema Comprar e Construir.
 
 📧 Email: ${email}
 🔑 Senha temporária: ${password}
@@ -106,7 +106,7 @@ Sua conta foi criada no sistema Cota Reconstruir.
 Acesse: https://comprareconstruir.com/login
 
 Atenciosamente,
-Equipe Cota Reconstruir
+Equipe Comprar e Construir
     `.trim();
 
     console.log('📧 Enviando credenciais:', { email, whatsapp, message });

@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
                 valor_total,
                 valor_frete,
                 valor_impostos,
+                valor_desconto,
                 prazo_entrega,
                 condicoes_pagamento,
                 observacoes,
@@ -88,6 +89,8 @@ export async function POST(req: NextRequest) {
                 ? prazo_entrega
                 : null;
             const impostosValue = parseFloat(valor_impostos) || 0;
+            // Desconto negociado (R$) — substitui o antigo "desconto à vista".
+            const descontoValue = Math.max(parseFloat(valor_desconto) || 0, 0);
 
             if (!cotacao_id || !itens || !Array.isArray(itens)) {
                 return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 });
@@ -132,6 +135,15 @@ export async function POST(req: NextRequest) {
                 .eq('fornecedor_id', fornecedorId)
                 .limit(1);
 
+            // Quem enviou a proposta: várias pessoas podem responder pelo
+            // mesmo fornecedor, e a Ordem de Compra precisa mostrar o contato
+            // (nome), não o e-mail da empresa.
+            const { data: autorRow } = await supabaseAdmin
+                .from('users')
+                .select('nome, email')
+                .eq('id', user.id)
+                .single();
+
             const propostaPayload = {
                 cotacao_id,
                 fornecedor_id: fornecedorId,
@@ -139,9 +151,12 @@ export async function POST(req: NextRequest) {
                 valor_total: valor_total || 0,
                 valor_frete: valor_frete || 0,
                 impostos: impostosValue,
+                desconto: descontoValue,
                 prazo_entrega: prazoEntregaValue,
                 condicoes_pagamento: condicoes_pagamento || null,
                 observacoes: observacoes || null,
+                enviada_por_user_id: user.id,
+                enviada_por_nome: autorRow?.nome || autorRow?.email || null,
                 data_envio: new Date().toISOString(),
                 data_validade: data_validade || null
             };
@@ -289,7 +304,8 @@ export async function POST(req: NextRequest) {
                 const subtotal = (refreshedItens || []).reduce((sum: number, item: any) => sum + (parseFloat(item.subtotal) || 0), 0);
                 const freight = parseFloat(valor_frete) || 0;
                 const taxes = impostosValue;
-                const totalPedido = subtotal + freight + taxes;
+                const desconto = Math.min(descontoValue, subtotal);
+                const totalPedido = subtotal - desconto + freight + taxes;
 
                 const { data: pedidoAtual } = await supabaseAdmin
                     .from('pedidos')
@@ -305,6 +321,7 @@ export async function POST(req: NextRequest) {
                     .update({
                         valor_total: totalPedido,
                         impostos: taxes,
+                        desconto,
                         condicoes_pagamento: condicoes_pagamento || null,
                         endereco_entrega: {
                             ...enderecoAtual,
@@ -312,7 +329,11 @@ export async function POST(req: NextRequest) {
                                 ...summaryAtual,
                                 subtotal,
                                 freight,
+                                // `impostos` é a chave lida pelas telas;
+                                // `taxes` fica por compatibilidade.
+                                impostos: taxes,
                                 taxes,
+                                desconto,
                                 deliveryDays: prazoEntregaValue,
                                 paymentMethod: condicoes_pagamento || null
                             }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { ChatInterface } from "../../ChatInterface";
 
 import { supabase } from "@/lib/supabaseAuth";
@@ -88,16 +88,38 @@ interface SaleOrder {
     };
 }
 
+/** Monta o endereço em uma linha a partir das colunas de `obras`/`clientes`. */
+function formatEndereco(row: any): string {
+    if (!row) return '';
+    return [
+        [row.logradouro, row.numero].filter(Boolean).join(', '),
+        row.complemento,
+        row.bairro,
+        [row.cidade, row.estado].filter(Boolean).join('/'),
+        row.cep ? `CEP: ${row.cep}` : ''
+    ].filter(Boolean).join(' - ');
+}
+
 export function SupplierSalesSection() {
     const { showToast } = useToast();
     const { user, session, initialized } = useAuth();
     const { activeSupplierId, activeSupplier, requiresSelection } = useSupplierAccessContext();
     const [activeTab, setActiveTab] = useState<"all" | WorkflowStep>("all");
-    const [selectedOrder, setSelectedOrder] = useState<SaleOrder | null>(null);
+    // Guarda só o id: o pedido aberto é derivado de `orders`, senão o modal
+    // continuaria mostrando o snapshot de quando foi aberto — era por isso
+    // que "Aprovar pedido" não virava "Aprovado" na tela do fornecedor,
+    // embora o status já tivesse mudado no banco (o cliente via aprovado).
+    const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
     const [openChats, setOpenChats] = useState<Array<{ recipientName: string; recipientId: string; initialRoomId: string; initialRoomTitle?: string }>>([]);
     const [searchTerm, setSearchTerm] = useState("");
     const [orders, setOrders] = useState<SaleOrder[]>([]);
     const [loading, setLoading] = useState(true);
+
+    /** Pedido aberto no modal, sempre na versão mais recente da lista. */
+    const selectedOrder = useMemo(
+        () => orders.find(order => order.id === selectedOrderId) || null,
+        [orders, selectedOrderId]
+    );
 
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
     const [invoiceFiles, setInvoiceFiles] = useState<Record<string, File | null>>({});
@@ -139,6 +161,10 @@ export function SupplierSalesSection() {
             const mappedOrders: SaleOrder[] = data.map((pedido: any) => {
                 const obra = pedido._obra;
                 const cliente = pedido._cliente;
+                // Cadastro do cliente (tabela `clientes`): CPF/CNPJ e endereço
+                // de cobrança. NÃO confundir com o endereço da obra, que é o
+                // de entrega.
+                const clienteCadastro = pedido._cliente_cadastro;
                 const extraData = pedido.endereco_entrega || {};
                 return {
                     id: pedido.id,
@@ -148,17 +174,12 @@ export function SupplierSalesSection() {
                     clientCode: cliente?.nome || cliente?.email || pedido.user_id || '',
                     clientName: cliente?.nome || extraData.clientDetails?.name || '',
                     workName: obra?.nome || extraData.workName || 'Obra sem nome',
+                    // Endereço de ENTREGA: sempre o da obra
                     location: {
                         neighborhood: obra?.bairro || '',
                         city: obra?.cidade || '',
                         state: obra?.estado || '',
-                        fullAddress: [
-                            [obra?.logradouro, obra?.numero].filter(Boolean).join(', '),
-                            obra?.complemento,
-                            obra?.bairro,
-                            [obra?.cidade, obra?.estado].filter(Boolean).join('/'),
-                            obra?.cep ? `CEP: ${obra.cep}` : ''
-                        ].filter(Boolean).join(' - ')
+                        fullAddress: formatEndereco(obra)
                     },
                     deliverySchedule: obra?.horario_entrega || extraData.deliverySchedule,
                     items: (pedido.pedido_itens || []).map((item: any) => ({
@@ -169,19 +190,16 @@ export function SupplierSalesSection() {
                         unitPrice: item.preco_unitario,
                         total: item.subtotal
                     })),
-                    clientDetails: extraData.clientDetails || (cliente ? {
-                        name: cliente.nome || '',
-                        document: cliente.cpf_cnpj || '',
-                        email: cliente.email || '',
-                        phone: cliente.telefone || '',
-                        address: obra ? [
-                            [obra.logradouro, obra.numero].filter(Boolean).join(', '),
-                            obra.complemento,
-                            obra.bairro,
-                            [obra.cidade, obra.estado].filter(Boolean).join('/'),
-                            obra.cep ? `CEP: ${obra.cep}` : ''
-                        ].filter(Boolean).join(' - ') : ''
-                    } : undefined),
+                    // Dados de COBRANÇA (nota fiscal): vêm do cadastro do
+                    // cliente. O `clientDetails` gravado no pedido guarda só
+                    // nome/documento/contato — nunca teve endereço.
+                    clientDetails: (clienteCadastro || cliente || extraData.clientDetails) ? {
+                        name: clienteCadastro?.razao_social || clienteCadastro?.nome || cliente?.nome || extraData.clientDetails?.name || '',
+                        document: clienteCadastro?.cpf_cnpj || cliente?.cpf_cnpj || extraData.clientDetails?.document || '',
+                        email: clienteCadastro?.email || cliente?.email || extraData.clientDetails?.email || '',
+                        phone: clienteCadastro?.telefone || cliente?.telefone || extraData.clientDetails?.phone || '',
+                        address: formatEndereco(clienteCadastro) || extraData.clientDetails?.address || ''
+                    } : undefined,
                     status: mapSupabaseStatus(pedido.status),
                     rawStatus: pedido.status || 'pendente',
                     createdAt: pedido.created_at,
@@ -189,6 +207,7 @@ export function SupplierSalesSection() {
                     totalValue: pedido.valor_total,
                     proposal: extraData.proposal,
                     _pedido_summary: extraData.summary || {},
+                    _supplier_contato: extraData.supplierDetails?.contato || null,
                     _data_confirmacao: pedido.data_confirmacao || null,
                     _data_entrega: pedido.data_entrega || null,
                 };
@@ -285,7 +304,9 @@ export function SupplierSalesSection() {
         const summary = (order as any)._pedido_summary || {};
         const proposal = order.proposal;
         const freight = Number(summary.freight ?? proposal?.freight) || 0;
-        const impostos = Number(summary.impostos) || 0;
+        // `taxes` é o nome antigo da chave; pedidos anteriores só têm ele
+        const impostos = Number(summary.impostos ?? summary.taxes) || 0;
+        const desconto = Number(summary.desconto) || 0;
         const deliveryDays = Number.isFinite(Number(summary.deliveryDays))
             ? Number(summary.deliveryDays)
             : null;
@@ -293,6 +314,7 @@ export function SupplierSalesSection() {
         return {
             freight,
             impostos,
+            desconto,
             deliveryDays,
             paymentMethod: summary.paymentMethod || proposal?.paymentTerms || null,
             validity: summary.validity || proposal?.validity || null,
@@ -309,13 +331,16 @@ export function SupplierSalesSection() {
             statusLabel: getOrderWorkflowLabel(mapOrderWorkflowStatus(order.rawStatus)),
             comprador: {
                 nome: order.clientDetails?.name || order.clientName || 'Cliente',
+                contato: order.clientName || order.clientDetails?.name || null,
                 documento: order.clientDetails?.document,
                 email: order.clientDetails?.email,
                 telefone: order.clientDetails?.phone,
-                endereco: order.location?.fullAddress || order.clientDetails?.address,
+                endereco: order.clientDetails?.address || null,
             },
             fornecedor: {
                 nome: activeSupplier?.nome_fantasia || activeSupplier?.razao_social || 'Fornecedor',
+                // Quem respondeu a cotação, gravado no pedido pelo cliente
+                contato: (order as any)._supplier_contato || null,
                 documento: activeSupplier?.cnpj,
                 email: null,
                 telefone: null,
@@ -338,6 +363,7 @@ export function SupplierSalesSection() {
             }),
             frete: commercials.freight,
             impostos: commercials.impostos,
+            desconto: commercials.desconto,
             total: order.totalValue,
             condicoes: {
                 pagamento: commercials.paymentMethod,
@@ -644,7 +670,7 @@ export function SupplierSalesSection() {
                                 return (
                                     <tr
                                         key={order.id}
-                                        onClick={() => setSelectedOrder(order)}
+                                        onClick={() => setSelectedOrderId(order.id)}
                                         className={`cursor-pointer transition-colors hover:bg-gray-50 ${selectedOrder?.id === order.id ? "bg-blue-50" : ""}`}
                                     >
                                         <td className="px-4 py-3 whitespace-nowrap">
@@ -682,7 +708,7 @@ export function SupplierSalesSection() {
 
             {/* Order Detail Modal */}
             {selectedOrder && (
-                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setSelectedOrder(null)}>
+                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setSelectedOrderId(null)}>
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         {/* Detail Header */}
                         <div className="p-6 border-b border-gray-200 bg-gray-50">
@@ -694,7 +720,13 @@ export function SupplierSalesSection() {
                                     </div>
                                     <p className="text-sm text-gray-600 flex items-center gap-2">
                                         <TruckIcon className="h-4 w-4" />
-                                        {selectedOrder.location.fullAddress}, {selectedOrder.location.neighborhood} - {selectedOrder.location.city}/{selectedOrder.location.state}
+                                        {/* fullAddress já traz bairro/cidade/UF — repetir duplicava a linha */}
+                                        <span>
+                                            <span className="font-medium">Entrega:</span>{' '}
+                                            {selectedOrder.location.fullAddress
+                                                || [selectedOrder.location.neighborhood, [selectedOrder.location.city, selectedOrder.location.state].filter(Boolean).join('/')].filter(Boolean).join(' - ')
+                                                || 'Endereço da obra não informado'}
+                                        </span>
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -706,7 +738,7 @@ export function SupplierSalesSection() {
                                         Chat
                                     </button>
                                     <button
-                                        onClick={() => setSelectedOrder(null)}
+                                        onClick={() => setSelectedOrderId(null)}
                                         className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                                     >
                                         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -903,21 +935,33 @@ export function SupplierSalesSection() {
                                 </div>
                             )}
 
-                            {/* Client Details for Invoicing */}
+                            {/* Dados de faturamento: é a UF DESTE endereço que
+                                define a tributação da NF, não a da entrega. */}
                             {selectedOrder.clientDetails && (
                                 <div className="mb-8 bg-blue-50 border border-blue-100 rounded-lg p-4">
-                                    <h3 className="text-base font-semibold text-blue-900 mb-2">Dados do Cliente (Contato)</h3>
+                                    <h3 className="text-base font-semibold text-blue-900 mb-2">Dados do Cliente (Faturamento)</h3>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                                         <div>
-                                            <p className="text-blue-800"><span className="font-medium">Nome:</span> {selectedOrder.clientDetails.name}</p>
-                                            <p className="text-blue-800"><span className="font-medium">CPF/CNPJ:</span> {selectedOrder.clientDetails.document}</p>
+                                            <p className="text-blue-800"><span className="font-medium">Nome:</span> {selectedOrder.clientDetails.name || '—'}</p>
+                                            <p className="text-blue-800"><span className="font-medium">CPF/CNPJ:</span> {selectedOrder.clientDetails.document || '—'}</p>
                                         </div>
                                         <div>
-                                            <p className="text-blue-800"><span className="font-medium">Email:</span> {selectedOrder.clientDetails.email}</p>
-                                            <p className="text-blue-800"><span className="font-medium">Telefone:</span> {selectedOrder.clientDetails.phone}</p>
+                                            <p className="text-blue-800"><span className="font-medium">Email:</span> {selectedOrder.clientDetails.email || '—'}</p>
+                                            <p className="text-blue-800"><span className="font-medium">Telefone:</span> {selectedOrder.clientDetails.phone || '—'}</p>
                                         </div>
                                         <div className="col-span-1 sm:col-span-2">
-                                            <p className="text-blue-800"><span className="font-medium">Endereço:</span> {selectedOrder.location?.fullAddress || selectedOrder.clientDetails.address}</p>
+                                            {selectedOrder.clientDetails.address ? (
+                                                <p className="text-blue-800">
+                                                    <span className="font-medium">Endereço de cobrança:</span> {selectedOrder.clientDetails.address}
+                                                </p>
+                                            ) : (
+                                                // Nunca cair no endereço da obra: a entrega pode ser em
+                                                // outro estado e mudar o imposto da nota.
+                                                <p className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-amber-800">
+                                                    <span className="font-medium">Endereço de cobrança não informado.</span>{' '}
+                                                    Confirme com o cliente antes de emitir a nota — o endereço de entrega acima é o da obra e pode ser de outra UF.
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -963,6 +1007,12 @@ export function SupplierSalesSection() {
                                                 <div>
                                                     <dt className="text-xs uppercase tracking-wide text-gray-500">Impostos</dt>
                                                     <dd className="font-medium text-gray-900">R$ {commercials.impostos.toFixed(2)}</dd>
+                                                </div>
+                                            )}
+                                            {commercials.desconto > 0 && (
+                                                <div>
+                                                    <dt className="text-xs uppercase tracking-wide text-gray-500">Desconto</dt>
+                                                    <dd className="font-medium text-amber-700">− R$ {commercials.desconto.toFixed(2)}</dd>
                                                 </div>
                                             )}
                                             {commercials.validity && (

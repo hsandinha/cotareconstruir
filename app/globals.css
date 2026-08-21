@@ -221,6 +221,17 @@ body {
 }
 .lp-pulse-badge { animation: lp-pulse-badge 1.6s ease-in-out 2; }
 
+/* Rolagem suave só na landing (âncoras do topo para o bloco do teste) */
+html:has(.lp-root) {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:has(.lp-root) {
+    scroll-behavior: auto;
+  }
+}
+
 /* Grão de papel sutil */
 .lp-paper-grain {
   background-image: repeating-linear-gradient(

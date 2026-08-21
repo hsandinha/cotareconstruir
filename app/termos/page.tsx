@@ -18,13 +18,13 @@ export default function TermsPage() {
                     <p>Última atualização: 07 de dezembro de 2025</p>
 
                     <h2>1. Aceitação dos Termos</h2>
-                    <p>Ao acessar e usar a plataforma Cota Reconstruir ({DOMINIO}), você concorda com estes termos. Se você não concordar com qualquer parte destes termos, você não deve usar nossos serviços.</p>
+                    <p>Ao acessar e usar a plataforma Comprar e Construir ({DOMINIO}), você concorda com estes termos. Se você não concordar com qualquer parte destes termos, você não deve usar nossos serviços.</p>
 
                     <h2>2. Descrição do Serviço</h2>
-                    <p>A Cota Reconstruir ({DOMINIO}) é uma plataforma que conecta compradores (clientes) a fornecedores de materiais de construção. Nós facilitamos o processo de cotação e negociação.</p>
+                    <p>A Comprar e Construir ({DOMINIO}) é uma plataforma que conecta compradores (clientes) a fornecedores de materiais de construção. Nós facilitamos o processo de cotação e negociação.</p>
 
                     <h2>3. Responsabilidades</h2>
-                    <p>A Cota Reconstruir ({DOMINIO}) atua apenas como intermediária na troca de informações. Não nos responsabilizamos pela qualidade dos produtos entregues, prazos de entrega ou pagamentos. Toda a transação comercial é de responsabilidade exclusiva entre Comprador e Fornecedor.</p>
+                    <p>A Comprar e Construir ({DOMINIO}) atua apenas como intermediária na troca de informações. Não nos responsabilizamos pela qualidade dos produtos entregues, prazos de entrega ou pagamentos. Toda a transação comercial é de responsabilidade exclusiva entre Comprador e Fornecedor.</p>
 
                     <h2>4. Cadastro</h2>
                     <p>Para usar o serviço, você deve fornecer informações verdadeiras e atualizadas. O uso de dados falsos (como CNPJ inválido) pode resultar no bloqueio da conta.</p>

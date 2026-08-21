@@ -19,6 +19,7 @@ import {
     ChevronRight,
     Menu,
     X,
+    Rocket,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
@@ -31,6 +32,7 @@ import SuppliersByGroupManagement from "@/components/dashboard/admin/SuppliersBy
 import SupplierApiKeysManagement from "@/components/dashboard/admin/SupplierApiKeysManagement";
 import { ManufacturersSection } from "@/components/dashboard/admin/ManufacturersSection";
 import { MaterialSynonymsSection } from "@/components/dashboard/admin/MaterialSynonymsSection";
+import { LancamentoManagement } from "@/components/dashboard/admin/LancamentoManagement";
 import MaterialRequestsManagement from "@/components/dashboard/admin/MaterialRequestsManagement";
 import OrdersOverviewManagement from "@/components/dashboard/admin/OrdersOverviewManagement";
 import { validatePassword } from "@/lib/validation";
@@ -64,7 +66,8 @@ type AdminTabId =
     | "audit"
     | "reports"
     | "profile"
-    | "gestao-obra";
+    | "gestao-obra"
+    | "lancamento";
 
 type NavItem = { id: AdminTabId; label: string; icon: React.ComponentType<{ className?: string }>; badge?: number };
 type NavGroup = { title: string; items: NavItem[] };
@@ -122,6 +125,7 @@ export default function AdminDashboard() {
             items: [
                 { id: "acompanhamento", label: "Acompanhamento", icon: Activity },
                 { id: "users", label: "Usuários", icon: Users },
+                { id: "lancamento", label: "Turma de Lançamento", icon: Rocket },
             ],
         },
         {
@@ -606,6 +610,7 @@ export default function AdminDashboard() {
 
                         {activeTab === "fabricantes" && <ManufacturersSection />}
                         {activeTab === "sinonimos" && <MaterialSynonymsSection />}
+                        {activeTab === "lancamento" && <LancamentoManagement />}
                         {activeTab === "materiais-novos" && <MaterialRequestsManagement />}
                         {activeTab === "acompanhamento" && <OrdersOverviewManagement />}
 

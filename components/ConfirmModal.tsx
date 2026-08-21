@@ -16,9 +16,11 @@ interface ConfirmOptions {
     confirmLabel?: string;
     cancelLabel?: string;
     variant?: "danger" | "warning" | "info";
-    /** If provided, shows a text input and returns the value instead of boolean */
+    /** If provided, shows a text input and returns its value on confirm (false on cancel) */
     promptLabel?: string;
     promptPlaceholder?: string;
+    /** Texto que já vem preenchido no campo */
+    promptDefaultValue?: string;
 }
 
 type ConfirmResult = boolean | string | null;
@@ -43,7 +45,7 @@ export function ConfirmModalProvider({ children }: { children: ReactNode }) {
 
     const confirm = useCallback((opts: ConfirmOptions): Promise<ConfirmResult> => {
         setOptions(opts);
-        setPromptValue("");
+        setPromptValue(opts.promptDefaultValue || "");
         setIsOpen(true);
         return new Promise<ConfirmResult>((resolve) => {
             setResolver(() => resolve);
@@ -53,19 +55,18 @@ export function ConfirmModalProvider({ children }: { children: ReactNode }) {
     const handleConfirm = () => {
         setIsOpen(false);
         if (options?.promptLabel) {
-            resolver?.(promptValue || null);
+            // String (possivelmente vazia) ao confirmar — quem chama precisa
+            // distinguir "confirmou sem escrever nada" de "cancelou".
+            resolver?.(promptValue);
         } else {
             resolver?.(true);
         }
     };
 
     const handleCancel = () => {
+        // Sempre `false` ao cancelar, com ou sem campo de texto
         setIsOpen(false);
-        if (options?.promptLabel) {
-            resolver?.(null);
-        } else {
-            resolver?.(false);
-        }
+        resolver?.(false);
     };
 
     const variant = options?.variant || "danger";

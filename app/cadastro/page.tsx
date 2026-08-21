@@ -63,15 +63,49 @@ function CadastroPageContent() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [confirmationSent, setConfirmationSent] = useState(false);
+    // Turma de lançamento: vagas restantes e resultado quando elas acabam
+    const [turma, setTurma] = useState<{ vagasTotal: number; vagasRestantes: number; diasTeste: number; obrasPorConta: number } | null>(null);
+    const [naFilaDeEspera, setNaFilaDeEspera] = useState<string | null>(null);
+    const [convite, setConvite] = useState<{ nome: string; email: string } | null>(null);
+    const [conviteInvalido, setConviteInvalido] = useState(false);
 
     const set = (field: keyof Form, value: string) =>
         setForm((prev) => ({ ...prev, [field]: value }));
+
+    // Vagas restantes da turma de lançamento
+    useEffect(() => {
+        fetch("/api/lancamento")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => { if (data) setTurma(data); })
+            .catch(() => { /* contador é informativo: falhar não bloqueia o cadastro */ });
+    }, []);
 
     // E-mail que o usuário tentou logar sem ter conta chega por ?email=
     useEffect(() => {
         const prefill = searchParams?.get("email") || "";
         if (prefill) setForm((prev) => (prev.email ? prev : { ...prev, email: prefill }));
     }, [searchParams]);
+
+    // Convite da fila de espera: ?convite=<token> preenche nome e e-mail
+    const conviteToken = searchParams?.get("convite") || "";
+    useEffect(() => {
+        if (!conviteToken) return;
+        fetch(`/api/lancamento/convite?token=${encodeURIComponent(conviteToken)}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+                if (!data?.valido) {
+                    setConviteInvalido(true);
+                    return;
+                }
+                setConvite({ nome: data.nome, email: data.email });
+                setForm((prev) => ({
+                    ...prev,
+                    nome: prev.nome || data.nome || "",
+                    email: prev.email || data.email || "",
+                }));
+            })
+            .catch(() => setConviteInvalido(true));
+    }, [conviteToken]);
 
     const passwordCheck = useMemo(() => validatePassword(form.password), [form.password]);
     const passwordsMatch = form.password.length > 0 && form.password === form.confirmPassword;
@@ -101,6 +135,7 @@ function CadastroPageContent() {
                     telefone: form.telefone.trim(),
                     cpfCnpj: form.cpfCnpj.trim(),
                     password: form.password,
+                    convite: conviteToken || undefined,
                 }),
             });
 
@@ -108,6 +143,12 @@ function CadastroPageContent() {
 
             if (!res.ok) {
                 setError(json?.error || "Não foi possível criar a conta.");
+                setLoading(false);
+                return;
+            }
+
+            if (json.waitlisted) {
+                setNaFilaDeEspera(json.message || "Você entrou na fila de espera.");
                 setLoading(false);
                 return;
             }
@@ -136,6 +177,27 @@ function CadastroPageContent() {
             setError("Erro de conexão. Tente novamente.");
             setLoading(false);
         }
+    }
+
+    if (naFilaDeEspera) {
+        return (
+            <div className="min-h-screen bg-slate-900 px-4 py-20">
+                <div className="mx-auto w-full max-w-md rounded-2xl border border-white/10 bg-slate-800/60 p-8 text-center shadow-lg">
+                    <h1 className="text-2xl font-bold text-white">Você está na fila de espera</h1>
+                    <p className="mt-4 text-sm leading-relaxed text-slate-300">{naFilaDeEspera}</p>
+                    <p className="mt-3 text-xs text-slate-400">
+                        Guardamos seus dados. Assim que abrir uma vaga, avisamos por e-mail em{" "}
+                        <span className="font-semibold text-slate-200">{form.email.trim().toLowerCase()}</span>.
+                    </p>
+                    <Link
+                        href="/"
+                        className="mt-6 inline-block rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                    >
+                        Voltar ao início
+                    </Link>
+                </div>
+            </div>
+        );
     }
 
     if (confirmationSent) {
@@ -171,8 +233,50 @@ function CadastroPageContent() {
             <div className="mx-auto w-full max-w-lg rounded-2xl border border-white/10 bg-slate-800/60 p-8 shadow-lg">
                 <h1 className="text-center text-2xl font-bold text-white">Criar conta de cliente</h1>
                 <p className="mt-2 text-center text-sm text-slate-400">
-                    Cadastre sua obra e receba propostas comparadas no mapa. Teste gratuito de 1 mês.
+                    Cadastre sua obra e receba propostas comparadas no mapa.
                 </p>
+
+                {convite && (
+                    <div className="mt-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-center">
+                        <p className="text-sm font-semibold text-emerald-300">
+                            Vaga reservada para {convite.nome || convite.email}
+                        </p>
+                        <p className="mt-1 text-xs text-emerald-200/80">
+                            Você foi convidado da fila de espera. Complete o cadastro para começar o teste.
+                        </p>
+                    </div>
+                )}
+
+                {conviteInvalido && (
+                    <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-center">
+                        <p className="text-sm text-amber-200">
+                            Este convite expirou ou já foi usado. Você ainda pode se cadastrar se houver vaga aberta.
+                        </p>
+                    </div>
+                )}
+
+                {turma && !convite && (
+                    <div className="mt-4 rounded-lg border border-white/10 bg-slate-900/60 px-4 py-3 text-center">
+                        {turma.vagasRestantes > 0 ? (
+                            <>
+                                <p className="text-sm font-semibold text-white">
+                                    Teste gratuito de {turma.diasTeste} dias
+                                    <span className="mx-2 text-slate-500">·</span>
+                                    {turma.obrasPorConta === 1 ? "1 obra" : `${turma.obrasPorConta} obras`}
+                                </p>
+                                <p className="mt-1 text-xs text-slate-400">
+                                    Restam <span className="font-bold text-blue-400">{turma.vagasRestantes}</span> de{" "}
+                                    {turma.vagasTotal} vagas da turma de lançamento.
+                                </p>
+                            </>
+                        ) : (
+                            <p className="text-sm text-amber-300">
+                                As {turma.vagasTotal} vagas da turma de lançamento foram preenchidas. Ao enviar o
+                                formulário você entra na fila de espera.
+                            </p>
+                        )}
+                    </div>
+                )}
 
                 <form onSubmit={handleSubmit} className="mt-8 space-y-4">
                     <div>

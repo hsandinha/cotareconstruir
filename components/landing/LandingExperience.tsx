@@ -12,7 +12,36 @@
  */
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useInView, useScrollProgress, useTilt, useCountUp, usePrefersReducedMotion, useShortViewport } from "./hooks";
+
+type StatusTurma = {
+    vagasTotal: number;
+    vagasRestantes: number;
+    inscricoesAbertas: boolean;
+    diasTeste: number;
+    obrasPorConta: number;
+};
+
+/**
+ * Vagas restantes da turma de lançamento.
+ * `null` enquanto carrega ou se a chamada falhar — a página nunca depende
+ * disso para renderizar.
+ */
+function useStatusTurma(): StatusTurma | null {
+    const [turma, setTurma] = useState<StatusTurma | null>(null);
+
+    useEffect(() => {
+        let ativo = true;
+        fetch("/api/lancamento")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => { if (ativo && data) setTurma(data); })
+            .catch(() => { /* contador é informativo */ });
+        return () => { ativo = false; };
+    }, []);
+
+    return turma;
+}
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const seg = (p: number, start: number, len: number) => clamp01((p - start) / len);
@@ -91,6 +120,7 @@ function Hero() {
     const tilt = useTilt(4);
     const reduced = usePrefersReducedMotion();
     const { ref, inView } = useInView<HTMLDivElement>(0.1);
+    const turma = useStatusTurma();
 
     return (
         <section id="hero" ref={ref} className="lp-paper-grain relative overflow-hidden bg-[#FAF8F5] px-6 pb-20 pt-32 md:pt-40">
@@ -111,14 +141,34 @@ function Hero() {
                         <span className="font-mono font-bold text-[#15803D]">24,62%</span>, “Média Histórica”.
                     </p>
                     <div className="mt-8 flex flex-wrap items-center gap-4">
+                        {/* Leva ao bloco do teste gratuito, não direto ao cadastro:
+                            o lead precisa ver as condições antes de se cadastrar. */}
                         <Link
-                            href="/cadastro"
+                            href="#teste-gratuito"
                             className="rounded-lg bg-[#F97316] px-7 py-3.5 text-base font-bold text-[#1C1917] shadow-[4px_4px_0_#1C1917] transition-transform hover:-translate-y-0.5 hover:bg-[#FB923C]"
                         >
                             Montar minha lista
                         </Link>
+                        {/* Atalho para quem já chegou decidido */}
+                        <Link
+                            href="/cadastro"
+                            className="font-mono text-sm font-bold uppercase tracking-widest text-[#57534E] underline decoration-[#F97316] decoration-2 underline-offset-4 transition-colors hover:text-[#1C1917]"
+                        >
+                            Já quero me cadastrar
+                        </Link>
                     </div>
-                    <p className="mt-6 font-mono text-xs uppercase tracking-widest text-[#57534E]">
+                    <p className="mt-4 font-mono text-xs uppercase tracking-widest text-[#57534E]">
+                        <span className="font-bold text-[#1C1917]">{turma?.diasTeste ?? 30} dias grátis</span>
+                        <span className="mx-2 text-[#A8A29E]">·</span>
+                        {turma && turma.obrasPorConta !== 1 ? `${turma.obrasPorConta} obras` : "1 obra"}
+                        <span className="mx-2 text-[#A8A29E]">·</span>
+                        {turma
+                            ? turma.vagasRestantes > 0
+                                ? `restam ${turma.vagasRestantes} de ${turma.vagasTotal} vagas`
+                                : "vagas esgotadas · fila de espera"
+                            : "20 primeiros cadastros"}
+                    </p>
+                    <p className="mt-5 font-mono text-xs uppercase tracking-widest text-[#57534E]">
                         ↓ role e assista uma cotação acontecer
                     </p>
                 </div>
@@ -935,6 +985,13 @@ const PROCESSO = [
     "Suporte técnico e comercial com resposta em até 24h, de segunda a sexta, das 7h às 17h.",
 ] as const;
 
+/** As condições da gratuidade, resumidas para leitura imediata. */
+const CONDICOES_TESTE = [
+    { chave: "dias", titulo: "30 dias grátis", detalhe: "a partir do cadastro" },
+    { chave: "obra", titulo: "1 obra", detalhe: "cotações ilimitadas nela" },
+    { chave: "vagas", titulo: "20 vagas", detalhe: "primeiros construtores" },
+] as const;
+
 /** Condições de uso — abre ao clicar, sem sair da página. */
 function CondicoesDeUso() {
     return (
@@ -986,22 +1043,52 @@ function CondicoesDeUso() {
 
 function Cta() {
     const { ref, inView } = useInView<HTMLDivElement>(0.2);
+    const turma = useStatusTurma();
+    const vagasRestantes = turma?.vagasRestantes ?? null;
+    const esgotado = turma !== null && vagasRestantes === 0;
 
     return (
-        <section className="border-t border-white/10 bg-[#292524] px-6 py-28 text-[#FAF8F5]">
+        <section
+            id="teste-gratuito"
+            className="scroll-mt-24 border-t border-white/10 bg-[#292524] px-6 py-28 text-[#FAF8F5]"
+        >
             <div ref={ref} className="mx-auto max-w-3xl text-center">
                 <SectionLabel dark>Turma de lançamento</SectionLabel>
 
                 <h2 className="mt-4 text-3xl font-extrabold tracking-tight md:text-5xl">
                     Teste gratuito de 1 mês
                 </h2>
-                <p className="mx-auto mt-5 max-w-2xl text-lg font-semibold leading-relaxed text-[#FAF8F5]">
-                    Ilimitado, sem compromisso, sem cartão e sem fidelidade.
+
+                {/* As três condições da gratuidade, à vista — sem depender de
+                    abrir "Condições de uso". */}
+                <ul className="mx-auto mt-6 flex max-w-2xl flex-wrap justify-center gap-3">
+                    {CONDICOES_TESTE.map((condicao) => (
+                        <li
+                            key={condicao.chave}
+                            className="rounded-md border border-[#F97316]/40 bg-[#1C1917] px-4 py-2 text-left"
+                        >
+                            <p className="font-mono text-sm font-bold uppercase tracking-wide text-[#F97316]">
+                                {condicao.chave === "vagas" && vagasRestantes !== null
+                                    ? vagasRestantes > 0
+                                        ? `${vagasRestantes} vagas`
+                                        : "vagas esgotadas"
+                                    : condicao.titulo}
+                            </p>
+                            <p className="mt-0.5 text-xs text-[#D6D3D1]">
+                                {condicao.chave === "vagas" && vagasRestantes !== null
+                                    ? vagasRestantes > 0
+                                        ? `restantes de ${turma?.vagasTotal}`
+                                        : "entre na fila de espera"
+                                    : condicao.detalhe}
+                            </p>
+                        </li>
+                    ))}
+                </ul>
+
+                <p className="mx-auto mt-6 max-w-2xl text-lg font-semibold leading-relaxed text-[#FAF8F5]">
+                    Cotações e fechamentos ilimitados na obra cadastrada. Sem compromisso, sem cartão e sem fidelidade.
                 </p>
-                <p className="mx-auto mt-2 max-w-2xl text-lg leading-relaxed text-[#D6D3D1]">
-                    Cadastre uma obra e compare propostas no mapa antes de decidir.
-                </p>
-                <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-[#A8A29E]">
+                <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-[#A8A29E]">
                     <span className="font-semibold text-[#FAF8F5]">Turma de lançamento:</span> estamos abrindo a
                     plataforma para os 20 primeiros construtores, com acompanhamento próximo de cada obra durante o
                     período gratuito. Depois disso, o acesso passa a ser por fila de espera.
@@ -1030,7 +1117,7 @@ function Cta() {
                         href="/cadastro"
                         className="rounded-lg bg-[#F97316] px-8 py-4 text-base font-bold uppercase tracking-wide text-[#1C1917] shadow-[4px_4px_0_rgba(0,0,0,0.4)] transition-transform hover:-translate-y-0.5 hover:bg-[#FB923C]"
                     >
-                        Quero testar gratuitamente
+                        {esgotado ? "Entrar na fila de espera" : "Quero testar gratuitamente"}
                     </Link>
                 </div>
 

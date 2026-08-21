@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect, useRef, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
-import { dedupeObraEtapas } from "@/lib/obraEtapas";
+import { dedupeObraEtapas, sortObraEtapasByCronologia } from "@/lib/obraEtapas";
 import { sendEmail } from "../../../app/actions/email";
 import {
     buildCsv,
@@ -16,7 +16,8 @@ import {
     parseFlexibleNumber
 } from "@/lib/csvSpreadsheet";
 import { useToast } from "@/components/ToastProvider";
-import { normalizeSearchText, expandTermWithSynonyms, fetchAllRows, scoreTermMatch } from "@/lib/materialSearch";
+import { useConfirmModal } from "@/components/ConfirmModal";
+import { normalizeSearchText, expandTermWithSynonyms, fetchAllRows, scoreTermMatch, textIncludesTerm } from "@/lib/materialSearch";
 import { AttachmentsField } from "@/components/AttachmentsField";
 import { uploadAnexos } from "@/lib/anexos";
 import {
@@ -128,6 +129,7 @@ const DRAFT_STORAGE_KEY = "cotacao_carrinho_rascunho_v1";
 
 export function ClientSolicitationSection() {
     const { showToast } = useToast();
+    const { confirm: confirmModal } = useConfirmModal();
     const { user, initialized } = useAuth();
 
     // Estados principais
@@ -301,8 +303,11 @@ export function ClientSolicitationSection() {
             .select("id, nome, unidade")
             .order("nome", { ascending: true });
 
-        // Cada variante vira um grupo AND das suas palavras: "tubo 50" →
-        // and(nome.ilike.%tubo%,nome.ilike.%50%). Variantes se combinam em OR.
+        // Cada variante vira um grupo AND das suas palavras: "cabo flex" →
+        // and(nome.ilike.cabo%,nome.ilike.%flex%). Variantes se combinam em OR.
+        // A PRIMEIRA palavra é ancorada no início do nome (sem o % da frente),
+        // mesma regra de lib/materialSearch: "cabo" traz "CABO FLEXÍVEL...",
+        // nunca "TERMINAL PARA CABO".
         const orParts = variants
             .map(variant => {
                 const tokens = variant
@@ -310,8 +315,10 @@ export function ClientSolicitationSection() {
                     .map(token => escapeIlikePattern(token))
                     .filter(Boolean);
                 if (tokens.length === 0) return null;
-                if (tokens.length === 1) return `nome.ilike.%${tokens[0]}%`;
-                return `and(${tokens.map(token => `nome.ilike.%${token}%`).join(',')})`;
+                const [first, ...rest] = tokens;
+                if (rest.length === 0) return `nome.ilike.${first}%`;
+                const conditions = [`nome.ilike.${first}%`, ...rest.map(token => `nome.ilike.%${token}%`)];
+                return `and(${conditions.join(',')})`;
             })
             .filter(Boolean) as string[];
 
@@ -531,6 +538,12 @@ export function ClientSolicitationSection() {
         })();
     }, [initialized, user]);
 
+    // Cronologia cadastrada em `fases`, para ordenar as etapas da obra
+    const cronologiaPorFase = useMemo(
+        () => new Map(fases.map(fase => [fase.id, fase.cronologia])),
+        [fases]
+    );
+
     // Obra selecionada
     const selectedObra = useMemo(() => {
         return obras.find(o => o.id === selectedObraId);
@@ -541,8 +554,13 @@ export function ClientSolicitationSection() {
     // O cliente pode cotar qualquer etapa listada, exceto as já concluídas.
     const validEtapasForQuotation = useMemo(() => {
         if (obraEtapas.length === 0) return [];
-        return obraEtapas.filter(etapa => !etapa.is_completed);
-    }, [obraEtapas]);
+        // Mesma cronologia da aba Obras e Endereços: a árvore segue a ordem
+        // cadastrada em `fases`, não a ordem em que as etapas foram criadas.
+        return sortObraEtapasByCronologia(
+            obraEtapas.filter(etapa => !etapa.is_completed),
+            cronologiaPorFase
+        );
+    }, [obraEtapas, cronologiaPorFase]);
 
     const groupIdsByEtapa = useMemo(() => {
         const map = new Map<string, Set<string>>();
@@ -680,6 +698,46 @@ export function ClientSolicitationSection() {
         if (cartBumpTimeoutRef.current) clearTimeout(cartBumpTimeoutRef.current);
         recentlyAddedTimeoutRef.current = setTimeout(() => setRecentlyAddedId(null), 1400);
         cartBumpTimeoutRef.current = setTimeout(() => setCartBump(false), 350);
+    };
+
+    // Esvazia o carrinho e o estado de navegação da obra anterior
+    const esvaziarCarrinho = () => {
+        setItems([]);
+        setLastRemoved(null);
+        setDraftRestored(false);
+        setSearchTerm("");
+        setPhaseFilter("");
+        setExpandedFases(new Set());
+        setExpandedServicos(new Set());
+        setExpandedGrupos(new Set());
+        autoExpandedObraRef.current = null;
+        try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* ignora */ }
+    };
+
+    /**
+     * Seleciona a obra da cotação. Trocar de obra esvazia o carrinho: os
+     * materiais pertencem à obra em que foram escolhidos e não acompanham a
+     * troca. Reescolher a MESMA obra mantém o que já estava montado.
+     */
+    const selecionarObra = async (obraId: string) => {
+        const trocandoDeObra = Boolean(selectedObraId) && selectedObraId !== obraId;
+
+        if (trocandoDeObra && items.length > 0) {
+            const nomeAtual = obras.find(o => o.id === selectedObraId)?.nome || "obra atual";
+            const confirmado = await confirmModal({
+                title: "Trocar de obra?",
+                message: `O carrinho tem ${items.length} ${items.length === 1 ? "item" : "itens"} da obra "${nomeAtual}". Ao trocar de obra o carrinho será esvaziado.`,
+                confirmLabel: "Trocar e esvaziar",
+                cancelLabel: "Cancelar",
+                variant: "warning",
+            });
+            if (confirmado !== true) return;
+        }
+
+        if (trocandoDeObra) esvaziarCarrinho();
+
+        setSelectedObraId(obraId);
+        setStep(2);
     };
 
     // Descarta o rascunho restaurado e zera o carrinho
@@ -896,12 +954,10 @@ export function ClientSolicitationSection() {
         }
     };
 
-    // Filtrar categorias
+    // Filtrar categorias (mesma regra ancorada da busca de materiais)
     const filteredGroups = useMemo(() => {
         if (!searchTerm) return availableGroups;
-        return availableGroups.filter(g =>
-            normalizeText(g).includes(normalizeText(searchTerm))
-        );
+        return availableGroups.filter(g => textIncludesTerm(g, searchTerm));
     }, [availableGroups, searchTerm]);
 
     const showExternalSearchDropdown =
@@ -1551,7 +1607,7 @@ export function ClientSolicitationSection() {
                 try {
                     await sendEmail({
                         to: 'admin@comprareconstruir.com',
-                        subject: `Nova cotação em ${selectedObra.cidade} - Cota Reconstruir`,
+                        subject: `Nova cotação em ${selectedObra.cidade} - Comprar e Construir`,
                         html: `
                             <h1>Nova cotação criada!</h1>
                             <p>Obra: <strong>${selectedObra.nome}</strong> em ${selectedObra.bairro}, ${selectedObra.cidade}</p>
@@ -1722,10 +1778,7 @@ export function ClientSolicitationSection() {
                             {obras.map(obra => (
                                 <button
                                     key={obra.id}
-                                    onClick={() => {
-                                        setSelectedObraId(obra.id);
-                                        setStep(2);
-                                    }}
+                                    onClick={() => { void selecionarObra(obra.id); }}
                                     className={`group relative flex items-center gap-4 rounded-xl border-2 p-4 text-left transition-all hover:border-blue-300 hover:bg-blue-50/50 ${selectedObraId === obra.id
                                         ? 'border-blue-500 bg-blue-50'
                                         : 'border-slate-200 bg-white'

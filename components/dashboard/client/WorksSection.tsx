@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, useMemo, type FormEvent } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { formatCepBr } from "../../../lib/utils";
 import { useConfirmModal } from "../../ConfirmModal";
 import { useToast } from "@/components/ToastProvider";
-import { dedupeObraEtapas, etapaJaNoCronograma } from "@/lib/obraEtapas";
+import { dedupeObraEtapas, etapaJaNoCronograma, sortObraEtapasByCronologia } from "@/lib/obraEtapas";
+import { floatingWhatsApp } from "@/lib/content";
 import {
     Building2, MapPin, Calendar, Clock, Plus, Pencil, Trash2, ChevronDown, ChevronUp,
     CheckCircle2, Circle, AlertCircle, Loader2, Save, X, Search, Eye, EyeOff
@@ -63,6 +64,14 @@ type Fase = {
     ordem: number;
 };
 
+/** Aviso de que a próxima obra passa a ser paga. */
+function mensagemLimiteObras(limite: number | null): string {
+    const n = limite ?? 1;
+    return n === 1
+        ? "Seu teste gratuito inclui 1 obra. Para cadastrar outra, é preciso assinar."
+        : `Seu teste gratuito inclui ${n} obras. Para cadastrar outra, é preciso assinar.`;
+}
+
 export function ClientWorksSection() {
     const { showToast } = useToast();
     const { user, initialized } = useAuth();
@@ -73,6 +82,24 @@ export function ClientWorksSection() {
     const [obraEtapas, setObraEtapas] = useState<Record<string, ObraEtapa[]>>({});
     const [fases, setFases] = useState<Fase[]>([]);
     const [loading, setLoading] = useState(true);
+    // Limite de obras do teste gratuito (null = sem limite / conta paga)
+    const [limiteObras, setLimiteObras] = useState<number | null>(null);
+
+    // Cronologia cadastrada em `fases` (Etapa / Fase), usada para ordenar o cronograma
+    const cronologiaPorFase = useMemo(
+        () => new Map(fases.map(fase => [fase.id, fase.ordem])),
+        [fases]
+    );
+
+    // O cronograma de cada obra segue a cronologia da fase, não a ordem em
+    // que as etapas foram adicionadas
+    const etapasPorObra = useMemo(() => {
+        const ordenadas: Record<string, ObraEtapa[]> = {};
+        for (const [obraId, etapas] of Object.entries(obraEtapas)) {
+            ordenadas[obraId] = sortObraEtapasByCronologia(etapas, cronologiaPorFase);
+        }
+        return ordenadas;
+    }, [obraEtapas, cronologiaPorFase]);
 
     // Estados de UI
     const [expandedObra, setExpandedObra] = useState<string | null>(null);
@@ -159,6 +186,16 @@ export function ClientWorksSection() {
                 nome: f.nome,
                 ordem: f.cronologia || 0
             })));
+
+            // Limite de obras da conta (teste gratuito). Falha em silêncio:
+            // quem barra de verdade é a trava do banco.
+            supabase
+                .rpc('limite_obras_do_usuario', { p_user_id: user!.id })
+                .then(({ data, error }: { data: any; error: any }) => {
+                    if (error) return;
+                    const limite = Number(data);
+                    setLimiteObras(Number.isFinite(limite) && limite > 0 ? limite : null);
+                });
 
             // Carregar obras do usuário
             const { data: obrasData, error: obrasError } = await supabase
@@ -269,9 +306,14 @@ export function ClientWorksSection() {
 
             resetObraForm();
             await loadData();
-        } catch (error) {
-            console.error("Erro ao salvar obra:", error);
-            showToast("error", "Erro ao salvar obra.");
+        } catch (error: any) {
+            // A trava do teste gratuito vem do trigger obras_limite_teste_gratuito
+            if (String(error?.message || '').includes('limite_obras_teste_gratuito')) {
+                showToast("error", mensagemLimiteObras(limiteObras));
+            } else {
+                console.error("Erro ao salvar obra:", error);
+                showToast("error", "Erro ao salvar obra.");
+            }
         } finally {
             setSavingObra(false);
         }
@@ -305,10 +347,10 @@ export function ClientWorksSection() {
 
         setSavingEtapa(true);
         try {
-            const currentEtapas = obraEtapas[selectedObraId] || [];
-            const nextOrdem = currentEtapas.length > 0
-                ? Math.max(...currentEtapas.map(e => e.ordem)) + 1
-                : 1;
+            // A posição no cronograma vem da cronologia da fase, não da ordem
+            // em que o cliente adiciona: Instalações entra antes de Pintura
+            // mesmo que Pintura tenha sido cadastrada primeiro.
+            const nextOrdem = fase.ordem;
 
             const { error } = await supabase
                 .from('obra_etapas')
@@ -480,6 +522,10 @@ export function ClientWorksSection() {
         return d.toLocaleDateString('pt-BR');
     };
 
+    // Obras que ocupam vaga no plano (canceladas não contam, igual ao trigger)
+    const obrasQueContam = obras.filter(o => (o.status || 'ativa') !== 'cancelada').length;
+    const limiteAtingido = limiteObras !== null && obrasQueContam >= limiteObras;
+
     const getProgressPercent = (etapas: ObraEtapa[]) => {
         if (!etapas || etapas.length === 0) return 0;
         const completed = etapas.filter(e => e.is_completed).length;
@@ -504,14 +550,45 @@ export function ClientWorksSection() {
                     <p className="text-sm text-slate-500 mt-1">Gerencie suas obras e cronograma de etapas</p>
                 </div>
                 <button
-                    onClick={() => { resetObraForm(); setShowObraForm(true); }}
-                    className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-blue-700 transition-all"
+                    onClick={() => {
+                        if (limiteAtingido) {
+                            showToast("error", mensagemLimiteObras(limiteObras));
+                            return;
+                        }
+                        resetObraForm();
+                        setShowObraForm(true);
+                    }}
+                    disabled={limiteAtingido}
+                    title={limiteAtingido ? mensagemLimiteObras(limiteObras) : undefined}
+                    className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
                     data-tour="cliente-obras-nova"
                 >
                     <Plus className="w-4 h-4" />
                     Nova Obra
                 </button>
             </div>
+
+            {/* Aviso do teste gratuito: a segunda obra exige assinatura */}
+            {limiteAtingido && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                    <div>
+                        <p className="text-sm font-semibold text-amber-900">
+                            {mensagemLimiteObras(limiteObras)}
+                        </p>
+                        <p className="mt-0.5 text-xs text-amber-700">
+                            Cotações e pedidos seguem ilimitados na obra que você já cadastrou.
+                        </p>
+                    </div>
+                    <a
+                        href={`https://wa.me/${floatingWhatsApp.phone}?text=${encodeURIComponent('Olá! Quero assinar para cadastrar mais uma obra.')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700"
+                    >
+                        Quero assinar
+                    </a>
+                </div>
+            )}
 
             {/* Lista de Obras */}
             {obras.length === 0 ? (
@@ -520,7 +597,7 @@ export function ClientWorksSection() {
                     <h3 className="text-lg font-semibold text-slate-700">Nenhuma obra cadastrada</h3>
                     <p className="text-sm text-slate-500 mt-1 mb-4">Comece cadastrando sua primeira obra</p>
                     <button
-                        onClick={() => setShowObraForm(true)}
+                        onClick={() => { resetObraForm(); setShowObraForm(true); }}
                         className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
                     >
                         <Plus className="w-4 h-4" />
@@ -530,7 +607,7 @@ export function ClientWorksSection() {
             ) : (
                 <div className="space-y-4">
                     {obras.map(obra => {
-                        const etapas = obraEtapas[obra.id] || [];
+                        const etapas = etapasPorObra[obra.id] || [];
                         const isExpanded = expandedObra === obra.id;
                         const progress = getProgressPercent(etapas);
 
