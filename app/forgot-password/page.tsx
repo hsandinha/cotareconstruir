@@ -39,7 +39,7 @@ export default function ForgotPasswordPage() {
 
     if (success) {
         return (
-            <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4">
+            <div className="tela-escura min-h-dvh bg-slate-900 flex items-center justify-center px-4">
                 <div className="max-w-md w-full">
                     <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-8">
                         <div className="text-center">
@@ -69,7 +69,7 @@ export default function ForgotPasswordPage() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4">
+        <div className="tela-escura min-h-dvh bg-slate-900 flex items-center justify-center px-4">
             <div className="max-w-md w-full">
                 <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-8">
                     <div className="text-center mb-8">

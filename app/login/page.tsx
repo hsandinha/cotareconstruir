@@ -2,11 +2,12 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseAuth";
 import { decodeLoginRef, quotationDeepLinkPath } from "@/lib/quotationLink";
 import { useModoApp } from "@/lib/modoApp";
-import { Building2, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 
 function LoginPageContent() {
     const router = useRouter();
@@ -254,7 +255,11 @@ function LoginPageContent() {
     return (
         // min-h-dvh (não vh): no celular o vh não desconta a barra do
         // navegador e a tela ficava cortada.
-        <div className="flex min-h-dvh flex-col bg-slate-900">
+        <div className="tela-escura relative flex min-h-dvh flex-col bg-slate-900">
+            {/* Cobre a tela inteira, inclusive a área segura embaixo:
+                `dvh` não a inclui no iPhone e o fundo claro do body vazava
+                como uma faixa branca no rodapé. */}
+            <div className="fixed inset-0 -z-10 bg-slate-900" aria-hidden />
             <div
                 className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5"
                 style={{
@@ -264,9 +269,17 @@ function LoginPageContent() {
             >
                 {/* Marca no topo: dá continuidade à abertura do app */}
                 <div className="mb-8 flex flex-col items-center text-center">
-                    <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#F97316] shadow-lg shadow-orange-500/20">
-                        <Building2 className="h-8 w-8 text-[#1C1917]" />
-                    </span>
+                    {/* logo.png é 1280x720 com margem transparente em volta da
+                        marca; a caixa é larga e o object-contain centraliza.
+                        `priority` porque é a primeira coisa que aparece. */}
+                    <Image
+                        src="/logo.png"
+                        alt="Comprar &amp; Construir"
+                        width={256}
+                        height={144}
+                        priority
+                        className="h-24 w-auto object-contain drop-shadow-[0_6px_18px_rgba(249,115,22,0.28)]"
+                    />
                     <h1 className="mt-4 text-2xl font-bold text-white">
                         {modoApp ? "Bem-vindo de volta" : "Entrar"}
                     </h1>

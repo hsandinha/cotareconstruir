@@ -181,7 +181,7 @@ function CadastroPageContent() {
 
     if (naFilaDeEspera) {
         return (
-            <div className="min-h-screen bg-slate-900 px-4 py-20">
+            <div className="tela-escura min-h-dvh bg-slate-900 px-4 py-20">
                 <div className="mx-auto w-full max-w-md rounded-2xl border border-white/10 bg-slate-800/60 p-8 text-center shadow-lg">
                     <h1 className="text-2xl font-bold text-white">Você está na fila de espera</h1>
                     <p className="mt-4 text-sm leading-relaxed text-slate-300">{naFilaDeEspera}</p>
@@ -202,7 +202,7 @@ function CadastroPageContent() {
 
     if (confirmationSent) {
         return (
-            <div className="min-h-screen bg-slate-900 px-4 py-20">
+            <div className="tela-escura min-h-dvh bg-slate-900 px-4 py-20">
                 <div className="mx-auto w-full max-w-md rounded-2xl border border-white/10 bg-slate-800/60 p-8 text-center shadow-lg">
                     <h1 className="text-2xl font-bold text-white">Confirme seu e-mail</h1>
                     <p className="mt-4 text-sm leading-relaxed text-slate-300">
@@ -229,7 +229,7 @@ function CadastroPageContent() {
     const labelClass = "mb-2 block text-sm font-medium text-slate-200";
 
     return (
-        <div className="min-h-screen bg-slate-900 px-4 py-16">
+        <div className="tela-escura min-h-dvh bg-slate-900 px-4 py-16">
             <div className="mx-auto w-full max-w-lg rounded-2xl border border-white/10 bg-slate-800/60 p-8 shadow-lg">
                 <h1 className="text-center text-2xl font-bold text-white">Criar conta de cliente</h1>
                 <p className="mt-2 text-center text-sm text-slate-400">

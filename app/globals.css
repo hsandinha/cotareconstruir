@@ -303,6 +303,16 @@ html, body {
 }
 
 /* ==================================================================
+   Telas escuras de tela cheia (login, cadastro, offline)
+   ==================================================================
+   No iPhone instalado, a faixa da área segura é pintada com o fundo do
+   BODY — não adianta só o contêiner ser escuro, aparecia uma faixa clara
+   no rodapé. `:has()` deixa a própria página declarar o tom. */
+body:has(.tela-escura) {
+    background: #0f172a;
+}
+
+/* ==================================================================
    Abertura da landing: prédio sendo construído
    ================================================================== */
 
