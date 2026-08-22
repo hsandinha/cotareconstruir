@@ -479,7 +479,7 @@ export function ClientOrderSection({ onCreateQuotation }: { onCreateQuotation?: 
                 </div>
             )}
 
-            <div className="grid gap-3.5" data-tour="cliente-pedidos-lista">
+            <div className="grid min-w-0 gap-3.5" data-tour="cliente-pedidos-lista">
                 {loading ? (
                     ['s1', 's2', 's3'].map((k) => (
                         <div key={k} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -530,12 +530,15 @@ export function ClientOrderSection({ onCreateQuotation }: { onCreateQuotation?: 
                         const bucket = getOrderBucket(order.rawStatus, order.propostas_count);
                         const diasAguardando = daysSince(order.timestamp);
                         const canCancel = order.rawStatus !== 'fechada' && order.rawStatus !== 'cancelada';
+                        // min-w-0 no item do grid: sem isso ele herda
+                        // min-width:auto e não encolhe abaixo do conteúdo,
+                        // estourando o card no celular.
                         return (
-                            <div key={order.id} className="relative">
+                            <div key={order.id} className="relative min-w-0">
                             <button
                                 type="button"
                                 onClick={() => { markSeen(order.id, order.propostas_count); setSelectedOrder(order.id); }}
-                                className={`group flex w-full items-center gap-4 rounded-2xl border bg-white p-5 pr-12 text-left shadow-sm transition-all hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 ${isUnseen ? 'border-emerald-200 ring-1 ring-emerald-100' : 'border-slate-200 hover:border-blue-200'}`}
+                                className={`group flex w-full min-w-0 items-center gap-4 rounded-2xl border bg-white p-5 pr-12 text-left shadow-sm transition-all hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 ${isUnseen ? 'border-emerald-200 ring-1 ring-emerald-100' : 'border-slate-200 hover:border-blue-200'}`}
                             >
                                 {/* Ícone de status (com ponto de novidade) */}
                                 <div className="relative shrink-0">

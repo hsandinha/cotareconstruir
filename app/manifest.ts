@@ -12,7 +12,16 @@ export default function manifest(): MetadataRoute.Manifest {
         short_name: "C&C",
         description:
             "Cote materiais de obra com vários fornecedores, compare no mapa e emita a ordem de compra.",
-        start_url: "/",
+        // Instalado, o app abre direto no login — sem passar pela página de
+        // venda, que é para quem ainda não é cliente. Quem já tem sessão o
+        // /login manda direto para o painel do seu perfil.
+        start_url: "/login",
+        // `id` fixo: sem ele, mudar o start_url faria alguns navegadores
+        // tratarem como um app diferente e duplicarem o ícone de quem já
+        // tinha instalado.
+        id: "/",
+        // Escopo na raiz para a navegação interna (landing, ajuda, termos)
+        // continuar dentro do app em vez de abrir o navegador.
         scope: "/",
         display: "standalone",
         orientation: "portrait",

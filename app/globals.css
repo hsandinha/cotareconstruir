@@ -302,6 +302,119 @@ html, body {
     }
 }
 
+/* ==================================================================
+   Abertura da landing: prédio sendo construído
+   ================================================================== */
+
+.lp-abertura {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: #FAF8F5;
+    background-image: repeating-linear-gradient(
+        0deg, rgba(28,25,23,0.02) 0 1px, transparent 1px 3px
+    );
+    transition: opacity .6s ease, transform .6s ease;
+}
+
+/* Sai subindo, como quem levanta a lona da obra */
+.lp-abertura-saindo {
+    opacity: 0;
+    transform: translateY(-2.5%);
+    pointer-events: none;
+}
+
+.lp-abertura-palco {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: min(88vw, 420px);
+}
+
+.lp-obra { width: 100%; height: auto; }
+
+.lp-abertura-marca {
+    margin-top: .75rem;
+    font-family: var(--font-inter), sans-serif;
+    font-size: .68rem;
+    font-weight: 800;
+    letter-spacing: .3em;
+    text-transform: uppercase;
+    color: #9A3412;
+    opacity: 0;
+    animation: lp-surge .5s ease forwards 2.5s;
+}
+
+.lp-abertura-frase {
+    margin-top: .35rem;
+    font-size: .82rem;
+    font-style: italic;
+    color: #57534E;
+    opacity: 0;
+    animation: lp-surge .5s ease forwards 2.8s;
+}
+
+.lp-abertura-pular {
+    position: absolute;
+    bottom: calc(1.25rem + env(safe-area-inset-bottom));
+    right: 1.25rem;
+    border: 1px solid #D6D3D1;
+    border-radius: 999px;
+    padding: .45rem 1.1rem;
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: #57534E;
+    background: transparent;
+}
+.lp-abertura-pular:hover { background: #F1EDE7; color: #1C1917; }
+
+/* --- terreno e fundação --- */
+.lp-terreno   { opacity: 0; animation: lp-surge .35s ease forwards; }
+.lp-fundacao  { transform-origin: 108px 234px; transform: scaleX(0); animation: lp-cresce-x .45s ease-out forwards .12s; }
+
+/* --- pilares sobem do chão --- */
+.lp-pilar {
+    transform-origin: center bottom;
+    transform: scaleY(0);
+    animation: lp-cresce-y .5s cubic-bezier(.22,1,.36,1) forwards .35s;
+}
+
+/* --- cada andar entra por cima, assentando --- */
+.lp-andar {
+    opacity: 0;
+    transform: translateY(-14px);
+    animation: lp-assenta .45s cubic-bezier(.22,1,.36,1) forwards;
+}
+
+/* --- janelas acendem uma a uma --- */
+.lp-janela { opacity: 0; animation: lp-acende .4s ease forwards; }
+
+/* --- grua: gira a lança e desce a carga --- */
+.lp-grua { opacity: 0; animation: lp-surge .4s ease forwards .1s; }
+.lp-grua-lanca { transform-origin: 252px 70px; animation: lp-gira 5s ease-in-out infinite; }
+.lp-carga, .lp-cabo { animation: lp-balanca 2.4s ease-in-out infinite; transform-origin: 176px 70px; }
+
+@keyframes lp-surge    { to { opacity: 1; } }
+@keyframes lp-cresce-x { to { transform: scaleX(1); } }
+@keyframes lp-cresce-y { to { transform: scaleY(1); } }
+@keyframes lp-assenta  { to { opacity: 1; transform: translateY(0); } }
+@keyframes lp-acende   { to { opacity: 1; fill: #F97316; } }
+@keyframes lp-gira     { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-13deg); } }
+@keyframes lp-balanca  { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(3.5deg); } }
+
+/* Quem pediu menos movimento não vê a abertura (o componente nem monta),
+   mas se algo escapar, aqui tudo fica parado. */
+@media (prefers-reduced-motion: reduce) {
+    .lp-abertura * { animation: none !important; opacity: 1 !important; transform: none !important; }
+}
+
 /* Rolagem suave só na landing (âncoras do topo para o bloco do teste) */
 html:has(.lp-root) {
   scroll-behavior: smooth;
