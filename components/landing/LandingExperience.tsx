@@ -337,8 +337,8 @@ function Lista() {
     const p = staticMode ? 1 : progress;
 
     return (
-        <section id="solucao" ref={ref} className="relative bg-[#FAF8F5]" style={{ height: staticMode ? "auto" : "220vh" }}>
-            <div className={`${staticMode ? "" : "sticky top-0 min-h-screen"} flex flex-col justify-center overflow-hidden px-6 py-24`}>
+        <section id="solucao" ref={ref} className="relative bg-[#FAF8F5]" style={{ height: staticMode ? "auto" : "170vh" }}>
+            <div className={`${staticMode ? "py-24" : "sticky top-0 h-screen py-12"} flex flex-col justify-center overflow-hidden px-6`}>
                 <div className="mx-auto w-full max-w-6xl">
                     <SectionLabel>Passo 1 · a lista</SectionLabel>
                     <h2 className="mt-3 max-w-3xl text-3xl font-extrabold tracking-tight text-[#1C1917] md:text-5xl">
@@ -679,8 +679,8 @@ function MapaCentral() {
     const deltaP = seg(p, 0.92, 0.08); // linha verde
 
     return (
-        <section id="metodologia" ref={ref} className="relative bg-[#FAF8F5]" style={{ height: staticMode ? "auto" : "320vh" }}>
-            <div className={`${staticMode ? "" : "sticky top-0 min-h-screen"} flex flex-col justify-center overflow-hidden px-6 py-20`}>
+        <section id="metodologia" ref={ref} className="relative bg-[#FAF8F5]" style={{ height: staticMode ? "auto" : "220vh" }}>
+            <div className={`${staticMode ? "py-20" : "sticky top-0 h-screen py-12"} flex flex-col justify-center overflow-hidden px-6`}>
                 <div className="mx-auto w-full max-w-6xl">
                     <SectionLabel>A cena central</SectionLabel>
                     <h2 className="mt-3 max-w-3xl text-3xl font-extrabold tracking-tight text-[#1C1917] md:text-5xl">

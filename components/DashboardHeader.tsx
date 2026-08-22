@@ -38,13 +38,17 @@ export function DashboardHeader({ currentRole, availableRoles, userName, userIni
             <div className="section-shell">
                 <div className="flex h-16 items-center justify-between">
                     <div className="flex items-center">
-                        <div className="mr-2 flex items-center justify-center rounded-lg bg-white">
-                            <Image src="/logo.png" alt="Comprar & Construir" width={60} height={60} priority />
-                        </div>
-                        {/* Não quebra em duas linhas no celular: some o
-                            "& Construir" e fica só a marca curta. */}
-                        <span className="whitespace-nowrap text-base font-semibold text-gray-900 sm:text-lg">Comprar</span>
-                        <span className="ml-1 hidden whitespace-nowrap text-base font-light text-gray-600 sm:inline sm:text-lg">&amp; Construir</span>
+                        {/* A logo é a marca: o texto ao lado não cabia no
+                            celular e quebrava em duas linhas. */}
+                        <Image
+                            src="/logo.png"
+                            alt="Comprar &amp; Construir"
+                            width={160}
+                            height={90}
+                            priority
+                            className="h-9 w-auto object-contain"
+                        />
+
                     </div>
                     <div className="flex items-center gap-4">
                         {children}

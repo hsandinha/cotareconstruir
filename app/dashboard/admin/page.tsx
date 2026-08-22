@@ -17,7 +17,6 @@ import {
     Settings,
     ChevronLeft,
     ChevronRight,
-    Menu,
     X,
     Rocket,
     MessageSquareQuote,
@@ -82,7 +81,6 @@ export default function AdminDashboard() {
     const [activeTab, setActiveTab] = useState<AdminTabId>("gestao-obra");
     const [fornecedoresSubTab, setFornecedoresSubTab] = useState<"gestao" | "grupo" | "api">("gestao");
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-    const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const [menuMaisAberto, setMenuMaisAberto] = useState(false);
     const [stats, setStats] = useState({
         users: 0,
@@ -223,10 +221,6 @@ export default function AdminDashboard() {
         if (typeof window === "undefined") return;
         window.localStorage.setItem("admin_sidebar_collapsed", sidebarCollapsed ? "1" : "0");
     }, [sidebarCollapsed]);
-
-    useEffect(() => {
-        setMobileNavOpen(false);
-    }, [activeTab]);
 
     useEffect(() => {
         if (!initialized) return;
@@ -429,72 +423,12 @@ export default function AdminDashboard() {
                     </nav>
                 </aside>
 
-                {/* Mobile drawer */}
-                {mobileNavOpen && (
-                    <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true">
-                        <div className="absolute inset-0 bg-slate-900/50" onClick={() => setMobileNavOpen(false)} />
-                        <aside className="absolute left-0 top-0 h-full w-[280px] bg-white shadow-xl flex flex-col">
-                            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-                                <span className="text-sm font-semibold text-slate-700">Administração</span>
-                                <button
-                                    type="button"
-                                    onClick={() => setMobileNavOpen(false)}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
-                                    aria-label="Fechar menu"
-                                >
-                                    <X className="h-4 w-4" />
-                                </button>
-                            </div>
-                            <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
-                                {navGroups.map((group) => (
-                                    <div key={group.title}>
-                                        <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">{group.title}</p>
-                                        <ul className="space-y-0.5">
-                                            {group.items.map((item) => {
-                                                const Icon = item.icon;
-                                                const active = activeTab === item.id;
-                                                return (
-                                                    <li key={item.id}>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setActiveTab(item.id)}
-                                                            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${active
-                                                                ? "bg-blue-50 text-blue-700"
-                                                                : "text-slate-600 hover:bg-slate-50"
-                                                                }`}
-                                                        >
-                                                            <Icon className={`h-[18px] w-[18px] ${active ? "text-blue-600" : "text-slate-400"}`} />
-                                                            <span className="flex-1 text-left">{item.label}</span>
-                                                            {item.badge ? (
-                                                                <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white leading-none h-[18px]">
-                                                                    {item.badge > 99 ? "99+" : item.badge}
-                                                                </span>
-                                                            ) : null}
-                                                        </button>
-                                                    </li>
-                                                );
-                                            })}
-                                        </ul>
-                                    </div>
-                                ))}
-                            </nav>
-                        </aside>
-                    </div>
-                )}
 
                 {/* Main */}
                 <main className="flex-1 min-w-0 tem-menu-inferior">
-                    {/* Toolbar com breadcrumb + toggle mobile */}
+                    {/* Toolbar com breadcrumb (a navegação do celular é o menu inferior) */}
                     <div className="sticky top-16 z-10 border-b border-slate-200/80 bg-white/80 backdrop-blur">
                         <div className="flex items-center gap-3 px-4 sm:px-6 lg:px-8 h-12">
-                            <button
-                                type="button"
-                                onClick={() => setMobileNavOpen(true)}
-                                className="lg:hidden inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100"
-                                aria-label="Abrir menu"
-                            >
-                                <Menu className="h-4 w-4" />
-                            </button>
                             <nav className="flex items-center gap-1.5 text-xs text-slate-500 min-w-0" aria-label="Breadcrumb">
                                 <span className="font-medium text-slate-400">Admin</span>
                                 <span className="text-slate-300">/</span>

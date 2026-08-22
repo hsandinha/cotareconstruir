@@ -230,7 +230,12 @@ body {
 
 html, body {
     max-width: 100%;
-    overflow-x: hidden;
+    /* `clip` e NÃO `hidden`: `overflow-x: hidden` transforma o body em
+       contêiner de rolagem e QUEBRA todo `position: sticky` de dentro —
+       foi o que travou as cenas animadas da landing (a tabela parava de
+       se preencher e sobrava tela vazia). `clip` corta igual, sem criar
+       contexto de rolagem. */
+    overflow-x: clip;
     /* Impede o "zoom elástico" horizontal do Safari */
     overscroll-behavior-x: none;
 }

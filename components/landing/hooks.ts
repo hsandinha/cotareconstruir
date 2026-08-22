@@ -19,9 +19,19 @@ export function usePrefersReducedMotion(): boolean {
     return useMediaQuery("(prefers-reduced-motion: reduce)");
 }
 
-/** Viewport baixa (landscape mobile etc.): cenas sticky viram estáticas. */
+/**
+ * Viewport onde a coreografia de rolagem não compensa: tela baixa
+ * (landscape) ou estreita (celular).
+ *
+ * No celular, uma cena de 320vh vira três telas de rolagem quase vazia —
+ * o efeito é de desktop, com mouse e wheel. Ali as cenas viram estáticas.
+ */
 export function useShortViewport(): boolean {
-    return useMediaQuery("(max-height: 700px)");
+    // 820px: abaixo disso o painel de tela cheia não comporta o conteúdo
+    // sem cortar, então a cena vira estática.
+    const baixa = useMediaQuery("(max-height: 820px)");
+    const estreita = useMediaQuery("(max-width: 767px)");
+    return baixa || estreita;
 }
 
 /**
@@ -39,6 +49,20 @@ export function useInView<T extends HTMLElement = HTMLDivElement>(threshold = 0.
         if (!el) return;
         const elHeight = el.getBoundingClientRect().height || 1;
         const reachable = Math.max(0.02, Math.min(threshold, (window.innerHeight * 0.5) / elHeight));
+        // Rede de segurança: se o elemento já está na tela ao montar, revela
+        // na hora. Sem isso, qualquer falha do observer deixaria o conteúdo
+        // preso em opacity:0 — a tela em branco.
+        const caixa = el.getBoundingClientRect();
+        if (caixa.top < window.innerHeight && caixa.bottom > 0) {
+            setInView(true);
+            return;
+        }
+
+        if (typeof IntersectionObserver === "undefined") {
+            setInView(true);
+            return;
+        }
+
         const observer = new IntersectionObserver(
             (entries) => {
                 if (entries[0]?.isIntersecting) {
