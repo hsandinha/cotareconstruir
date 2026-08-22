@@ -20,18 +20,15 @@ export function usePrefersReducedMotion(): boolean {
 }
 
 /**
- * Viewport onde a coreografia de rolagem não compensa: tela baixa
- * (landscape) ou estreita (celular).
+ * Viewport baixa demais para a cena presa: aí ela vira estática.
  *
- * No celular, uma cena de 320vh vira três telas de rolagem quase vazia —
- * o efeito é de desktop, com mouse e wheel. Ali as cenas viram estáticas.
+ * O limite é só de ALTURA. Já tentei desligar a coreografia no celular e em
+ * telas de notebook — mas é justamente ela que preenche as planilhas
+ * conforme se rola, e é o coração da página. Fica ligada em todo lugar onde
+ * o painel de tela cheia ainda comporta o conteúdo.
  */
 export function useShortViewport(): boolean {
-    // 820px: abaixo disso o painel de tela cheia não comporta o conteúdo
-    // sem cortar, então a cena vira estática.
-    const baixa = useMediaQuery("(max-height: 820px)");
-    const estreita = useMediaQuery("(max-width: 767px)");
-    return baixa || estreita;
+    return useMediaQuery("(max-height: 620px)");
 }
 
 /**
