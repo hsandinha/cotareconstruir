@@ -39,17 +39,17 @@ export default function ForgotPasswordPage() {
 
     if (success) {
         return (
-            <div className="tela-escura min-h-dvh bg-slate-900 flex items-center justify-center px-4">
+            <div className="tela-papel lp-paper-grain min-h-dvh bg-[#FAF8F5] flex items-center justify-center px-4">
                 <div className="max-w-md w-full">
-                    <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-8">
+                    <div className="bg-white/5 backdrop-blur-xl border border-[#D6D3D1] rounded-md shadow-2xl p-8">
                         <div className="text-center">
                             <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                 </svg>
                             </div>
-                            <h2 className="text-2xl font-bold text-white mb-2">Email Enviado!</h2>
-                            <p className="text-slate-400 mb-6">
+                            <h2 className="text-2xl font-bold text-[#1C1917] mb-2">Email Enviado!</h2>
+                            <p className="text-[#78716C] mb-6">
                                 Se o email existe em nossa base, você receberá um link para redefinir sua senha.
                             </p>
                             <p className="text-sm text-slate-500 mb-6">
@@ -57,7 +57,7 @@ export default function ForgotPasswordPage() {
                             </p>
                             <Link
                                 href="/login"
-                                className="inline-block w-full bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-500 transition-colors text-center"
+                                className="inline-block w-full bg-[#F97316] text-[#1C1917] py-3 rounded-xl font-semibold hover:bg-blue-500 transition-colors text-center"
                             >
                                 Voltar ao Login
                             </Link>
@@ -69,19 +69,19 @@ export default function ForgotPasswordPage() {
     }
 
     return (
-        <div className="tela-escura min-h-dvh bg-slate-900 flex items-center justify-center px-4">
+        <div className="tela-papel lp-paper-grain min-h-dvh bg-[#FAF8F5] flex items-center justify-center px-4">
             <div className="max-w-md w-full">
-                <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-8">
+                <div className="bg-white/5 backdrop-blur-xl border border-[#D6D3D1] rounded-md shadow-2xl p-8">
                     <div className="text-center mb-8">
                         <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-8 h-8 text-[#9A3412]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
                             </svg>
                         </div>
-                        <h1 className="text-3xl font-bold text-white mb-2">
+                        <h1 className="text-3xl font-bold text-[#1C1917] mb-2">
                             Esqueceu a Senha?
                         </h1>
-                        <p className="text-slate-400">
+                        <p className="text-[#78716C]">
                             Digite seu email e enviaremos um link para redefinir sua senha.
                         </p>
                     </div>
@@ -99,7 +99,7 @@ export default function ForgotPasswordPage() {
                         )}
 
                         <div>
-                            <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-2">
+                            <label htmlFor="email" className="block text-sm font-medium text-[#57534E] mb-2">
                                 Email
                             </label>
                             <input
@@ -109,14 +109,14 @@ export default function ForgotPasswordPage() {
                                 onChange={(e) => setEmail(e.target.value)}
                                 required
                                 placeholder="seu@email.com"
-                                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
+                                className="w-full px-4 py-3 bg-white/5 border border-[#D6D3D1] rounded-xl text-[#1C1917] placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
                             />
                         </div>
 
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full bg-[#F97316] text-[#1C1917] py-3 rounded-xl font-semibold hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {loading ? (
                                 <span className="flex items-center justify-center">
@@ -134,14 +134,14 @@ export default function ForgotPasswordPage() {
                         <div className="text-center">
                             <Link
                                 href="/login"
-                                className="text-blue-400 hover:text-blue-300 font-medium text-sm transition-colors"
+                                className="text-[#9A3412] hover:text-[#1C1917] font-medium text-sm transition-colors"
                             >
                                 ← Voltar ao Login
                             </Link>
                         </div>
                     </form>
 
-                    <div className="mt-8 pt-6 border-t border-white/10">
+                    <div className="mt-8 pt-6 border-t border-[#D6D3D1]">
                         <p className="text-xs text-slate-500 text-center">
                             O link de recuperação expira em 15 minutos por segurança.
                         </p>

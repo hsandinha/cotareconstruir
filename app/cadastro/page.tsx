@@ -181,17 +181,17 @@ function CadastroPageContent() {
 
     if (naFilaDeEspera) {
         return (
-            <div className="tela-escura min-h-dvh bg-slate-900 px-4 py-20">
-                <div className="mx-auto w-full max-w-md rounded-2xl border border-white/10 bg-slate-800/60 p-8 text-center shadow-lg">
-                    <h1 className="text-2xl font-bold text-white">Você está na fila de espera</h1>
-                    <p className="mt-4 text-sm leading-relaxed text-slate-300">{naFilaDeEspera}</p>
-                    <p className="mt-3 text-xs text-slate-400">
+            <div className="tela-papel lp-paper-grain min-h-dvh bg-[#FAF8F5] px-4 py-16">
+                <div className="mx-auto w-full max-w-md rounded-md border border-[#D6D3D1] bg-white p-8 text-center shadow-[0_18px_40px_-28px_rgba(28,25,23,0.45)]">
+                    <h1 className="text-2xl font-extrabold tracking-tight text-[#1C1917]">Você está na fila de espera</h1>
+                    <p className="mt-4 text-sm leading-relaxed text-[#44403C]">{naFilaDeEspera}</p>
+                    <p className="mt-3 text-xs text-[#78716C]">
                         Guardamos seus dados. Assim que abrir uma vaga, avisamos por e-mail em{" "}
-                        <span className="font-semibold text-slate-200">{form.email.trim().toLowerCase()}</span>.
+                        <span className="font-semibold text-[#44403C]">{form.email.trim().toLowerCase()}</span>.
                     </p>
                     <Link
                         href="/"
-                        className="mt-6 inline-block rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                        className="mt-6 inline-block rounded-lg bg-[#F97316] px-6 py-3 text-sm font-bold text-[#1C1917] shadow-[4px_4px_0_#1C1917] transition-transform hover:-translate-y-0.5 hover:bg-[#FB923C]"
                     >
                         Voltar ao início
                     </Link>
@@ -202,20 +202,20 @@ function CadastroPageContent() {
 
     if (confirmationSent) {
         return (
-            <div className="tela-escura min-h-dvh bg-slate-900 px-4 py-20">
-                <div className="mx-auto w-full max-w-md rounded-2xl border border-white/10 bg-slate-800/60 p-8 text-center shadow-lg">
-                    <h1 className="text-2xl font-bold text-white">Confirme seu e-mail</h1>
-                    <p className="mt-4 text-sm leading-relaxed text-slate-300">
+            <div className="tela-papel lp-paper-grain min-h-dvh bg-[#FAF8F5] px-4 py-16">
+                <div className="mx-auto w-full max-w-md rounded-md border border-[#D6D3D1] bg-white p-8 text-center shadow-[0_18px_40px_-28px_rgba(28,25,23,0.45)]">
+                    <h1 className="text-2xl font-extrabold tracking-tight text-[#1C1917]">Confirme seu e-mail</h1>
+                    <p className="mt-4 text-sm leading-relaxed text-[#44403C]">
                         Enviamos um link de confirmação para{" "}
-                        <span className="font-semibold text-white">{form.email.trim().toLowerCase()}</span>.
+                        <span className="font-semibold text-[#1C1917]">{form.email.trim().toLowerCase()}</span>.
                         Clique nele para ativar sua conta e depois faça login.
                     </p>
-                    <p className="mt-3 text-xs text-slate-400">
+                    <p className="mt-3 text-xs text-[#78716C]">
                         Não recebeu? Confira a caixa de spam ou fale com o suporte.
                     </p>
                     <Link
                         href="/login"
-                        className="mt-6 inline-block rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                        className="mt-6 inline-block rounded-lg bg-[#F97316] px-6 py-3 text-sm font-bold text-[#1C1917] shadow-[4px_4px_0_#1C1917] transition-transform hover:-translate-y-0.5 hover:bg-[#FB923C]"
                     >
                         Ir para o login
                     </Link>
@@ -225,14 +225,14 @@ function CadastroPageContent() {
     }
 
     const inputClass =
-        "w-full rounded-lg border border-white/10 bg-slate-900/60 px-4 py-2 text-white placeholder:text-slate-400 focus:border-blue-400 focus:outline-none";
-    const labelClass = "mb-2 block text-sm font-medium text-slate-200";
+        "w-full rounded-md border-2 border-[#D6D3D1] bg-white px-4 py-3 text-base text-[#1C1917] placeholder:text-[#A8A29E] focus:border-[#1C1917] focus:outline-none";
+    const labelClass = "mb-1.5 block font-mono text-[11px] font-bold uppercase tracking-widest text-[#57534E]";
 
     return (
-        <div className="tela-escura min-h-dvh bg-slate-900 px-4 py-16">
-            <div className="mx-auto w-full max-w-lg rounded-2xl border border-white/10 bg-slate-800/60 p-8 shadow-lg">
-                <h1 className="text-center text-2xl font-bold text-white">Criar conta de cliente</h1>
-                <p className="mt-2 text-center text-sm text-slate-400">
+        <div className="tela-papel lp-paper-grain min-h-dvh bg-[#FAF8F5] px-4 py-12">
+            <div className="mx-auto w-full max-w-lg rounded-md border border-[#D6D3D1] bg-white p-8 shadow-[0_18px_40px_-28px_rgba(28,25,23,0.45)]">
+                <h1 className="text-center text-3xl font-extrabold tracking-tight text-[#1C1917]">Criar conta de cliente</h1>
+                <p className="mt-2 text-center text-sm text-[#57534E]">
                     Cadastre sua obra e receba propostas comparadas no mapa.
                 </p>
 
@@ -256,16 +256,16 @@ function CadastroPageContent() {
                 )}
 
                 {turma && !convite && (
-                    <div className="mt-4 rounded-lg border border-white/10 bg-slate-900/60 px-4 py-3 text-center">
+                    <div className="mt-4 rounded-lg border border-[#D6D3D1] bg-white px-4 py-3 text-center">
                         {turma.vagasRestantes > 0 ? (
                             <>
-                                <p className="text-sm font-semibold text-white">
+                                <p className="text-sm font-semibold text-[#1C1917]">
                                     Teste gratuito de {turma.diasTeste} dias
                                     <span className="mx-2 text-slate-500">·</span>
                                     {turma.obrasPorConta === 1 ? "1 obra" : `${turma.obrasPorConta} obras`}
                                 </p>
-                                <p className="mt-1 text-xs text-slate-400">
-                                    Restam <span className="font-bold text-blue-400">{turma.vagasRestantes}</span> de{" "}
+                                <p className="mt-1 text-xs text-[#78716C]">
+                                    Restam <span className="font-bold text-[#9A3412]">{turma.vagasRestantes}</span> de{" "}
                                     {turma.vagasTotal} vagas da turma de lançamento.
                                 </p>
                             </>
@@ -388,25 +388,25 @@ function CadastroPageContent() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
+                        className="w-full rounded-lg bg-[#F97316] px-4 py-3.5 text-base font-bold text-[#1C1917] shadow-[4px_4px_0_#1C1917] transition-transform hover:-translate-y-0.5 hover:bg-[#FB923C] active:translate-y-0 disabled:opacity-60 disabled:shadow-none"
                     >
                         {loading ? "Criando conta..." : "Criar conta"}
                     </button>
 
-                    <p className="text-center text-xs text-slate-400">
+                    <p className="text-center text-xs text-[#78716C]">
                         Ao criar a conta você concorda com os{" "}
-                        <Link href="/termos" className="text-blue-400 hover:text-blue-300">Termos de Uso</Link> e a{" "}
-                        <Link href="/privacidade" className="text-blue-400 hover:text-blue-300">Política de Privacidade</Link>.
+                        <Link href="/termos" className="text-[#9A3412] hover:text-[#1C1917]">Termos de Uso</Link> e a{" "}
+                        <Link href="/privacidade" className="text-[#9A3412] hover:text-[#1C1917]">Política de Privacidade</Link>.
                     </p>
 
-                    <div className="border-t border-white/10 pt-4 text-center text-sm text-slate-300">
+                    <div className="border-t border-[#D6D3D1] pt-4 text-center text-sm text-[#57534E]">
                         Já tem conta?{" "}
-                        <Link href="/login" className="font-semibold text-blue-400 hover:text-blue-300">Entrar</Link>
+                        <Link href="/login" className="font-semibold text-[#9A3412] hover:text-[#1C1917]">Entrar</Link>
                     </div>
 
                     <p className="text-center text-xs text-slate-500">
                         É fornecedor? O cadastro de fornecedores é feito pela nossa equipe —{" "}
-                        <Link href="/ajuda" className="text-slate-300 hover:text-white">fale com o suporte</Link>.
+                        <Link href="/ajuda" className="font-semibold text-[#9A3412] underline decoration-[#F97316] decoration-2 underline-offset-4 hover:text-[#1C1917]">fale com o suporte</Link>.
                     </p>
                 </form>
             </div>

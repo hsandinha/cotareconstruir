@@ -11,7 +11,7 @@ const MARCA_APP = "modo_app";
  *  1. `?modo=app` no start_url — o mais forte, o navegador abre essa URL
  *     exata a partir do ícone. Fica gravado na sessão porque some na
  *     primeira navegação interna.
- *  2. `display-mode: standalone/fullscreen` — falha em alguns launchers.
+ *  2. `display-mode: standalone` — falha em alguns launchers.
  *  3. `navigator.standalone` — o jeito antigo do Safari no iPhone.
  */
 export function rodandoComoApp(): boolean {
@@ -27,8 +27,10 @@ export function rodandoComoApp(): boolean {
         /* modo privado: segue pelos outros sinais */
     }
 
+    // `display-mode: fullscreen` foi removido de propósito: navegador comum
+    // em tela cheia (F11 / tela cheia do macOS) casa com ele, e a abertura
+    // do app aparecia no desktop.
     return window.matchMedia("(display-mode: standalone)").matches
-        || window.matchMedia("(display-mode: fullscreen)").matches
         || (window.navigator as unknown as { standalone?: boolean }).standalone === true;
 }
 

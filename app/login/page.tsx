@@ -253,13 +253,12 @@ function LoginPageContent() {
     }
 
     return (
-        // min-h-dvh (não vh): no celular o vh não desconta a barra do
-        // navegador e a tela ficava cortada.
-        <div className="tela-escura relative flex min-h-dvh flex-col bg-slate-900">
-            {/* Cobre a tela inteira, inclusive a área segura embaixo:
-                `dvh` não a inclui no iPhone e o fundo claro do body vazava
-                como uma faixa branca no rodapé. */}
-            <div className="fixed inset-0 -z-10 bg-slate-900" aria-hidden />
+        // Paleta da landing: papel #FAF8F5, tinta #1C1917, laranja #F97316.
+        // `tela-papel` leva o tom para o body — no iPhone instalado é ele
+        // que pinta a área segura do rodapé.
+        <div className="tela-papel lp-paper-grain relative flex min-h-dvh flex-col bg-[#FAF8F5]">
+            <div className="fixed inset-0 -z-10 bg-[#FAF8F5]" aria-hidden />
+
             <div
                 className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5"
                 style={{
@@ -269,30 +268,28 @@ function LoginPageContent() {
             >
                 {/* Marca no topo: dá continuidade à abertura do app */}
                 <div className="mb-8 flex flex-col items-center text-center">
-                    {/* logo.png é 1280x720 com margem transparente em volta da
-                        marca; a caixa é larga e o object-contain centraliza.
-                        `priority` porque é a primeira coisa que aparece. */}
                     <Image
                         src="/logo.png"
                         alt="Comprar &amp; Construir"
                         width={256}
                         height={144}
                         priority
-                        className="h-24 w-auto object-contain drop-shadow-[0_6px_18px_rgba(249,115,22,0.28)]"
+                        className="h-20 w-auto object-contain"
                     />
-                    <h1 className="mt-4 text-2xl font-bold text-white">
-                        {modoApp ? "Bem-vindo de volta" : "Entrar"}
-                    </h1>
-                    <p className="mt-1 text-sm text-slate-400">
-                        {modoApp ? "Acesse sua conta para continuar" : "Comprar & Construir"}
+                    <p className="mt-4 font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-[#9A3412]">
+                        {modoApp ? "Bem-vindo de volta" : "Área do cliente"}
                     </p>
+                    <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-[#1C1917]">
+                        {modoApp ? "Entrar no app" : "Entrar"}
+                    </h1>
                 </div>
 
-                {/* No app a moldura some: cheio de borda parece página, não tela */}
-                <div className={modoApp ? "" : "rounded-2xl border border-white/10 bg-slate-800/60 p-6 shadow-lg sm:p-8"}>
+                <div className={modoApp ? "" : "rounded-md border border-[#D6D3D1] bg-white p-6 shadow-[0_18px_40px_-28px_rgba(28,25,23,0.45)] sm:p-7"}>
                     <form onSubmit={handleSubmit} className="space-y-5">
                         <div>
-                            <label htmlFor="email" className="mb-2 block text-sm font-medium text-slate-200">Email</label>
+                            <label htmlFor="email" className="mb-1.5 block font-mono text-[11px] font-bold uppercase tracking-widest text-[#57534E]">
+                                Email
+                            </label>
                             <input
                                 id="email"
                                 type="email"
@@ -304,16 +301,21 @@ function LoginPageContent() {
                                 autoCapitalize="none"
                                 autoCorrect="off"
                                 enterKeyHint="next"
-                                className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-4 py-3.5 text-base text-white placeholder:text-slate-500 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                                className="w-full rounded-md border-2 border-[#D6D3D1] bg-white px-4 py-3.5 text-base text-[#1C1917] placeholder:text-[#A8A29E] focus:border-[#1C1917] focus:outline-none"
                                 placeholder="seu@email.com"
                             />
                         </div>
 
                         <div>
-                            <div className="mb-2 flex items-center justify-between">
-                                <label htmlFor="senha" className="block text-sm font-medium text-slate-200">Senha</label>
-                                <Link href="/forgot-password" className="text-xs font-medium text-blue-400 hover:text-blue-300">
-                                    Esqueci minha senha
+                            <div className="mb-1.5 flex items-center justify-between gap-3">
+                                <label htmlFor="senha" className="block font-mono text-[11px] font-bold uppercase tracking-widest text-[#57534E]">
+                                    Senha
+                                </label>
+                                <Link
+                                    href="/forgot-password"
+                                    className="font-mono text-[11px] font-bold uppercase tracking-wider text-[#9A3412] underline decoration-[#F97316] decoration-2 underline-offset-4 hover:text-[#1C1917]"
+                                >
+                                    Esqueci
                                 </Link>
                             </div>
                             <div className="relative">
@@ -325,7 +327,7 @@ function LoginPageContent() {
                                     onChange={(e) => setPassword(e.target.value)}
                                     autoComplete="current-password"
                                     enterKeyHint="go"
-                                    className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-4 py-3.5 pr-12 text-base text-white placeholder:text-slate-500 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                                    className="w-full rounded-md border-2 border-[#D6D3D1] bg-white px-4 py-3.5 pr-12 text-base text-[#1C1917] placeholder:text-[#A8A29E] focus:border-[#1C1917] focus:outline-none"
                                     placeholder="••••••••"
                                 />
                                 {/* Ver a senha é padrão em app — sem isso erra-se muito no toque */}
@@ -333,7 +335,7 @@ function LoginPageContent() {
                                     type="button"
                                     onClick={() => setMostrarSenha((v) => !v)}
                                     aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
-                                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-2.5 text-slate-400 hover:text-slate-200"
+                                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-2.5 text-[#78716C] hover:text-[#1C1917]"
                                 >
                                     {mostrarSenha ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                                 </button>
@@ -341,12 +343,12 @@ function LoginPageContent() {
                         </div>
 
                         {error && (
-                            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
-                                <p className="text-sm text-red-300">{error}</p>
+                            <div className="rounded-md border-l-4 border-[#B91C1C] bg-[#FEF2F2] px-4 py-3">
+                                <p className="text-sm text-[#7F1D1D]">{error}</p>
                                 {showSignupHint && (
                                     <Link
                                         href={`/cadastro?email=${encodeURIComponent(email.trim().toLowerCase())}`}
-                                        className="mt-2 inline-block text-sm font-semibold text-blue-400 hover:text-blue-300"
+                                        className="mt-2 inline-block text-sm font-bold text-[#9A3412] underline decoration-[#F97316] decoration-2 underline-offset-4"
                                     >
                                         Criar minha conta →
                                     </Link>
@@ -357,22 +359,22 @@ function LoginPageContent() {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3.5 text-base font-semibold text-white transition-colors hover:bg-blue-700 active:scale-[0.99] disabled:opacity-60"
+                            className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#F97316] px-4 py-3.5 text-base font-bold text-[#1C1917] shadow-[4px_4px_0_#1C1917] transition-transform hover:-translate-y-0.5 hover:bg-[#FB923C] active:translate-y-0 disabled:opacity-60 disabled:shadow-none"
                         >
                             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                             {loading ? "Entrando..." : "Entrar"}
                         </button>
 
                         <div className="relative flex items-center justify-center py-1">
-                            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10" /></div>
-                            <span className="relative bg-slate-900 px-3 text-xs uppercase tracking-wider text-slate-500">ou</span>
+                            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-[#D6D3D1]" /></div>
+                            <span className="relative bg-[#FAF8F5] px-3 font-mono text-[10px] uppercase tracking-widest text-[#A8A29E]">ou</span>
                         </div>
 
                         <button
                             type="button"
                             onClick={handleGoogleLogin}
                             disabled={loading}
-                            className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-white px-4 py-3.5 text-base font-semibold text-gray-900 transition-colors hover:bg-gray-100 active:scale-[0.99] disabled:opacity-60"
+                            className="flex w-full items-center justify-center gap-2.5 rounded-lg border-2 border-[#1C1917] bg-white px-4 py-3.5 text-base font-bold text-[#1C1917] transition-transform hover:-translate-y-0.5 hover:bg-[#F1EDE7] active:translate-y-0 disabled:opacity-60"
                         >
                             <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden>
                                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -385,21 +387,21 @@ function LoginPageContent() {
                     </form>
                 </div>
 
-                <p className="mt-8 text-center text-sm text-slate-400">
+                <p className="mt-8 text-center text-sm text-[#57534E]">
                     Ainda não tem conta?{" "}
-                    <Link href="/cadastro" className="font-semibold text-blue-400 hover:text-blue-300">
+                    <Link href="/cadastro" className="font-bold text-[#1C1917] underline decoration-[#F97316] decoration-2 underline-offset-4">
                         Criar conta grátis
                     </Link>
                 </p>
 
-                {/* No app não existe "home" para voltar — o app É a tela */}
+                {/* No app não existe "site" para voltar — o app É a tela */}
                 {!modoApp && (
                     <button
                         type="button"
                         onClick={() => router.push("/")}
-                        className="mt-4 text-center text-sm text-slate-500 hover:text-slate-300"
+                        className="mt-4 text-center font-mono text-[11px] uppercase tracking-widest text-[#A8A29E] hover:text-[#57534E]"
                     >
-                        Voltar para o site
+                        ← Voltar para o site
                     </button>
                 )}
             </div>

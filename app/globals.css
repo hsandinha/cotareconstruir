@@ -312,6 +312,14 @@ body:has(.tela-escura) {
     background: #0f172a;
 }
 
+/* Mesma ideia para as telas no papel e no grafite da marca */
+body:has(.tela-papel) {
+    background: #FAF8F5;
+}
+body:has(.tela-grafite) {
+    background: #292524;
+}
+
 /* ==================================================================
    Abertura da landing: prédio sendo construído
    ================================================================== */
