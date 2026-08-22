@@ -6,6 +6,7 @@ import "./globals.css";
 import { ToastProvider } from "@/components/ToastProvider";
 import { ConfirmModalProvider } from "@/components/ConfirmModal";
 import { RegistraServiceWorker } from "@/components/RegistraServiceWorker";
+import { ConstructionIntro } from "@/components/ConstructionIntro";
 
 config.autoAddCss = false;
 
@@ -67,6 +68,7 @@ export default function RootLayout({
           <ConfirmModalProvider>{children}</ConfirmModalProvider>
         </ToastProvider>
         <RegistraServiceWorker />
+        <ConstructionIntro />
       </body>
     </html>
   );

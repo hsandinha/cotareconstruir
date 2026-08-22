@@ -1,38 +1,41 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePrefersReducedMotion } from "./hooks";
+import { rodandoComoApp } from "@/lib/modoApp";
 
 /**
- * Abertura da página: um prédio sendo construído.
+ * Abertura do app instalado: um prédio sendo construído.
  *
- * SVG + CSS puro, sem biblioteca de animação — mesma linha do resto da
- * landing. A sequência é a da obra de verdade: fundação → pilares → lajes
- * subindo → alvenaria → janelas acendendo, com a grua girando ao lado.
+ * Só roda no PWA (`display-mode: standalone`). No navegador não aparece —
+ * quem chega pela busca quer ler a página, não esperar animação.
+ *
+ * SVG + CSS puro, sem biblioteca. A sequência é a da obra de verdade:
+ * fundação → pilares → lajes subindo → alvenaria → janelas acendendo,
+ * com a grua girando ao lado.
  *
  * Regras que valem mais que o efeito:
- *   - roda uma vez por sessão (quem volta não espera de novo);
+ *   - roda uma vez por sessão (reabrir o app não faz esperar de novo);
  *   - qualquer toque ou tecla pula;
  *   - com "reduzir movimento" ligado no aparelho, nem aparece;
- *   - é só uma camada por cima — a página já está montada embaixo, então
- *     não atrasa carregamento nem esconde conteúdo de buscador.
+ *   - é só uma camada por cima — a tela já está montada embaixo.
  */
 
-const CHAVE_SESSAO = "lp_abertura_vista";
+const CHAVE_SESSAO = "app_abertura_vista";
 const DURACAO_MS = 3600;
 
 export function ConstructionIntro() {
-    const reduzirMovimento = usePrefersReducedMotion();
     const [visivel, setVisivel] = useState(false);
     const [saindo, setSaindo] = useState(false);
 
     useEffect(() => {
-        // Consulta direta: durante a hidratação o hook ainda devolve o valor
-        // do servidor (false), e a abertura escapava para quem pediu menos
-        // movimento.
-        const pedeMenosMovimento = reduzirMovimento
-            || (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-        if (pedeMenosMovimento) return;
+        // Só no app instalado
+        if (!rodandoComoApp()) return;
+
+        // Consulta direta ao matchMedia: na hidratação um hook ainda
+        // devolveria o valor do servidor e a abertura escaparia para quem
+        // pediu menos movimento.
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
         try {
             if (sessionStorage.getItem(CHAVE_SESSAO) === "1") return;
             sessionStorage.setItem(CHAVE_SESSAO, "1");
@@ -40,7 +43,7 @@ export function ConstructionIntro() {
             /* modo privado: mostra assim mesmo, uma vez */
         }
         setVisivel(true);
-    }, [reduzirMovimento]);
+    }, []);
 
     useEffect(() => {
         if (!visivel) return;

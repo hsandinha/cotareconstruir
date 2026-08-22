@@ -15,7 +15,6 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useInView, useScrollProgress, useTilt, useCountUp, usePrefersReducedMotion, useShortViewport } from "./hooks";
 import { LandingBottomNav } from "./LandingBottomNav";
-import { ConstructionIntro } from "./ConstructionIntro";
 
 type StatusTurma = {
     vagasTotal: number;
@@ -1279,7 +1278,6 @@ function Cta() {
 export function LandingExperience() {
     return (
         <main className="lp-root tem-menu-inferior bg-[#FAF8F5] text-[#1C1917]">
-            <ConstructionIntro />
             <Hero />
             <Thread />
             <Dor />

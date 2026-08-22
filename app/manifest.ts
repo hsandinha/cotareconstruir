@@ -15,7 +15,11 @@ export default function manifest(): MetadataRoute.Manifest {
         // Instalado, o app abre direto no login — sem passar pela página de
         // venda, que é para quem ainda não é cliente. Quem já tem sessão o
         // /login manda direto para o painel do seu perfil.
-        start_url: "/login",
+        // `modo=app` é o sinal mais confiável de que a abertura veio do
+        // ícone instalado: o navegador abre exatamente esta URL. Detectar
+        // por `display-mode` sozinho falha em vários launchers Android e
+        // em webview de iPad.
+        start_url: "/login?modo=app",
         // `id` fixo: sem ele, mudar o start_url faria alguns navegadores
         // tratarem como um app diferente e duplicarem o ícone de quem já
         // tinha instalado.

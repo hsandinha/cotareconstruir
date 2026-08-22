@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Home, Map, Video, Rocket, LogIn } from "lucide-react";
+import { Home, Map, Rocket, LogIn } from "lucide-react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faWhatsapp } from "@fortawesome/free-brands-svg-icons";
+import { floatingWhatsApp } from "@/lib/content";
 
 /**
  * Menu inferior flutuante da página inicial (só no celular).
@@ -12,27 +15,19 @@ import { Home, Map, Video, Rocket, LogIn } from "lucide-react";
  * que anda junto com a rolagem.
  */
 
+/**
+ * Cinco alvos é o teto para a barra caber em 375px sem apertar. O WhatsApp
+ * entrou aqui porque, flutuando, ele cobria o menu. "Depoimentos" saiu da
+ * barra: continua na página, alcançável rolando.
+ */
 const SECOES = [
     { id: "hero", label: "Início", icon: Home },
     { id: "metodologia", label: "Como é", icon: Map },
-    { id: "depoimentos", label: "Depoimentos", icon: Video },
     { id: "teste-gratuito", label: "Testar", icon: Rocket },
 ] as const;
 
 export function LandingBottomNav() {
     const [ativo, setAtivo] = useState<string>("hero");
-    const [temDepoimentos, setTemDepoimentos] = useState(false);
-
-    // A seção de depoimentos só existe quando há vídeo publicado, e ela
-    // entra depois do fetch — por isso reconferimos algumas vezes.
-    useEffect(() => {
-        const conferir = () => setTemDepoimentos(Boolean(document.getElementById("depoimentos")));
-        conferir();
-        const t1 = setTimeout(conferir, 1500);
-        const t2 = setTimeout(conferir, 4000);
-        return () => { clearTimeout(t1); clearTimeout(t2); };
-    }, []);
-
     // Marca como ativa a seção que ocupa o meio da tela
     useEffect(() => {
         const observador = new IntersectionObserver(
@@ -50,9 +45,7 @@ export function LandingBottomNav() {
             if (el) observador.observe(el);
         });
         return () => observador.disconnect();
-    }, [temDepoimentos]);
-
-    const itens = SECOES.filter((s) => s.id !== "depoimentos" || temDepoimentos);
+    }, []);
 
     return (
         <nav
@@ -61,7 +54,7 @@ export function LandingBottomNav() {
             style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
             <ul className="mx-auto flex max-w-lg items-stretch">
-                {itens.map((secao) => {
+                {SECOES.map((secao) => {
                     const Icone = secao.icon;
                     const selecionado = ativo === secao.id;
                     return (
@@ -79,6 +72,21 @@ export function LandingBottomNav() {
                         </li>
                     );
                 })}
+
+                {/* WhatsApp: era um botão flutuante que cobria esta barra */}
+                <li className="flex-1">
+                    <a
+                        href={`https://wa.me/${floatingWhatsApp.phone}?text=${encodeURIComponent(floatingWhatsApp.message)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex flex-col items-center gap-0.5 px-1 py-2 transition-transform active:scale-95"
+                    >
+                        <span className="flex h-6 w-6 items-center justify-center">
+                            <FontAwesomeIcon icon={faWhatsapp} className="text-[22px] text-[#25D366]" />
+                        </span>
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-[#78716C]">WhatsApp</span>
+                    </a>
+                </li>
 
                 {/* Entrar fecha a barra: quem já é cliente vai direto */}
                 <li className="flex-1">
