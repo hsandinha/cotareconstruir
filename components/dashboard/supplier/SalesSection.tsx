@@ -652,7 +652,7 @@ export function SupplierSalesSection() {
                     Nenhum pedido encontrado.
                 </div>
             ) : (
-                <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="rolagem-tabela bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
@@ -1037,7 +1037,7 @@ export function SupplierSalesSection() {
                                     <FileText className="h-5 w-5 text-gray-500" />
                                     Itens do Pedido
                                 </h3>
-                                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                <div className="rolagem-tabela border border-gray-200 rounded-lg overflow-x-auto">
                                     <table className="min-w-full divide-y divide-gray-200">
                                         <thead className="bg-gray-50">
                                             <tr>

@@ -221,6 +221,87 @@ body {
 }
 .lp-pulse-badge { animation: lp-pulse-badge 1.6s ease-in-out 2; }
 
+/* ==================================================================
+   Celular: nada pode estourar a largura da tela
+   ==================================================================
+   A causa de scroll horizontal aqui é quase sempre tabela larga ou
+   texto sem espaço (URL, e-mail, código). Em vez de caçar caso a caso,
+   travamos a raiz e damos rolagem só a quem precisa. */
+
+html, body {
+    max-width: 100%;
+    overflow-x: hidden;
+    /* Impede o "zoom elástico" horizontal do Safari */
+    overscroll-behavior-x: none;
+}
+
+@media (max-width: 767px) {
+    /* Palavra gigante (e-mail, URL, código) não empurra o layout */
+    body {
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+
+    /* Tabela: NÃO usamos `display:block` aqui — isso quebraria o alinhamento
+       das colunas. A rolagem fica no contêiner (.rolagem-tabela ou o
+       overflow-x-auto que cada tela já usa). */
+    .rolagem-tabela {
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Imagem e vídeo nunca passam do contêiner */
+    img, video, svg, canvas, iframe {
+        max-width: 100%;
+        height: auto;
+    }
+
+    /* Bloco de código rola dentro dele mesmo (documentação da API) */
+    pre {
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    pre code {
+        white-space: pre;
+    }
+    /* Código solto no meio do texto pode quebrar */
+    :not(pre) > code {
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+
+    /* iOS dá zoom no campo quando a fonte é menor que 16px.
+       O zoom desloca o layout e parece que a tela "estourou". */
+    input, select, textarea {
+        font-size: 16px;
+    }
+}
+
+/* Espaço para o menu inferior não cobrir o conteúdo (+ área segura do iPhone) */
+@media (max-width: 767px) {
+    .tem-menu-inferior {
+        padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+    }
+}
+
+/* Barra de rolagem oculta, mantendo a rolagem */
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+/* Alvo de toque com o mínimo recomendado (44px) */
+@media (max-width: 767px) {
+    button, a[role="button"], .tab-button {
+        min-height: 44px;
+    }
+}
+
 /* Rolagem suave só na landing (âncoras do topo para o bloco do teste) */
 html:has(.lp-root) {
   scroll-behavior: smooth;

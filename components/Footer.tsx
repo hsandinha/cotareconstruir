@@ -56,13 +56,17 @@ export function Footer() {
           <div className="space-y-4">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-200">Contato</h3>
             <div className="space-y-3 text-sm text-slate-400">
-              <div className="flex items-center space-x-3">
-                <FontAwesomeIcon icon={faEnvelope} className="text-blue-400" />
-                <span>contato@comprareconstruir.com</span>
+              {/* min-w-0 + break-all: sem isso o e-mail longo estoura a coluna
+                  quando o rodapé fica em 4 colunas (tablet) */}
+              <div className="flex items-start gap-3">
+                <FontAwesomeIcon icon={faEnvelope} className="mt-1 shrink-0 text-blue-400" />
+                <a href="mailto:contato@comprareconstruir.com" className="min-w-0 break-all transition hover:text-white">
+                  contato@comprareconstruir.com
+                </a>
               </div>
-              <div className="flex items-center space-x-3">
-                <FontAwesomeIcon icon={faPhone} className="text-blue-400" />
-                <span>(31) 9 9219-4237</span>
+              <div className="flex items-center gap-3">
+                <FontAwesomeIcon icon={faPhone} className="shrink-0 text-blue-400" />
+                <a href="tel:+5531992194237" className="transition hover:text-white">(31) 9 9219-4237</a>
               </div>
             </div>
             <div className="flex space-x-5 pt-2 text-lg text-slate-400">

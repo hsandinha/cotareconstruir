@@ -12,6 +12,9 @@ import PendingProfileModal from "../../../components/PendingProfileModal";
 import { useAuth } from "@/lib/useAuth";
 import { supabase } from "@/lib/supabaseAuth";
 import { useRouter, useSearchParams } from "next/navigation";
+import { UserCircle2, Building2, FilePlus2, Package, Sparkles } from "lucide-react";
+import { MobileBottomNav, MenuMaisSheet, type ItemMenu } from "@/components/MobileBottomNav";
+import { ConviteInstalarPwa } from "@/components/InstallPwa";
 import { ChatNotificationListener } from "@/components/ChatNotificationListener";
 import { SupplierTour, type SupplierTourStep } from "@/components/SupplierTour";
 
@@ -21,6 +24,15 @@ export type TabId =
     | "cotacao"
     | "pedidos"
     | "oportunidades";
+
+/** Menu do celular: rótulo curto e ícone, na ordem de uso do dia a dia. */
+const ITENS_MENU_CELULAR: ItemMenu[] = [
+    { id: "cotacao", label: "Cotar", icon: FilePlus2 },
+    { id: "pedidos", label: "Pedidos", icon: Package },
+    { id: "obras", label: "Obras", icon: Building2 },
+    { id: "oportunidades", label: "Ofertas", icon: Sparkles },
+    { id: "perfil", label: "Perfil", icon: UserCircle2 },
+];
 
 const tabs: { id: TabId; label: string }[] = [
     { id: "perfil", label: "Cadastro & Perfil" },
@@ -34,6 +46,7 @@ function ClienteDashboardContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [tab, setTab] = useState<TabId>("perfil");
+    const [menuMaisAberto, setMenuMaisAberto] = useState(false);
     const [userName, setUserName] = useState("Cliente");
     const [userInitial, setUserInitial] = useState("C");
     const [userRoles, setUserRoles] = useState<string[]>([]);
@@ -404,7 +417,7 @@ function ClienteDashboardContent() {
             </div>
 
             {/* Tabs Header */}
-            <div className="bg-white border-b border-slate-200/80" data-tour="cliente-tabs">
+            <div className="hidden md:block bg-white border-b border-slate-200/80" data-tour="cliente-tabs">
                 <div className="section-shell flex items-center justify-between gap-4">
                     <nav className="flex space-x-6 overflow-x-auto scrollbar-hide flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
                         {tabs.map((item) => (
@@ -436,7 +449,7 @@ function ClienteDashboardContent() {
             </div>
 
             {/* Main Content */}
-            <div className="section-shell py-10">
+            <div className="section-shell tem-menu-inferior py-6 md:py-10">
 
                 {/* Stats Cards — ocultos na Nova Cotação (modo foco) */}
                 {tab !== "cotacao" && (
@@ -535,6 +548,22 @@ function ClienteDashboardContent() {
                 onChangeTab={(t) => setTab(t as TabId)}
                 storageKey="clientTourSeen_v2"
             />
+
+            {/* Menu do celular */}
+            <MobileBottomNav
+                itens={ITENS_MENU_CELULAR}
+                ativo={tab}
+                onSelecionar={(id) => setTab(id as TabId)}
+                onMais={() => setMenuMaisAberto(true)}
+            />
+            <MenuMaisSheet
+                aberto={menuMaisAberto}
+                itens={ITENS_MENU_CELULAR}
+                ativo={tab}
+                onSelecionar={(id) => setTab(id as TabId)}
+                onFechar={() => setMenuMaisAberto(false)}
+            />
+            <ConviteInstalarPwa />
         </div>
     );
 }

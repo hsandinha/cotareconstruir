@@ -933,6 +933,8 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                         );
                                     })()}
 
+                                    {/* rola dentro da caixa: no celular a tabela é mais larga que a tela */}
+                                    <div className="rolagem-tabela overflow-x-auto">
                                     <table className="min-w-full text-sm mb-4 border border-gray-200">
                                         <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
                                             <tr>
@@ -999,6 +1001,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                             })()}
                                         </tbody>
                                     </table>
+                                    </div>
 
                                     {(supplierObs || supplierAnexos.length > 0) && (
                                         <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
@@ -1509,6 +1512,8 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                 </div>
                             </div>
 
+                            {/* rola dentro da caixa: no celular a tabela é mais larga que a tela */}
+                            <div className="rolagem-tabela overflow-x-auto">
                             <table className="min-w-full text-sm mb-4">
                                 <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     <tr>
@@ -1533,6 +1538,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                     </tr>
                                 </tbody>
                             </table>
+                            </div>
 
                             <div className="flex justify-end">
                                 <button
@@ -1633,6 +1639,8 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                 </div>
                             </div>
 
+                            {/* rola dentro da caixa: no celular a tabela é mais larga que a tela */}
+                            <div className="rolagem-tabela overflow-x-auto">
                             <table className="min-w-full text-sm mb-4">
                                 <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     <tr>
@@ -1669,6 +1677,7 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
                                     </tr>
                                 </tbody>
                             </table>
+                            </div>
 
                             <div className="flex justify-end">
                                 <button

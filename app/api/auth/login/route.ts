@@ -98,6 +98,14 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        // Conta suspensa não entra. O status existia na tabela mas nunca era
+        // conferido: quem fosse suspenso pelo admin continuava logando.
+        if (userData?.status === 'suspended') {
+            await logLogin(user.id, user.email || '', '', request, false, 'conta suspensa');
+            await supabase.auth.signOut();
+            throw new AuthenticationError('Esta conta está suspensa. Fale com o suporte.');
+        }
+
         // Best effort: registrar último login
         try {
             await supabase

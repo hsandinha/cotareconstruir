@@ -125,7 +125,7 @@ function Hero() {
     return (
         <section id="hero" ref={ref} className="lp-paper-grain relative overflow-hidden bg-[#FAF8F5] px-6 pb-20 pt-32 md:pt-40">
             <div className="mx-auto grid max-w-7xl items-center gap-14 lg:grid-cols-2">
-                <div className={`transition-all duration-700 ${inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"}`}>
+                <div className={`min-w-0 transition-all duration-700 ${inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"}`}>
                     <SectionLabel>Suprimentos de obra, sem telefone ocupado</SectionLabel>
                     <h1 className="mt-4 text-5xl font-extrabold leading-[1.05] tracking-tight text-[#1C1917] md:text-6xl">
                         Cotar Materiais ainda é trabalho braçal.{" "}
@@ -174,7 +174,7 @@ function Hero() {
                 </div>
 
                 {/* Mock do mapa comparativo com tilt 3D */}
-                <div style={{ perspective: 1200 }}>
+                <div className="min-w-0" style={{ perspective: 1200 }}>
                     <div
                         onMouseEnter={reduced ? undefined : tilt.onMouseEnter}
                         onMouseMove={reduced ? undefined : tilt.onMouseMove}

@@ -485,9 +485,11 @@ export function ClientOrderSection({ onCreateQuotation }: { onCreateQuotation?: 
                         <div key={k} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                             <div className="flex items-center gap-4">
                                 <div className="h-12 w-12 shrink-0 animate-pulse rounded-xl bg-slate-100" />
-                                <div className="flex-1 space-y-2">
-                                    <div className="h-4 w-32 animate-pulse rounded bg-slate-100" />
-                                    <div className="h-3 w-64 animate-pulse rounded bg-slate-100" />
+                                {/* min-w-0 + largura relativa: w-64 fixo estourava
+                                    o card em telas de 375px */}
+                                <div className="min-w-0 flex-1 space-y-2">
+                                    <div className="h-4 w-1/2 max-w-[8rem] animate-pulse rounded bg-slate-100" />
+                                    <div className="h-3 w-full max-w-[16rem] animate-pulse rounded bg-slate-100" />
                                 </div>
                                 <div className="hidden h-8 w-24 animate-pulse rounded-lg bg-slate-100 sm:block" />
                             </div>

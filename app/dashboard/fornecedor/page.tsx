@@ -13,6 +13,9 @@ import { useAuth } from "@/lib/useAuth";
 import { supabase } from "@/lib/supabaseAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
 import { useRouter, useSearchParams } from "next/navigation";
+import { UserCircle2, Boxes, Tag, ShoppingBag } from "lucide-react";
+import { MobileBottomNav, type ItemMenu } from "@/components/MobileBottomNav";
+import { ConviteInstalarPwa } from "@/components/InstallPwa";
 import { ChatNotificationListener } from "@/components/ChatNotificationListener";
 import { SupplierTour, type SupplierTourStep } from "@/components/SupplierTour";
 
@@ -21,6 +24,14 @@ export type SupplierTabId =
     | "materiais"
     | "ofertas"
     | "vendas-cotacoes";
+
+/** Menu do celular do fornecedor: quatro seções, todas na barra. */
+const ITENS_MENU_CELULAR: ItemMenu[] = [
+    { id: "vendas-cotacoes", label: "Pedidos", icon: ShoppingBag },
+    { id: "ofertas", label: "Ofertas", icon: Tag },
+    { id: "materiais", label: "Materiais", icon: Boxes },
+    { id: "perfil", label: "Perfil", icon: UserCircle2 },
+];
 
 const tabs: { id: SupplierTabId; label: string }[] = [
     { id: "perfil", label: "Cadastro & Perfil" },
@@ -456,7 +467,7 @@ function FornecedorDashboardContent() {
             </div>
 
             {/* Tabs Header */}
-            <div className="bg-white border-b border-slate-200/80" data-tour="supplier-tabs">
+            <div className="hidden md:block bg-white border-b border-slate-200/80" data-tour="supplier-tabs">
                 <div className="section-shell flex items-center justify-between gap-4">
                     <nav className="flex space-x-6 overflow-x-auto scrollbar-hide flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
                         {tabs.map((item) => (
@@ -488,7 +499,7 @@ function FornecedorDashboardContent() {
             </div>
 
             {/* Main Content */}
-            <div className="section-shell py-10">
+            <div className="section-shell tem-menu-inferior py-6 md:py-10">
 
                 {/* Stats Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -643,6 +654,13 @@ function FornecedorDashboardContent() {
                 onChangeTab={(t) => setTab(t as SupplierTabId)}
                 storageKey="supplierTourSeen_v2"
             />
+
+            <MobileBottomNav
+                itens={ITENS_MENU_CELULAR}
+                ativo={tab}
+                onSelecionar={(id) => setTab(id as SupplierTabId)}
+            />
+            <ConviteInstalarPwa />
         </div>
     );
 }

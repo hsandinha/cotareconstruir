@@ -17,18 +17,21 @@ export async function POST(request: NextRequest) {
 
         console.log('📥 Mercado Pago webhook received:', body);
 
-        // Verificar assinatura (se configurado)
-        if (signature && dataId && process.env.MERCADOPAGO_WEBHOOK_SECRET) {
-            const isValid = verifyMercadoPagoSignature(
-                dataId,
-                signature,
-                process.env.MERCADOPAGO_WEBHOOK_SECRET
-            );
-
-            if (!isValid) {
+        // Com o segredo configurado, a assinatura é OBRIGATÓRIA.
+        // Antes bastava omitir o cabeçalho `x-signature` para pular a
+        // verificação inteira e mandar qualquer payload.
+        const segredo = process.env.MERCADOPAGO_WEBHOOK_SECRET;
+        if (segredo) {
+            if (!signature || !dataId) {
+                console.error('Webhook Mercado Pago sem assinatura');
+                return NextResponse.json({ error: 'Missing signature' }, { status: 401 });
+            }
+            if (!verifyMercadoPagoSignature(dataId, signature, segredo)) {
                 console.error('Invalid Mercado Pago signature');
                 return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
             }
+        } else {
+            console.warn('[WEBHOOK] MERCADOPAGO_WEBHOOK_SECRET não configurado: payload aceito sem verificação.');
         }
 
         // Processar eventos

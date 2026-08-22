@@ -23,6 +23,8 @@ import {
     MessageSquareQuote,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseAuth";
+import { MobileBottomNav, MenuMaisSheet, type ItemMenu } from "@/components/MobileBottomNav";
+import { ConviteInstalarPwa } from "@/components/InstallPwa";
 import { useAuth } from "@/lib/useAuth";
 import { DashboardHeader } from "@/components/DashboardHeader";
 import { useToast } from "@/components/ToastProvider";
@@ -81,6 +83,7 @@ export default function AdminDashboard() {
     const [fornecedoresSubTab, setFornecedoresSubTab] = useState<"gestao" | "grupo" | "api">("gestao");
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const [menuMaisAberto, setMenuMaisAberto] = useState(false);
     const [stats, setStats] = useState({
         users: 0,
         suppliers: 0,
@@ -146,6 +149,18 @@ export default function AdminDashboard() {
     ];
 
     const allNavItems = navGroups.flatMap((g) => g.items);
+
+    // Barra do celular: as quatro telas do dia a dia; "Mais" abre o resto.
+    const PRINCIPAIS: AdminTabId[] = ["gestao-obra", "acompanhamento", "clientes", "fornecedores"];
+    const itensMenuCelular: ItemMenu[] = [
+        ...PRINCIPAIS
+            .map((id) => allNavItems.find((i) => i.id === id))
+            .filter(Boolean)
+            .map((i) => ({ id: i!.id, label: i!.label.split(" ")[0], icon: i!.icon, badge: i!.badge })),
+        ...allNavItems
+            .filter((i) => !PRINCIPAIS.includes(i.id))
+            .map((i) => ({ id: i.id, label: i.label, icon: i.icon, badge: i.badge })),
+    ];
     const currentNav = allNavItems.find((i) => i.id === activeTab);
 
     const { user, profile, isAdmin: userIsAdmin, initialized } = useAuth();
@@ -468,7 +483,7 @@ export default function AdminDashboard() {
                 )}
 
                 {/* Main */}
-                <main className="flex-1 min-w-0">
+                <main className="flex-1 min-w-0 tem-menu-inferior">
                     {/* Toolbar com breadcrumb + toggle mobile */}
                     <div className="sticky top-16 z-10 border-b border-slate-200/80 bg-white/80 backdrop-blur">
                         <div className="flex items-center gap-3 px-4 sm:px-6 lg:px-8 h-12">
@@ -727,6 +742,21 @@ export default function AdminDashboard() {
                     </div>
                 </main>
             </div>
+
+            <MobileBottomNav
+                itens={itensMenuCelular}
+                ativo={activeTab}
+                onSelecionar={(id) => setActiveTab(id as AdminTabId)}
+                onMais={() => setMenuMaisAberto(true)}
+            />
+            <MenuMaisSheet
+                aberto={menuMaisAberto}
+                itens={itensMenuCelular.slice(4)}
+                ativo={activeTab}
+                onSelecionar={(id) => setActiveTab(id as AdminTabId)}
+                onFechar={() => setMenuMaisAberto(false)}
+            />
+            <ConviteInstalarPwa />
         </div>
     );
 }
