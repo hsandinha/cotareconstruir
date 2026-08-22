@@ -14,6 +14,8 @@ export function Header() {
     <header
       id="header"
       className="fixed top-0 z-50 w-full border-b border-white/10 bg-slate-950/80 backdrop-blur-2xl"
+      // Área segura do iPhone: sem isso o cabeçalho fica sob o relógio
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between px-2 py-2">
         <Link href="#hero" className="flex items-center">

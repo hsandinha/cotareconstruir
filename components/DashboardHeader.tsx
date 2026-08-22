@@ -28,15 +28,23 @@ export function DashboardHeader({ currentRole, availableRoles, userName, userIni
 
     return (
         <>
-        <div className="relative z-[60] bg-white/90 backdrop-blur border-b border-slate-200/80 shadow-sm">
+        {/* paddingTop da área segura: com `viewport-fit=cover` e a barra de
+            status translúcida no iPhone, o conteúdo sobe até o topo da tela
+            e o cabeçalho ficava embaixo do relógio e da ilha dinâmica. */}
+        <div
+            className="relative z-[60] bg-white/90 backdrop-blur border-b border-slate-200/80 shadow-sm"
+            style={{ paddingTop: "env(safe-area-inset-top)" }}
+        >
             <div className="section-shell">
                 <div className="flex h-16 items-center justify-between">
                     <div className="flex items-center">
                         <div className="mr-2 flex items-center justify-center rounded-lg bg-white">
                             <Image src="/logo.png" alt="Comprar & Construir" width={60} height={60} priority />
                         </div>
-                        <span className="text-lg font-semibold text-gray-900">Comprar</span>
-                        <span className="ml-1 text-lg font-light text-gray-600">&amp; Construir</span>
+                        {/* Não quebra em duas linhas no celular: some o
+                            "& Construir" e fica só a marca curta. */}
+                        <span className="whitespace-nowrap text-base font-semibold text-gray-900 sm:text-lg">Comprar</span>
+                        <span className="ml-1 hidden whitespace-nowrap text-base font-light text-gray-600 sm:inline sm:text-lg">&amp; Construir</span>
                     </div>
                     <div className="flex items-center gap-4">
                         {children}

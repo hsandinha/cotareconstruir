@@ -236,10 +236,12 @@ html, body {
 }
 
 @media (max-width: 767px) {
-    /* Palavra gigante (e-mail, URL, código) não empurra o layout */
+    /* Palavra gigante (e-mail, URL) não empurra o layout.
+       `word-break: break-word` foi removido: ele quebra em QUALQUER ponto e,
+       numa coluna estreita de tabela, virava uma letra por linha. O
+       `overflow-wrap` só quebra quando a palavra realmente não cabe. */
     body {
         overflow-wrap: break-word;
-        word-break: break-word;
     }
 
     /* Tabela: NÃO usamos `display:block` aqui — isso quebraria o alinhamento
@@ -249,6 +251,30 @@ html, body {
         max-width: 100%;
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
+    }
+
+    /* Tabela dentro de contêiner rolável assume a largura do conteúdo e
+       ROLA. Sem isso, `w-full`/`min-w-full` a espremem até a tela, as
+       colunas ficam com poucos pixels e o texto empilha na vertical. */
+    .rolagem-tabela > table,
+    .overflow-x-auto > table {
+        min-width: max-content;
+    }
+
+    .rolagem-tabela > table th,
+    .rolagem-tabela > table td,
+    .overflow-x-auto > table th,
+    .overflow-x-auto > table td {
+        white-space: nowrap;
+    }
+
+    /* Trava de segurança: uma célula com texto longo (observação, endereço)
+       não pode esticar a tabela indefinidamente. */
+    .rolagem-tabela > table td,
+    .overflow-x-auto > table td {
+        max-width: 18rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     /* Imagem e vídeo nunca passam do contêiner */
