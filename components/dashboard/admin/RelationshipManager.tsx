@@ -812,7 +812,7 @@ export default function RelationshipManager() {
             )}
 
             {saving && (
-                <div className="fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded shadow-lg">
+                <div className="acima-do-menu fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded shadow-lg">
                     Salvando...
                 </div>
             )}

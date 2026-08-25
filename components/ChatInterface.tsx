@@ -313,7 +313,7 @@ export function ChatInterface({ recipientName, recipientId, onClose, isOpen, ini
 
     return (
         <div
-            className={`fixed bottom-4 w-80 md:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 flex flex-col overflow-hidden ${isMinimized ? 'h-auto' : 'h-[500px]'}`}
+            className={`acima-do-menu fixed bottom-4 w-80 md:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 flex flex-col overflow-hidden ${isMinimized ? 'h-auto' : 'h-[500px]'}`}
             style={{ right: `${horizontalOffset}px` }}
         >
             {/* Header */}

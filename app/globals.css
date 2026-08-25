@@ -310,6 +310,15 @@ html, body {
     }
 }
 
+/* Elemento flutuante (botão de carrinho, toast, chat) sobe para não ficar
+   atrás da barra inferior. `!important` porque compete com a classe
+   `bottom-*` do Tailwind, de mesma especificidade. */
+@media (max-width: 767px) {
+    .acima-do-menu {
+        bottom: calc(4.75rem + env(safe-area-inset-bottom)) !important;
+    }
+}
+
 /* Espaço para o menu inferior não cobrir o conteúdo (+ área segura do iPhone) */
 @media (max-width: 767px) {
     .tem-menu-inferior {

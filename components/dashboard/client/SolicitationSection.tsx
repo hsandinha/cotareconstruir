@@ -2374,7 +2374,7 @@ export function ClientSolicitationSection() {
                     {items.length > 0 && (
                         <button
                             onClick={() => setMobileCartOpen(true)}
-                            className="xl:hidden fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-white shadow-lg shadow-blue-600/30 transition-transform active:scale-95"
+                            className="acima-do-menu xl:hidden fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-white shadow-lg shadow-blue-600/30 transition-transform active:scale-95"
                         >
                             <ShoppingCart className="h-5 w-5" />
                             <span className="text-sm font-semibold">{items.length} {items.length === 1 ? 'item' : 'itens'}</span>
@@ -2470,7 +2470,7 @@ export function ClientSolicitationSection() {
 
             {/* Snackbar: desfazer remoção de item */}
             {lastRemoved && createPortal(
-                <div className="fixed bottom-4 left-4 z-[9999] flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white shadow-lg">
+                <div className="acima-do-menu fixed bottom-4 left-4 z-[9999] flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white shadow-lg">
                     <Trash2 className="h-4 w-4 text-slate-400" />
                     <span className="max-w-[200px] truncate">
                         <span className="font-semibold">{lastRemoved.item.descricao}</span> removido
