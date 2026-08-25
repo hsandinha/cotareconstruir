@@ -85,6 +85,31 @@ const templates = [
         ],
     },
     {
+        // Só na PRIMEIRA mensagem de cada conversa — a partir daí o
+        // fornecedor está na janela de 24h e recebe pela plataforma.
+        name: 'nova_mensagem_chat_fornecedor',
+        language: 'pt_BR',
+        category: 'UTILITY',
+        components: [
+            {
+                type: 'BODY',
+                text: 'Olá! Um cliente iniciou uma conversa com você na Comprar e Construir.\n\n*Cliente:* {{1}}\n*Sobre:* {{2}}\n\nToque no botão abaixo para responder.',
+                example: { body_text: [['Construtora Palhares', 'Cotação #1024']] },
+            },
+            {
+                type: 'BUTTONS',
+                buttons: [
+                    {
+                        type: 'URL',
+                        text: 'Responder',
+                        url: `${PLATFORM_URL}?wa={{1}}`,
+                        example: [`${PLATFORM_URL}?wa=JTdCJTIyZSUyMiUzQSUyMmZvcm5lY2Vkb3IlNDBlbWFpbC5jb20lMjIlN0Q`],
+                    },
+                ],
+            },
+        ],
+    },
+    {
         name: 'pedido_aprovado_fornecedor',
         language: 'pt_BR',
         category: 'UTILITY',

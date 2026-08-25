@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { analyzeChatMessage } from '@/lib/chatModeration';
 import { getSupplierAccessUserIds, listUserSupplierAccess, userHasSupplierAccess } from '@/lib/supplierAccessServer';
+import { notifySupplierNewChat, devoAvisarFornecedorNoChat } from '@/lib/whatsappService';
+import { encodeLoginRef } from '@/lib/quotationLink';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
@@ -350,6 +352,104 @@ export async function GET(req: NextRequest) {
     }
 }
 
+/**
+ * Avisa o fornecedor no WhatsApp que um cliente ABRIU uma conversa.
+ *
+ * Só dispara na PRIMEIRA mensagem da sala e só quando quem escreveu é o
+ * cliente. A cada mensagem viraria spam, e o WhatsApp pune número que
+ * dispara demais — o resto da conversa o fornecedor acompanha pelo sino
+ * da plataforma.
+ *
+ * Nunca lança: a mensagem já está gravada, e falha de aviso não pode
+ * derrubar o envio do chat.
+ */
+async function avisarFornecedorNoWhatsApp(params: {
+    roomId: string;
+    fornecedorId: string;
+    cotacaoId: string | null;
+    clienteId: string | null;
+    autorId: string;
+    senderName: string;
+}) {
+    if (!supabaseAdmin) return;
+
+    try {
+        // Quantas mensagens a sala tem? (a recém-inserida deve ser a única)
+        const { count, error: countError } = await supabaseAdmin
+            .from('mensagens')
+            .select('id', { count: 'exact', head: true })
+            .eq('chat_id', params.roomId);
+
+        if (countError) return;
+
+        const deveAvisar = devoAvisarFornecedorNoChat({
+            totalMensagensNaSala: count ?? 0,
+            autorId: params.autorId,
+            clienteId: params.clienteId,
+            fornecedorId: params.fornecedorId,
+        });
+        if (!deveAvisar) return;
+
+        const { data: fornecedor } = await supabaseAdmin
+            .from('fornecedores')
+            .select('whatsapp, telefone, email, user_id, razao_social, nome_fantasia')
+            .eq('id', params.fornecedorId)
+            .single();
+
+        if (!fornecedor) return;
+
+        // Telefone: o do cadastro do fornecedor ou, na falta, o do usuário dono
+        let telefone: string | null = fornecedor.whatsapp || fornecedor.telefone || null;
+        let email: string | null = fornecedor.email || null;
+
+        if ((!telefone || !email) && fornecedor.user_id) {
+            const { data: dono } = await supabaseAdmin
+                .from('users')
+                .select('telefone, email')
+                .eq('id', fornecedor.user_id)
+                .single();
+            telefone = telefone || dono?.telefone || null;
+            email = email || dono?.email || null;
+        }
+
+        if (!telefone) {
+            console.warn('[CHAT] Fornecedor sem telefone; aviso de WhatsApp não enviado:', params.fornecedorId);
+            return;
+        }
+
+        // Assunto: número da cotação quando houver, para o fornecedor situar
+        let assunto = 'uma negociação';
+        if (params.cotacaoId) {
+            const { data: cotacao } = await supabaseAdmin
+                .from('cotacoes')
+                .select('numero')
+                .eq('id', params.cotacaoId)
+                .single();
+            if (cotacao?.numero) assunto = `Cotação #${cotacao.numero}`;
+        }
+
+        // Link que pré-preenche o login e abre a cotação (lib/quotationLink)
+        const loginRef = encodeLoginRef({
+            email: email || undefined,
+            cotacaoId: params.cotacaoId || undefined,
+            role: 'fornecedor',
+        });
+
+        const envio = await notifySupplierNewChat(
+            telefone,
+            params.senderName || 'Um cliente',
+            assunto,
+            loginRef || undefined
+        );
+
+        if (!envio?.success) {
+            console.error('[CHAT] Falha ao avisar fornecedor no WhatsApp:', envio?.error);
+        }
+    } catch (erro) {
+        console.error('[CHAT] Erro ao avisar fornecedor no WhatsApp:', erro);
+    }
+}
+
 export async function POST(req: NextRequest) {
     try {
         const user = await getAuthUser(req);
@@ -454,6 +554,20 @@ export async function POST(req: NextRequest) {
             // A mensagem já foi gravada: falha de notificação não pode derrubar o envio
             if (notifyError) {
                 console.error('Erro ao notificar destinatários do chat:', notifyError);
+            }
+
+            // Cliente abrindo conversa com fornecedor: avisa no WhatsApp dele.
+            // `access.clienteId` é o dono da cotação — se bate com quem
+            // escreveu, o destinatário é o lado do fornecedor.
+            if (access.fornecedorId) {
+                await avisarFornecedorNoWhatsApp({
+                    roomId,
+                    fornecedorId: access.fornecedorId,
+                    cotacaoId: access.cotacaoId,
+                    clienteId: access.clienteId,
+                    autorId: user.id,
+                    senderName,
+                });
             }
         }
 

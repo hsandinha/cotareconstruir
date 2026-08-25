@@ -319,6 +319,70 @@ export async function notifyClientNewProposal(phone: string, cotacaoNumero: stri
 }
 
 /**
+ * Deve avisar o fornecedor no WhatsApp por causa desta mensagem?
+ *
+ * Três condições, todas necessárias:
+ *  - é a PRIMEIRA mensagem da sala (avisar a cada mensagem viraria spam e
+ *    a Meta pune número que dispara demais);
+ *  - quem escreveu é o cliente (o fornecedor não precisa ser avisado da
+ *    própria mensagem);
+ *  - a sala tem fornecedor identificado.
+ */
+export function devoAvisarFornecedorNoChat(params: {
+    totalMensagensNaSala: number;
+    autorId: string | null | undefined;
+    clienteId: string | null | undefined;
+    fornecedorId: string | null | undefined;
+}): boolean {
+    const { totalMensagensNaSala, autorId, clienteId, fornecedorId } = params;
+    if (totalMensagensNaSala !== 1) return false;
+    if (!autorId || !clienteId || autorId !== clienteId) return false;
+    return Boolean(fornecedorId);
+}
+
+/**
+ * Notifica o fornecedor de que um cliente ABRIU uma conversa no chat.
+ *
+ * Só na primeira mensagem de cada sala: a partir daí o fornecedor já está
+ * ciente e recebe pela plataforma. Mandar a cada mensagem viraria spam e
+ * queimaria o número na Meta.
+ *
+ * Template: nova_mensagem_chat_fornecedor — {{1}} = cliente, {{2}} = assunto.
+ * Se o template não estiver aprovado, tenta texto livre — que só entrega se
+ * houver janela de 24h aberta com aquele número.
+ */
+export async function notifySupplierNewChat(
+    phone: string,
+    clientName: string,
+    assunto: string,
+    loginRef?: string
+): Promise<WhatsAppSendResult> {
+    const componentes: any[] = bodyParams(clientName, assunto);
+    if (loginRef) {
+        componentes.push({
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: loginRef }],
+        });
+    }
+
+    const result = await sendWhatsAppTemplate({
+        to: phone,
+        templateName: 'nova_mensagem_chat_fornecedor',
+        language: 'pt_BR',
+        components: componentes,
+    });
+    if (result.success) return result;
+
+    console.warn(`⚠️ WhatsApp: template de chat falhou (${result.error}), tentando texto livre`);
+    return sendWhatsAppText({
+        to: phone,
+        text: `Olá! ${clientName} iniciou uma conversa com você na Comprar e Construir sobre ${assunto}. Acesse a plataforma para responder.`,
+    });
+}
+
+/**
  * Notifica fornecedor sobre pedido aprovado.
  *
  * Com `loginRef` usa o template pedido_aprovado_fornecedor_v2 com botão de URL
