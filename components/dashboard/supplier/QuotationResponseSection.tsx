@@ -7,6 +7,7 @@ import { getAuthHeaders } from "@/lib/authHeaders";
 
 import { Download, Upload } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirmModal } from "@/components/ConfirmModal";
 import {
     buildCsv,
     downloadCsvFile,
@@ -34,6 +35,7 @@ interface SupplierQuotationResponseSectionProps {
 
 export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'create', onUpdate, fornecedorId, filterOnlyActiveItems = false }: SupplierQuotationResponseSectionProps) {
     const { showToast } = useToast();
+    const { confirm: confirmModal } = useConfirmModal();
     const { user, profile, session } = useAuth();
     const [responses, setResponses] = useState<{ [key: string]: { preco: string, disponibilidade: string, unidadeCotacao?: string, densidade?: string } }>({});
     const [paymentMethod, setPaymentMethod] = useState("");
@@ -45,6 +47,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
     // Desconto negociado (R$). A condição à vista vai em "Forma de Pagamento".
     const [discountValue, setDiscountValue] = useState("");
     const [loading, setLoading] = useState(false);
+    const [declinando, setDeclinando] = useState(false);
     const [importingCsv, setImportingCsv] = useState(false);
     const [exportingCsv, setExportingCsv] = useState(false);
     const [inactiveItemsModal, setInactiveItemsModal] = useState<any[] | null>(null);
@@ -162,7 +165,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
     };
 
     // Campo digitável: converte chaves antigas para rótulos legíveis e
-    // aceita qualquer outro texto como está (ex.: "Boleto 28/40/60").
+    // aceita qualquer outro texto como está (ex.: "Boleto 28/42/56 dias").
     const normalizePaymentMethod = (value: string): string => {
         const raw = String(value || "").trim();
         if (!raw) return "";
@@ -474,6 +477,48 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
         }
     };
 
+    /**
+     * Declina a cotação: o fornecedor avisa que não vai cotar.
+     * Some da caixa dele e o cliente para de esperar uma proposta.
+     */
+    const declinarCotacao = async () => {
+        const motivo = await confirmModal({
+            title: "Declinar esta cotação?",
+            message: "Ela sai da sua lista e o cliente é avisado de que você não vai cotar. Um motivo ajuda o cliente a entender — e a te chamar melhor na próxima.",
+            promptLabel: "Motivo (opcional)",
+            promptPlaceholder: "Ex.: não trabalho com esses materiais; sem estoque no prazo pedido.",
+            confirmLabel: "Declinar cotação",
+            cancelLabel: "Voltar",
+            variant: "warning",
+        });
+        if (typeof motivo !== "string") return; // cancelou
+
+        setDeclinando(true);
+        try {
+            const headers = await getAuthHeaders(session?.access_token);
+            const res = await fetch('/api/cotacoes', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    action: 'declinar',
+                    cotacao_id: quotation.id,
+                    fornecedor_id: fornecedorId || undefined,
+                    motivo: motivo.trim() || undefined,
+                }),
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json?.error || 'Não foi possível declinar');
+
+            showToast("success", "Cotação declinada. O cliente foi avisado.");
+            if (onUpdate) await onUpdate();
+            onBack();
+        } catch (error: any) {
+            showToast("error", error?.message || "Não foi possível declinar a cotação.");
+        } finally {
+            setDeclinando(false);
+        }
+    };
+
     const materialsTotal = quotation.items
         ? quotation.items.reduce((total: number, item: any) => {
             const response = responses[item.id];
@@ -493,8 +538,10 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
+            {/* flex-wrap + min-w-0: eram cinco botões numa linha sem quebra,
+                empurrando o último para fora da tela. */}
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1 basis-full sm:basis-auto">
                     <h3 className="text-lg font-medium text-gray-900">
                         Resposta à Cotação
                         {mode === 'update' && resumo?.numero && (
@@ -509,12 +556,12 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                             : 'Insira sua proposta comercial para os materiais solicitados'}
                     </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <button
                         type="button"
                         onClick={() => handleDownloadCsv("xlsx")}
                         disabled={exportingCsv || importingCsv}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 disabled:opacity-60"
+                        className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 disabled:opacity-60"
                     >
                         <Download className="h-4 w-4" />
                         {exportingCsv ? "Gerando..." : "Baixar Excel"}
@@ -532,7 +579,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                         type="button"
                         onClick={handleImportCsvClick}
                         disabled={importingCsv || exportingCsv}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-60"
+                        className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1.5 text-xs font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-60"
                     >
                         <Upload className="h-4 w-4" />
                         {importingCsv ? "Importando..." : "Importar CSV/XLSX"}
@@ -544,6 +591,21 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                         className="hidden"
                         onChange={handleImportCsvFile}
                     />
+                    {/* Declinar só faz sentido antes de existir proposta */}
+                    {mode !== 'update' && (
+                        <button
+                            type="button"
+                            onClick={declinarCotacao}
+                            disabled={declinando || loading}
+                            className="whitespace-nowrap rounded-lg border border-red-200 px-3 py-1.5 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-60"
+                        >
+                            {declinando ? 'Declinando...' : (
+                                <>
+                                    Declinar<span className="hidden sm:inline"> da Cotação</span>
+                                </>
+                            )}
+                        </button>
+                    )}
                     <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-700">
                         Voltar
                     </button>
@@ -555,10 +617,18 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                     <div>
                         <span className="font-medium text-gray-700">Cliente:</span>
                         <div className="text-gray-900">{quotation.clientCode}</div>
+                        {quotation.clientLocation && (
+                            <div className="text-xs text-gray-500">{quotation.clientLocation}</div>
+                        )}
                     </div>
                     <div>
-                        <span className="font-medium text-gray-700">Localização:</span>
+                        {/* "Localização" sozinho dava a entender ser a do cliente;
+                            é a da OBRA, que é o que define frete e entrega. */}
+                        <span className="font-medium text-gray-700">Localização da Obra:</span>
                         <div className="text-gray-900">{quotation.location}</div>
+                        {quotation.obraEndereco?.cep && (
+                            <div className="text-xs text-gray-500">CEP {quotation.obraEndereco.cep}</div>
+                        )}
                     </div>
                     <div>
                         <span className="font-medium text-gray-700">Prazo de Resposta:</span>
@@ -868,7 +938,7 @@ export function SupplierQuotationResponseSection({ quotation, onBack, mode = 'cr
                             value={paymentMethod}
                             onChange={(e) => setPaymentMethod(e.target.value)}
                             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="Ex: Boleto 28/40/60"
+                            placeholder="Ex: Boleto 28/42/56 dias"
                         />
                         <datalist id="payment-terms-suggestions">
                             {PAYMENT_TERMS_SUGGESTIONS.map((suggestion) => (

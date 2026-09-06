@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useRef, type ChangeEvent } from "react";
 import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "@/lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
-import { textIncludesTerm } from "@/lib/materialSearch";
+import { textIncludesTerm, descricaoAcrescentaAlgo } from "@/lib/materialSearch";
 import { useSupplierAccessContext } from "./SupplierAccessContext";
 import { Search, Check as CheckIcon, X, PlusCircle as PlusCircleIcon, ArrowUp as ArrowUpIcon, ArrowDown as ArrowDownIcon, Download, Upload, AlertTriangle, Send, Grid2X2 as Squares2X2Icon, CheckCircle, Clock } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
@@ -804,7 +804,7 @@ export function SupplierMaterialsSection() {
                                             <td className="px-6 py-4">
                                                 <div>
                                                     <p className={`text-sm font-medium ${isInativo ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{material.nome}</p>
-                                                    {material.descricao && (
+                                                    {descricaoAcrescentaAlgo(material.nome, material.descricao) && (
                                                         <p className="text-xs text-gray-500 mt-0.5">{material.descricao}</p>
                                                     )}
                                                 </div>

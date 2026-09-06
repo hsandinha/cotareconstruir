@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 
 import { ChatInterface } from "../../ChatInterface";
-import { printOrdemCompra, formatPrazoEntrega, formatDataEntrega, type OrdemCompraDoc } from "@/lib/ordemCompraDoc";
+import { printOrdemCompra, formatPrazoEntrega, formatDataEntrega, formatHorarioRecebimento, type OrdemCompraDoc } from "@/lib/ordemCompraDoc";
 import { ReviewModal } from "../../ReviewModal";
 import { getQuotationStatusBadge } from "./quotationStatus";
 import { supabase } from "@/lib/supabaseAuth";
@@ -394,7 +394,8 @@ export function ClientComparativeSection({ orderId, status }: ClientComparativeS
     const obraParaOc = () => ({
         nome: obraInfo?.nome || null,
         endereco: enderecoObra() || enderecoCliente(),
-        horarioEntrega: obraInfo?.horario_entrega || null,
+        // `horario_entrega` é JSON por dia; sem formatar saía "[object Object]"
+        horarioEntrega: formatHorarioRecebimento(obraInfo?.horario_entrega),
     });
 
     const itensParaOc = (items: any[]) => (items || []).map((item: any) => ({

@@ -235,16 +235,27 @@ export async function GET(req: NextRequest) {
                     ? supabaseAdmin.from('obras').select('id, nome, cep, logradouro, numero, complemento, bairro, cidade, estado, horario_entrega, restricoes_entrega').in('id', obraIds)
                     : Promise.resolve({ data: [] }),
                 userIds.length > 0
-                    ? supabaseAdmin.from('users').select('id, nome, email').in('id', userIds)
+                    ? supabaseAdmin.from('users').select('id, nome, email, cliente_id').in('id', userIds)
                     : Promise.resolve({ data: [] }),
             ]);
 
             const obraMap = new Map((obrasRes.data || []).map(o => [o.id, o]));
             const userMap = new Map((usersRes.data || []).map(u => [u.id, u]));
 
+            // Cidade do cliente (tabela `clientes`) para o cabeçalho da
+            // resposta: o fornecedor precisa distinguir de onde é o cliente
+            // e onde fica a obra — podem ser cidades diferentes.
+            const clienteIds = [...new Set((usersRes.data || []).map((u: any) => u.cliente_id).filter(Boolean))];
+            const { data: clientesData } = clienteIds.length > 0
+                ? await supabaseAdmin.from('clientes').select('id, nome, razao_social, bairro, cidade, estado').in('id', clienteIds)
+                : { data: [] as any[] };
+            const clienteMap = new Map((clientesData || []).map((c: any) => [c.id, c]));
+
             for (const cotacao of cotacoes) {
+                const userRow: any = userMap.get(cotacao.user_id) || null;
                 (cotacao as any)._obra = obraMap.get(cotacao.obra_id) || null;
-                (cotacao as any)._cliente = userMap.get(cotacao.user_id) || null;
+                (cotacao as any)._cliente = userRow;
+                (cotacao as any)._cliente_cadastro = userRow?.cliente_id ? clienteMap.get(userRow.cliente_id) || null : null;
             }
         }
 
@@ -296,6 +307,18 @@ export async function GET(req: NextRequest) {
 
         // Cotações fechadas: mostrar apenas as que o fornecedor respondeu
         cotacoes = cotacoes.filter(c => c.status !== 'fechada' || propostaMap.has(c.id));
+
+        // Declinadas saem da caixa: o fornecedor já disse que não vai cotar
+        const { data: declinios } = await supabaseAdmin
+            .from('cotacao_convites')
+            .select('cotacao_id')
+            .eq('fornecedor_id', fornecedorId)
+            .not('declinado_em', 'is', null);
+
+        const declinadas = new Set((declinios || []).map((d: any) => d.cotacao_id));
+        if (declinadas.size > 0) {
+            cotacoes = cotacoes.filter(c => !declinadas.has(c.id));
+        }
 
         // Resultado das cotações fechadas
         const closedCotacaoIds = cotacoes
@@ -417,6 +440,72 @@ export async function POST(req: NextRequest) {
 
         const body = await req.json();
         const { action } = body;
+
+        // Fornecedor declina a cotação: some da caixa dele e o cliente
+        // deixa de esperar uma proposta que não vem.
+        if (action === 'declinar') {
+            const cotacaoId = String(body?.cotacao_id || '').trim();
+            const motivo = String(body?.motivo || '').trim().slice(0, 500) || null;
+
+            if (!cotacaoId) {
+                return NextResponse.json({ error: 'cotacao_id é obrigatório' }, { status: 400 });
+            }
+
+            const acesso = await resolveSupplierAccess(supabaseAdmin, user.id, body?.fornecedor_id || null);
+            if (!acesso.ok || !acesso.fornecedorId) {
+                return NextResponse.json(
+                    { error: acesso.ok ? 'Fornecedor não encontrado' : acesso.error },
+                    { status: acesso.ok ? 404 : acesso.status }
+                );
+            }
+
+            // Já respondeu? Então não faz sentido declinar.
+            const { data: propostaExistente } = await supabaseAdmin
+                .from('propostas')
+                .select('id')
+                .eq('cotacao_id', cotacaoId)
+                .eq('fornecedor_id', acesso.fornecedorId)
+                .maybeSingle();
+
+            if (propostaExistente?.id) {
+                return NextResponse.json(
+                    { error: 'Você já enviou proposta para esta cotação. Edite a proposta em vez de declinar.' },
+                    { status: 400 }
+                );
+            }
+
+            const { error: declinioError } = await supabaseAdmin.rpc('declinar_cotacao', {
+                p_cotacao_id: cotacaoId,
+                p_fornecedor_id: acesso.fornecedorId,
+                p_motivo: motivo,
+            });
+
+            if (declinioError) {
+                console.error('[COTACOES] Erro ao declinar:', declinioError);
+                return NextResponse.json({ error: 'Não foi possível registrar o declínio.' }, { status: 500 });
+            }
+
+            // Avisa o cliente pelo sino — sem e-mail/WhatsApp: declínio é
+            // rotina e não justifica interromper o cliente por fora.
+            const { data: cotacao } = await supabaseAdmin
+                .from('cotacoes')
+                .select('user_id, numero')
+                .eq('id', cotacaoId)
+                .single();
+
+            if (cotacao?.user_id) {
+                await supabaseAdmin.from('notificacoes').insert({
+                    user_id: cotacao.user_id,
+                    titulo: 'Fornecedor declinou a cotação',
+                    mensagem: `Um fornecedor informou que não vai cotar a solicitação #${cotacao.numero || ''}.`.trim(),
+                    tipo: 'info',
+                    lida: false,
+                    link: `/dashboard/cliente?tab=pedidos`,
+                });
+            }
+
+            return NextResponse.json({ success: true });
+        }
 
         if (action === 'create') {
             const { obra_id, itens, observacoes, anexos } = body;

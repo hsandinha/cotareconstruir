@@ -1,4 +1,4 @@
-import { scoreTermMatch, textIncludesTerm, expandTermWithSynonyms } from '@/lib/materialSearch';
+import { scoreTermMatch, textIncludesTerm, expandTermWithSynonyms, descricaoAcrescentaAlgo } from '@/lib/materialSearch';
 
 const CATALOGO = [
     'CABO FLEXÍVEL 1,5 CINZA',
@@ -64,5 +64,32 @@ describe('sinônimos', () => {
 
     it('expande o termo inteiro: "bacia" → "vaso sanitario"', () => {
         expect(expandTermWithSynonyms('bacia', grupos)).toContain('vaso sanitario');
+    });
+});
+
+describe('descrição repetida do catálogo', () => {
+
+    it('esconde quando a descrição é igual ao nome', () => {
+        // 99,8% do catálogo importado está assim
+        expect(descricaoAcrescentaAlgo('ARGAMASSA ACII 20KG (U) (Sc)', 'ARGAMASSA ACII 20KG (U) (Sc)')).toBe(false);
+    });
+
+    it('esconde ignorando caixa e acento', () => {
+        expect(descricaoAcrescentaAlgo('Cimento CP II', 'CIMENTO CP II')).toBe(false);
+        expect(descricaoAcrescentaAlgo('Cal hidratada CH-III', 'cal hidratada ch-iii')).toBe(false);
+    });
+
+    it('esconde quando a descrição só repete parte do nome', () => {
+        expect(descricaoAcrescentaAlgo('TUBO PVC SOLDA 50MM 6M', 'TUBO PVC SOLDA')).toBe(false);
+    });
+
+    it('mostra quando a descrição acrescenta informação', () => {
+        expect(descricaoAcrescentaAlgo('PLATAFORMA ELEVATORIA TESOURA', 'ALCANCE DE 8MTS A 12MTS')).toBe(true);
+        expect(descricaoAcrescentaAlgo('Seixo de Rio', 'Seixo de Rio N 0 a 3')).toBe(true);
+    });
+
+    it('esconde quando não há descrição', () => {
+        expect(descricaoAcrescentaAlgo('Cimento', null)).toBe(false);
+        expect(descricaoAcrescentaAlgo('Cimento', '  ')).toBe(false);
     });
 });

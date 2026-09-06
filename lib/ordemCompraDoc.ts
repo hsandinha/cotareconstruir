@@ -269,6 +269,65 @@ export function buildOrdemCompraHtml(doc: OrdemCompraDoc): string {
 </html>`;
 }
 
+/**
+ * Horário de recebimento da obra em uma linha.
+ *
+ * O banco guarda `obras.horario_entrega` como JSON por dia
+ * ({ segunda: { enabled, startTime, endTime }, ... }, com as chaves em
+ * português ou inglês conforme a origem). Passar esse objeto direto para o
+ * documento imprimia "[object Object]".
+ *
+ * Dias seguidos com o mesmo horário são agrupados ("Seg a Sex 08:00–17:00")
+ * para caber numa linha da Ordem de Compra.
+ */
+export function formatHorarioRecebimento(horario: unknown): string | null {
+    if (!horario || typeof horario !== "object") return null;
+
+    const rotulos: Record<string, string> = {
+        segunda: "Seg", monday: "Seg",
+        terca: "Ter", tuesday: "Ter",
+        quarta: "Qua", wednesday: "Qua",
+        quinta: "Qui", thursday: "Qui",
+        sexta: "Sex", friday: "Sex",
+        sabado: "Sáb", saturday: "Sáb",
+        domingo: "Dom", sunday: "Dom",
+    };
+    const ordem = ["segunda", "monday", "terca", "tuesday", "quarta", "wednesday",
+        "quinta", "thursday", "sexta", "friday", "sabado", "saturday", "domingo", "sunday"];
+
+    type Dia = { rotulo: string; faixa: string };
+    const dias: Dia[] = [];
+
+    for (const chave of ordem) {
+        const valor = (horario as Record<string, any>)[chave];
+        if (!valor || typeof valor !== "object") continue;
+        const rotulo = rotulos[chave];
+        if (!rotulo || dias.some((d) => d.rotulo === rotulo)) continue;
+
+        const aberto = Boolean(valor.enabled) && valor.startTime && valor.endTime;
+        dias.push({ rotulo, faixa: aberto ? `${valor.startTime}–${valor.endTime}` : "fechado" });
+    }
+
+    if (dias.length === 0) return null;
+
+    // Agrupa dias seguidos com a mesma faixa
+    const blocos: string[] = [];
+    let inicio = 0;
+    for (let i = 1; i <= dias.length; i++) {
+        if (i < dias.length && dias[i].faixa === dias[inicio].faixa) continue;
+        const fim = i - 1;
+        const nomes = inicio === fim
+            ? dias[inicio].rotulo
+            : fim === inicio + 1
+                ? `${dias[inicio].rotulo} e ${dias[fim].rotulo}`
+                : `${dias[inicio].rotulo} a ${dias[fim].rotulo}`;
+        blocos.push(dias[inicio].faixa === "fechado" ? `${nomes} fechado` : `${nomes} ${dias[inicio].faixa}`);
+        inicio = i;
+    }
+
+    return blocos.join(" · ");
+}
+
 /** Prazo de entrega em texto a partir do número de dias. */
 export function formatPrazoEntrega(deliveryDays: number | null | undefined): string {
     if (deliveryDays === null || deliveryDays === undefined || !Number.isFinite(Number(deliveryDays))) return "—";

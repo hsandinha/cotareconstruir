@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseAuth";
 import { useAuth } from "../../../lib/useAuth";
 import { getAuthHeaders } from "@/lib/authHeaders";
 import { useSupplierAccessContext } from "./SupplierAccessContext";
-import { printOrdemCompra, formatPrazoEntrega, formatDataEntrega, type OrdemCompraDoc } from "@/lib/ordemCompraDoc";
+import { printOrdemCompra, formatPrazoEntrega, formatDataEntrega, formatHorarioRecebimento, type OrdemCompraDoc } from "@/lib/ordemCompraDoc";
 import { Search, Filter as FunnelIcon, MessageSquare, CheckCircle, Clock, Truck as TruckIcon, CircleDollarSign as CurrencyDollarIcon, FileText, Download } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
 
@@ -349,7 +349,9 @@ export function SupplierSalesSection() {
             obra: {
                 nome: order.workName || null,
                 endereco: order.location?.fullAddress || null,
-                horarioEntrega: null,
+                // Estava fixo em `null`: o horário já vinha da obra em
+                // `deliverySchedule`, mas nunca chegava ao documento.
+                horarioEntrega: formatHorarioRecebimento(order.deliverySchedule),
             },
             itens: (order.items || []).map((item) => {
                 const price = item.unitPrice || order.proposal?.items?.[item.id]?.price || 0;

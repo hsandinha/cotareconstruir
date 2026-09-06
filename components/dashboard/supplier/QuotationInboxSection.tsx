@@ -258,6 +258,13 @@ export function SupplierQuotationInboxSection() {
                     // Anexos do cliente (projetos, detalhes, especificações)
                     anexos: doc.cotacao_anexos || [],
                     clientCode: cliente?.nome || ("Cliente " + (doc.user_id ? doc.user_id.substring(0, 5) : "Anon")),
+                    // Cidade do próprio cliente — pode ser outra que a da obra
+                    clientLocation: (() => {
+                        const c = doc._cliente_cadastro;
+                        if (!c) return null;
+                        const linha = [c.bairro, [c.cidade, c.estado].filter(Boolean).join(' - ')].filter(Boolean).join(', ');
+                        return linha || null;
+                    })(),
                     locationRaw: obra?.cidade || "",
                     location: obra ? `${obra.bairro || ''}, ${obra.cidade || ''} - ${obra.estado || ''}` : "Não informado",
                     // Dados completos da obra para exibição na resposta

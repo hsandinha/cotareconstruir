@@ -1,7 +1,7 @@
 /**
  * Condições de pagamento das propostas.
  *
- * O campo é texto livre (ex.: "Boleto 28/40/60"), mas propostas antigas
+ * O campo é texto livre (ex.: "Boleto 28/42/56 dias"), mas propostas antigas
  * gravaram chaves fixas do select antigo — este helper as converte para
  * rótulos legíveis.
  */
@@ -25,8 +25,9 @@ export const PAYMENT_TERMS_SUGGESTIONS = [
     'À vista',
     'Pix',
     'Boleto 15 dias',
+    'Boleto 28 dias',
     'Boleto 30 dias',
-    'Boleto 28/40/60',
+    'Boleto 28/42/56 dias',
     'Boleto 30/60/90',
     'Cartão de crédito',
 ];

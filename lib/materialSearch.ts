@@ -189,3 +189,22 @@ export function expandTermWithSynonyms(term: string, synonymGroups: string[][]):
 
     return Array.from(variants).slice(0, MAX_SEARCH_VARIANTS);
 }
+
+/**
+ * A descrição acrescenta alguma coisa ao nome do material?
+ *
+ * O catálogo importado veio com `materiais.descricao` preenchida com uma
+ * cópia do `nome` em 99,8% dos casos — na tela isso virava a mesma
+ * especificação repetida logo abaixo, numa fonte menor. Só mostramos a
+ * descrição quando ela realmente diz algo novo.
+ */
+export function descricaoAcrescentaAlgo(
+    nome: string | null | undefined,
+    descricao: string | null | undefined
+): boolean {
+    const d = normalizeSearchText(descricao);
+    if (!d) return false;
+    const n = normalizeSearchText(nome);
+    // Igual ao nome, ou contida nele, não acrescenta nada
+    return d !== n && !n.includes(d);
+}
