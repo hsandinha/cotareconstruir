@@ -20,6 +20,7 @@ import {
     X,
     Rocket,
     MessageSquareQuote,
+    MessageCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseAuth";
 import { MobileBottomNav, MenuMaisSheet, type ItemMenu } from "@/components/MobileBottomNav";
@@ -37,6 +38,7 @@ import { MaterialSynonymsSection } from "@/components/dashboard/admin/MaterialSy
 import { LancamentoManagement } from "@/components/dashboard/admin/LancamentoManagement";
 import { DepoimentosManagement } from "@/components/dashboard/admin/DepoimentosManagement";
 import MaterialRequestsManagement from "@/components/dashboard/admin/MaterialRequestsManagement";
+import WhatsAppCentral from "@/components/dashboard/admin/WhatsAppCentral";
 import OrdersOverviewManagement from "@/components/dashboard/admin/OrdersOverviewManagement";
 import { validatePassword } from "@/lib/validation";
 import { PasswordStrengthIndicator } from "@/components/PasswordStrength";
@@ -66,6 +68,7 @@ type AdminTabId =
     | "sinonimos"
     | "materiais-novos"
     | "acompanhamento"
+    | "whatsapp"
     | "audit"
     | "reports"
     | "profile"
@@ -128,6 +131,7 @@ export default function AdminDashboard() {
             title: "Operação",
             items: [
                 { id: "acompanhamento", label: "Acompanhamento", icon: Activity },
+                { id: "whatsapp", label: "Central de WhatsApp", icon: MessageCircle },
                 { id: "users", label: "Usuários", icon: Users },
                 { id: "lancamento", label: "Turma de Lançamento", icon: Rocket },
                 { id: "depoimentos", label: "Depoimentos", icon: MessageSquareQuote },
@@ -567,6 +571,7 @@ export default function AdminDashboard() {
                         {activeTab === "depoimentos" && <DepoimentosManagement />}
                         {activeTab === "materiais-novos" && <MaterialRequestsManagement />}
                         {activeTab === "acompanhamento" && <OrdersOverviewManagement />}
+                        {activeTab === "whatsapp" && <WhatsAppCentral />}
 
                         {activeTab === "profile" && (
                             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

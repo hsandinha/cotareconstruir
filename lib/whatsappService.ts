@@ -9,14 +9,26 @@
  *   WHATSAPP_BUSINESS_ACCOUNT_ID - ID da conta WhatsApp Business (opcional)
  */
 
+import { registrarEnvio, paramsDoComponente } from './whatsappCentral';
+
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
 
-interface WhatsAppTextMessage {
+/**
+ * De onde partiu o envio. 'automatica' é o disparo do sistema (cotação nova,
+ * proposta, pedido); 'central' é alguém respondendo na tela da Central de
+ * WhatsApp — nesse caso `enviadaPor` diz quem.
+ */
+export interface OrigemEnvio {
+    origem?: 'automatica' | 'central';
+    enviadaPor?: string | null;
+}
+
+interface WhatsAppTextMessage extends OrigemEnvio {
     to: string;          // Número com código do país (ex: 5511999999999)
     text: string;
 }
 
-interface WhatsAppTemplateMessage {
+interface WhatsAppTemplateMessage extends OrigemEnvio {
     to: string;
     templateName: string;
     language?: string;
@@ -36,20 +48,20 @@ interface WhatsAppSendResult {
 /**
  * Envia mensagem de texto simples
  */
-export async function sendWhatsAppText({ to, text }: WhatsAppTextMessage): Promise<WhatsAppSendResult> {
+export async function sendWhatsAppText({ to, text, origem, enviadaPor }: WhatsAppTextMessage): Promise<WhatsAppSendResult> {
     return sendWhatsAppMessage({
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
         to: formatPhoneNumber(to),
         type: 'text',
         text: { preview_url: false, body: text }
-    });
+    }, { origem, enviadaPor });
 }
 
 /**
  * Envia mensagem usando template aprovado
  */
-export async function sendWhatsAppTemplate({ to, templateName, language = 'pt_BR', components }: WhatsAppTemplateMessage): Promise<WhatsAppSendResult> {
+export async function sendWhatsAppTemplate({ to, templateName, language = 'pt_BR', components, origem, enviadaPor }: WhatsAppTemplateMessage): Promise<WhatsAppSendResult> {
     return sendWhatsAppMessage({
         messaging_product: 'whatsapp',
         to: formatPhoneNumber(to),
@@ -59,13 +71,13 @@ export async function sendWhatsAppTemplate({ to, templateName, language = 'pt_BR
             language: { code: language },
             ...(components ? { components } : {})
         }
-    });
+    }, { origem, enviadaPor });
 }
 
 /**
  * Envia mensagem genérica via Meta Cloud API
  */
-async function sendWhatsAppMessage(payload: any): Promise<WhatsAppSendResult> {
+async function sendWhatsAppMessage(payload: any, meta: OrigemEnvio = {}): Promise<WhatsAppSendResult> {
     const accessToken = process.env.WHATSAPP_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
     const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
 
@@ -91,19 +103,52 @@ async function sendWhatsAppMessage(payload: any): Promise<WhatsAppSendResult> {
 
         if (!response.ok) {
             console.error('❌ WhatsApp API error:', data);
-            return {
-                success: false,
-                error: data.error?.message || `HTTP ${response.status}`
-            };
+            const erro = data.error?.message || `HTTP ${response.status}`;
+            // Registra a falha também: é assim que a Central mostra template
+            // não aprovado ou número fora da janela de 24h.
+            await registrarEnvioNaCentral(payload, meta, null, erro);
+            return { success: false, error: erro };
         }
 
         const messageId = data.messages?.[0]?.id;
         console.log(`✅ WhatsApp enviado para ${payload.to} (ID: ${messageId})`);
 
+        await registrarEnvioNaCentral(payload, meta, messageId, null);
+
         return { success: true, messageId };
     } catch (error: any) {
         console.error('❌ WhatsApp send error:', error);
+        await registrarEnvioNaCentral(payload, meta, null, error.message);
         return { success: false, error: error.message };
+    }
+}
+
+/**
+ * Espelha o envio na Central de WhatsApp.
+ *
+ * Nunca propaga erro: a mensagem já saiu (ou já falhou) na Meta e o resultado
+ * do envio não pode depender do banco.
+ */
+async function registrarEnvioNaCentral(
+    payload: any,
+    meta: OrigemEnvio,
+    messageId: string | null,
+    erro: string | null,
+): Promise<void> {
+    try {
+        await registrarEnvio({
+            telefone: payload.to,
+            tipo: payload.type,
+            texto: payload.text?.body ?? null,
+            templateNome: payload.template?.name ?? null,
+            templateParams: payload.template ? paramsDoComponente(payload.template.components) : null,
+            waMessageId: messageId,
+            origem: meta.origem || 'automatica',
+            enviadaPor: meta.enviadaPor || null,
+            erro,
+        });
+    } catch (e) {
+        console.error('❌ WhatsApp: falha ao espelhar envio na Central', e);
     }
 }
 
@@ -143,9 +188,39 @@ export interface WhatsAppIncomingMessage {
     messageId: string;          // ID da mensagem
     timestamp: string;          // Unix timestamp
     type: 'text' | 'image' | 'document' | 'audio' | 'video' | 'location' | 'contacts' | 'interactive' | 'button' | 'reaction';
-    text?: string;              // Conteúdo se type=text
+    text?: string;              // Texto, legenda da mídia ou rótulo do botão
     name?: string;              // Nome do contato
+    mediaId?: string;           // ID da mídia na Meta (baixada sob demanda)
+    mediaMime?: string;
+    mediaFilename?: string;
     raw: any;                   // Payload original completo
+}
+
+/**
+ * Tira da mensagem o texto que representa ela na conversa.
+ *
+ * Mídia não tem corpo, mas quase sempre tem legenda — e uma legenda diz muito
+ * mais na lista de conversas do que "[imagem]". Botão e resposta rápida
+ * entram pelo rótulo, que é o que o contato de fato tocou.
+ */
+function extrairTexto(msg: any): string | undefined {
+    return (
+        msg.text?.body
+        || msg.image?.caption
+        || msg.video?.caption
+        || msg.document?.caption
+        || msg.document?.filename
+        || msg.interactive?.button_reply?.title
+        || msg.interactive?.list_reply?.title
+        || msg.button?.text
+        || msg.reaction?.emoji
+        || undefined
+    );
+}
+
+/** Anexo da mensagem, quando há. A Meta manda o ID; o binário vem depois. */
+function extrairMidia(msg: any): { id?: string; mime_type?: string; filename?: string } | undefined {
+    return msg.image || msg.video || msg.audio || msg.document || msg.sticker || undefined;
 }
 
 export interface WhatsAppStatusUpdate {
@@ -175,13 +250,17 @@ export function parseWebhookMessages(body: any): WhatsAppIncomingMessage[] {
 
                 for (const msg of msgs) {
                     const contact = contacts.find((c: any) => c.wa_id === msg.from);
+                    const midia = extrairMidia(msg);
                     messages.push({
                         from: msg.from,
                         messageId: msg.id,
                         timestamp: msg.timestamp,
                         type: msg.type,
-                        text: msg.text?.body || msg.interactive?.button_reply?.title || msg.button?.text || undefined,
+                        text: extrairTexto(msg),
                         name: contact?.profile?.name,
+                        mediaId: midia?.id,
+                        mediaMime: midia?.mime_type,
+                        mediaFilename: midia?.filename,
                         raw: msg,
                     });
                 }

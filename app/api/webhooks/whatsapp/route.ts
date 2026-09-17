@@ -18,8 +18,8 @@ import {
     type WhatsAppIncomingMessage,
     type WhatsAppStatusUpdate,
 } from '@/lib/whatsappService';
+import { registrarRecebimento, registrarStatus } from '@/lib/whatsappCentral';
 import { logAuditEvent, AuditAction, extractRequestMetadata } from '@/lib/auditLog';
-import { supabase } from '@/lib/supabaseAuth';
 
 // ============================================================
 // GET - Verificação do Webhook (Meta envia um challenge)
@@ -105,25 +105,20 @@ async function handleIncomingMessage(message: WhatsAppIncomingMessage) {
     // Marcar como lida automaticamente
     await markAsRead(message.messageId);
 
-    // Gravar no banco de dados para controle omnichannel e painel
-    await supabase.from('whatsapp_logs').insert({
-        message_id: message.messageId,
-        from_number: message.from,
-        sender_name: message.name,
-        type: message.type,
-        text_content: message.text,
-        timestamp: new Date(Number(message.timestamp) * 1000).toISOString(),
-        direction: 'incoming',
+    // Guardar na Central: é o que o admin vê e responde em
+    // /dashboard/admin → Central de WhatsApp
+    await registrarRecebimento({
+        telefone: message.from,
+        nomeContato: message.name,
+        waMessageId: message.messageId,
+        tipo: message.type,
+        texto: message.text,
+        timestamp: message.timestamp,
+        mediaId: message.mediaId,
+        mediaMime: message.mediaMime,
+        mediaNome: message.mediaFilename,
+        payload: message.raw,
     });
-
-    if (message.type === 'text' && message.text) {
-        // Exemplo de rastreamento nativo de cotações/pedidos
-        const pedidoMatch = message.text.match(/\b(1\d{4})\b/);
-        if (pedidoMatch) {
-            console.log(`🔍 Possível consulta de pedido: #${pedidoMatch[1]}`);
-            // Logica futura: Bot responde automático usando o ID
-        }
-    }
 }
 
 /**
@@ -136,14 +131,6 @@ async function handleStatusUpdate(status: WhatsAppStatusUpdate) {
         console.log(`📊 WhatsApp status: ${status.messageId} → ${status.status}`);
     }
 
-    // Registra a evolução / falha no banco de dados
-    await supabase.from('whatsapp_logs').insert({
-        message_id: status.messageId,
-        from_number: status.recipientId,
-        type: 'status_update',
-        status_value: status.status,
-        timestamp: new Date(Number(status.timestamp) * 1000).toISOString(),
-        direction: 'outgoing_status',
-        raw_errors: status.errors ? JSON.stringify(status.errors) : null
-    });
+    // Faz o ✓✓ andar na mensagem que já está gravada
+    await registrarStatus(status.messageId, status.status, status.errors);
 }

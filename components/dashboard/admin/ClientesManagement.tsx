@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Search, Plus, Edit2, Trash2, X, Save, Building2, UserPlus, UserCheck, RefreshCw, Mail, Briefcase, Layers, ChevronDown, ChevronRight, MapPin, Calendar } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, Save, Building2, UserPlus, UserCheck, RefreshCw, Mail, Briefcase, ChevronRight, MapPin, Calendar } from 'lucide-react';
 import { useToast } from '@/components/ToastProvider';
 import { useConfirmModal } from '@/components/ConfirmModal';
 import { formatPhoneBr } from '@/lib/utils';
+import ClienteDetalheModal from '@/components/dashboard/admin/ClienteDetalheModal';
+import ObraDetalheModal from '@/components/dashboard/admin/ObraDetalheModal';
 
 // Helper para obter headers com token
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -24,22 +26,21 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     return headers;
 }
 
+/**
+ * Resumo da obra para a lista. O detalhe completo (cronograma, cotações,
+ * propostas, pedidos, linha do tempo) vem do servidor em ObraDetalheModal.
+ */
 interface Obra {
     id: string;
-    obra: string;
+    nome: string;
     endereco: string;
     bairro: string;
     cidade: string;
+    estado: string;
     etapa: string;
+    status: string;
     dataInicio: string;
-    previsaoTermino: string;
-    stages?: Array<{
-        stageId: string;
-        stageName: string;
-        predictedDate: string;
-        endDate?: string;
-        status: string;
-    }>;
+    previsaoFim: string;
 }
 
 interface Cliente {
@@ -78,7 +79,8 @@ export default function ClientesManagement() {
     const [selectedClienteForObras, setSelectedClienteForObras] = useState<Cliente | null>(null);
     const [clienteObras, setClienteObras] = useState<Obra[]>([]);
     const [loadingObras, setLoadingObras] = useState(false);
-    const [expandedObras, setExpandedObras] = useState<Record<string, boolean>>({});
+    const [detalheClienteId, setDetalheClienteId] = useState<string | null>(null);
+    const [detalheObraId, setDetalheObraId] = useState<string | null>(null);
     const [obrasByClienteId, setObrasByClienteId] = useState<Record<string, Obra[]>>({});
     const [creatingAccount, setCreatingAccount] = useState(false);
     const { showToast } = useToast();
@@ -214,35 +216,47 @@ export default function ClientesManagement() {
 
             if (obrasError) throw obrasError;
 
-            // Criar mapa de obras por userId
+            // A obra aponta para o cliente de dois jeitos: `cliente_id` (atual)
+            // e `user_id` (cadastro antigo, de antes da tabela clientes). Só
+            // pelo user_id, cliente sem conta de acesso aparecia com zero obras.
             const obrasByUserId: Record<string, Obra[]> = {};
+            const obrasByCliente: Record<string, Obra[]> = {};
+
             (obrasData || []).forEach((obra: any) => {
                 const mappedObra: Obra = {
                     id: obra.id,
-                    obra: obra.obra || obra.nome || '',
-                    endereco: obra.endereco || '',
+                    nome: obra.nome || '',
+                    endereco: obra.logradouro || '',
                     bairro: obra.bairro || '',
                     cidade: obra.cidade || '',
+                    estado: obra.estado || '',
                     etapa: obra.etapa || '',
-                    dataInicio: obra.data_inicio || obra.dataInicio || '',
-                    previsaoTermino: obra.previsao_termino || obra.previsaoTermino || '',
-                    stages: obra.stages || []
+                    status: obra.status || '',
+                    dataInicio: obra.data_inicio || '',
+                    previsaoFim: obra.data_previsao_fim || ''
                 };
-                const odUserId = obra.user_id || obra.userId;
-                if (odUserId) {
-                    if (!obrasByUserId[odUserId]) {
-                        obrasByUserId[odUserId] = [];
-                    }
-                    obrasByUserId[odUserId].push(mappedObra);
+
+                if (obra.cliente_id) {
+                    (obrasByCliente[obra.cliente_id] ||= []).push(mappedObra);
+                }
+                if (obra.user_id) {
+                    (obrasByUserId[obra.user_id] ||= []).push(mappedObra);
                 }
             });
 
-            // Mapear obras por clienteId (através do userId do cliente)
-            const obrasByCliente: Record<string, Obra[]> = {};
+            // Completa com as obras ligadas só pelo usuário, sem repetir as
+            // que já entraram por cliente_id.
             mappedClientes.forEach(cliente => {
-                if (cliente.userId && obrasByUserId[cliente.userId]) {
-                    obrasByCliente[cliente.id] = obrasByUserId[cliente.userId];
-                }
+                if (!cliente.userId) return;
+                const doUsuario = obrasByUserId[cliente.userId] || [];
+                if (doUsuario.length === 0) return;
+
+                const jaListadas = obrasByCliente[cliente.id] || [];
+                const idsListados = new Set(jaListadas.map(o => o.id));
+                obrasByCliente[cliente.id] = [
+                    ...jaListadas,
+                    ...doUsuario.filter(o => !idsListados.has(o.id)),
+                ];
             });
 
             setObrasByClienteId(obrasByCliente);
@@ -401,7 +415,6 @@ export default function ClientesManagement() {
     const openObrasModal = (cliente: Cliente) => {
         setSelectedClienteForObras(cliente);
         setClienteObras(obrasByClienteId[cliente.id] || []);
-        setExpandedObras({});
         setIsObrasModalOpen(true);
     };
 
@@ -411,11 +424,17 @@ export default function ClientesManagement() {
         setClienteObras([]);
     };
 
-    const toggleObraExpanded = (obraId: string) => {
-        setExpandedObras(prev => ({
-            ...prev,
-            [obraId]: !prev[obraId]
-        }));
+    /**
+     * Obra com uma obra só não merece a lista intermediária: vai direto
+     * para o histórico, que é o que a pessoa quer ver.
+     */
+    const abrirObrasDoCliente = (cliente: Cliente) => {
+        const obras = obrasByClienteId[cliente.id] || [];
+        if (obras.length === 1) {
+            setDetalheObraId(obras[0].id);
+            return;
+        }
+        openObrasModal(cliente);
     };
     const openCreateAccountModal = (cliente: Cliente) => {
         setSelectedClienteForAccount(cliente);
@@ -560,10 +579,16 @@ export default function ClientesManagement() {
                                 return (
                                     <tr key={cliente.id} className="hover:bg-slate-50 transition-colors">
                                         <td className="px-4 py-3">
-                                            <div className="flex items-center gap-2">
-                                                <Building2 className="w-4 h-4 text-blue-600" />
-                                                <span className="font-medium text-slate-900">{cliente.nome}</span>
-                                            </div>
+                                            <button
+                                                onClick={() => setDetalheClienteId(cliente.id)}
+                                                title="Ver ficha completa"
+                                                className="flex items-center gap-2 text-left group"
+                                            >
+                                                <Building2 className="w-4 h-4 shrink-0 text-blue-600" />
+                                                <span className="font-medium text-slate-900 group-hover:text-blue-700 group-hover:underline">
+                                                    {cliente.nome}
+                                                </span>
+                                            </button>
                                         </td>
                                         <td className="px-4 py-3 text-sm text-slate-600">{cliente.email}</td>
                                         <td className="px-4 py-3 text-sm text-slate-600">{cliente.telefone}</td>
@@ -571,7 +596,8 @@ export default function ClientesManagement() {
                                         <td className="px-4 py-3">
                                             {obrasCount > 0 ? (
                                                 <button
-                                                    onClick={() => openObrasModal(cliente)}
+                                                    onClick={() => abrirObrasDoCliente(cliente)}
+                                                    title={obrasCount === 1 ? 'Ver histórico da obra' : 'Ver obras do cliente'}
                                                     className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors"
                                                 >
                                                     <Briefcase className="w-4 h-4" />
@@ -940,119 +966,41 @@ export default function ClientesManagement() {
                                     <p className="text-slate-500">Nenhuma obra cadastrada para este cliente</p>
                                 </div>
                             ) : (
-                                <div className="space-y-4">
+                                <div className="space-y-2">
                                     {clienteObras.map((obra) => (
-                                        <div key={obra.id} className="border border-slate-200 rounded-xl overflow-hidden">
-                                            {/* Header da Obra */}
-                                            <button
-                                                onClick={() => toggleObraExpanded(obra.id)}
-                                                className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors"
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <Briefcase className="w-5 h-5 text-amber-600" />
-                                                    <div className="text-left">
-                                                        <h4 className="font-semibold text-slate-900">{obra.obra}</h4>
-                                                        <div className="flex items-center gap-4 text-sm text-slate-500">
-                                                            <span className="flex items-center gap-1">
-                                                                <MapPin className="w-3 h-3" />
-                                                                {obra.bairro}, {obra.cidade}
+                                        <button
+                                            key={obra.id}
+                                            onClick={() => setDetalheObraId(obra.id)}
+                                            className="w-full flex items-center justify-between gap-3 p-4 rounded-xl border border-slate-200 bg-white text-left transition hover:border-blue-300 hover:bg-blue-50/40"
+                                        >
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <Briefcase className="w-5 h-5 shrink-0 text-amber-600" />
+                                                <div className="min-w-0">
+                                                    <h4 className="font-semibold text-slate-900 truncate">{obra.nome}</h4>
+                                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
+                                                        <span className="flex items-center gap-1">
+                                                            <MapPin className="w-3 h-3" />
+                                                            {[obra.bairro, obra.cidade].filter(Boolean).join(', ') || 'Sem endereço'}
+                                                        </span>
+                                                        {obra.etapa && (
+                                                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+                                                                {obra.etapa}
                                                             </span>
-                                                            {obra.etapa && (
-                                                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
-                                                                    {obra.etapa}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-3">
-                                                    <span className="text-xs bg-slate-200 text-slate-700 px-2 py-1 rounded">
-                                                        {obra.stages?.length || 0} fases
-                                                    </span>
-                                                    {expandedObras[obra.id] ? (
-                                                        <ChevronDown className="w-5 h-5 text-slate-400" />
-                                                    ) : (
-                                                        <ChevronRight className="w-5 h-5 text-slate-400" />
-                                                    )}
-                                                </div>
-                                            </button>
-
-                                            {/* Detalhes da Obra (expandido) */}
-                                            {expandedObras[obra.id] && (
-                                                <div className="p-4 border-t border-slate-200 bg-white">
-                                                    {/* Info da obra */}
-                                                    <div className="grid grid-cols-2 gap-4 mb-4">
-                                                        <div className="text-sm">
-                                                            <span className="text-slate-500">Endereço:</span>
-                                                            <p className="text-slate-700">{obra.endereco}, {obra.bairro}</p>
-                                                        </div>
+                                                        )}
                                                         {obra.dataInicio && (
-                                                            <div className="text-sm">
-                                                                <span className="text-slate-500">Início:</span>
-                                                                <p className="text-slate-700">{new Date(obra.dataInicio).toLocaleDateString('pt-BR')}</p>
-                                                            </div>
-                                                        )}
-                                                        {obra.previsaoTermino && (
-                                                            <div className="text-sm">
-                                                                <span className="text-slate-500">Previsão término:</span>
-                                                                <p className="text-slate-700">{new Date(obra.previsaoTermino).toLocaleDateString('pt-BR')}</p>
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    {/* Fases */}
-                                                    <div className="mt-4">
-                                                        <h5 className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-3">
-                                                            <Layers className="w-4 h-4 text-indigo-600" />
-                                                            Fases da Obra
-                                                        </h5>
-                                                        {obra.stages && obra.stages.length > 0 ? (
-                                                            <div className="space-y-2">
-                                                                {obra.stages.map((stage, idx) => (
-                                                                    <div
-                                                                        key={idx}
-                                                                        className={`flex items-center justify-between p-3 rounded-lg border ${stage.status === 'completed'
-                                                                            ? 'bg-green-50 border-green-200'
-                                                                            : stage.status === 'in_progress'
-                                                                                ? 'bg-blue-50 border-blue-200'
-                                                                                : 'bg-slate-50 border-slate-200'
-                                                                            }`}
-                                                                    >
-                                                                        <div className="flex items-center gap-3">
-                                                                            <div className={`w-2 h-2 rounded-full ${stage.status === 'completed'
-                                                                                ? 'bg-green-500'
-                                                                                : stage.status === 'in_progress'
-                                                                                    ? 'bg-blue-500'
-                                                                                    : 'bg-slate-400'
-                                                                                }`} />
-                                                                            <span className="font-medium text-sm text-slate-800">
-                                                                                {stage.stageName}
-                                                                            </span>
-                                                                        </div>
-                                                                        <div className="flex items-center gap-4 text-xs text-slate-500">
-                                                                            <span className="flex items-center gap-1">
-                                                                                <Calendar className="w-3 h-3" />
-                                                                                {stage.predictedDate ? new Date(stage.predictedDate).toLocaleDateString('pt-BR') : '-'}
-                                                                            </span>
-                                                                            <span className={`px-2 py-0.5 rounded ${stage.status === 'completed'
-                                                                                ? 'bg-green-100 text-green-700'
-                                                                                : stage.status === 'in_progress'
-                                                                                    ? 'bg-blue-100 text-blue-700'
-                                                                                    : 'bg-slate-100 text-slate-600'
-                                                                                }`}>
-                                                                                {stage.status === 'completed' ? 'Concluída' : stage.status === 'in_progress' ? 'Em andamento' : 'Pendente'}
-                                                                            </span>
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        ) : (
-                                                            <p className="text-sm text-slate-400 italic">Nenhuma fase cadastrada</p>
+                                                            <span className="flex items-center gap-1 text-xs">
+                                                                <Calendar className="w-3 h-3" />
+                                                                {new Date(obra.dataInicio).toLocaleDateString('pt-BR')}
+                                                            </span>
                                                         )}
                                                     </div>
                                                 </div>
-                                            )}
-                                        </div>
+                                            </div>
+                                            <span className="flex shrink-0 items-center gap-1 text-sm font-medium text-blue-600">
+                                                Ver histórico
+                                                <ChevronRight className="w-4 h-4" />
+                                            </span>
+                                        </button>
                                     ))}
                                 </div>
                             )}
@@ -1068,6 +1016,23 @@ export default function ClientesManagement() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Ficha do cliente — abre pelo nome na lista */}
+            {detalheClienteId && (
+                <ClienteDetalheModal
+                    clienteId={detalheClienteId}
+                    onClose={() => setDetalheClienteId(null)}
+                    onAbrirObra={(obraId) => setDetalheObraId(obraId)}
+                />
+            )}
+
+            {/* Histórico da obra: fica por cima da ficha, que continua aberta atrás */}
+            {detalheObraId && (
+                <ObraDetalheModal
+                    obraId={detalheObraId}
+                    onClose={() => setDetalheObraId(null)}
+                />
             )}
         </div>
     );
