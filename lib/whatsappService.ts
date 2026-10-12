@@ -152,6 +152,103 @@ async function registrarEnvioNaCentral(
     }
 }
 
+// ============================================================
+// MÍDIA (upload e download na Meta)
+// ============================================================
+
+interface WhatsAppMediaUpload {
+    success: boolean;
+    mediaId?: string;
+    error?: string;
+}
+
+/**
+ * Sobe um arquivo para a Meta e devolve o media_id.
+ *
+ * O id é o que vai no cabeçalho do template (ou numa mensagem de documento):
+ * a Meta não aceita anexo por bytes na hora do envio. Vale ~30 dias.
+ */
+export async function uploadWhatsAppMedia(
+    conteudo: Buffer | Uint8Array,
+    filename: string,
+    mimeType: string,
+): Promise<WhatsAppMediaUpload> {
+    const accessToken = process.env.WHATSAPP_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+    if (!accessToken || !phoneNumberId) {
+        return { success: false, error: 'WhatsApp não configurado' };
+    }
+
+    try {
+        const form = new FormData();
+        form.append('messaging_product', 'whatsapp');
+        form.append('type', mimeType);
+        form.append('file', new Blob([new Uint8Array(conteudo)], { type: mimeType }), filename);
+
+        const response = await fetch(`${WHATSAPP_API_URL}/${phoneNumberId}/media`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${accessToken}` },
+            body: form,
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data?.id) {
+            const erro = data?.error?.message || `HTTP ${response.status}`;
+            console.error('❌ WhatsApp: falha ao subir mídia:', erro);
+            return { success: false, error: erro };
+        }
+
+        return { success: true, mediaId: data.id };
+    } catch (error: any) {
+        console.error('❌ WhatsApp: erro ao subir mídia', error);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * ID de mídia → link temporário da Meta (vale poucos minutos) e mime.
+ *
+ * O webhook só entrega o ID; o download exige este passo intermediário e o
+ * token da conta nas duas chamadas.
+ */
+export async function resolveWhatsAppMediaUrl(
+    mediaId: string,
+): Promise<{ url: string; mimeType?: string } | null> {
+    const accessToken = process.env.WHATSAPP_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
+    if (!accessToken) return null;
+
+    const response = await fetch(`${WHATSAPP_API_URL}/${mediaId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (!data?.url) return null;
+    return { url: data.url, mimeType: data.mime_type };
+}
+
+/** Baixa a mídia inteira para memória. Usado para ler a planilha devolvida. */
+export async function downloadWhatsAppMedia(
+    mediaId: string,
+): Promise<{ buffer: ArrayBuffer; mimeType?: string } | null> {
+    const accessToken = process.env.WHATSAPP_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
+    if (!accessToken) return null;
+
+    try {
+        const meta = await resolveWhatsAppMediaUrl(mediaId);
+        if (!meta) return null;
+
+        const arquivo = await fetch(meta.url, { headers: { Authorization: `Bearer ${accessToken}` } });
+        if (!arquivo.ok) return null;
+
+        return { buffer: await arquivo.arrayBuffer(), mimeType: meta.mimeType };
+    } catch (error) {
+        console.error('❌ WhatsApp: erro ao baixar mídia', error);
+        return null;
+    }
+}
+
 /**
  * Marca mensagem como lida
  */
@@ -323,17 +420,72 @@ function bodyParams(...values: string[]): any[] {
     ];
 }
 
+/** Planilha de resposta anexada à notificação de cotação. */
+export interface PlanilhaCotacaoAnexo {
+    conteudo: Buffer | Uint8Array;
+    filename: string;
+    mimeType?: string;
+}
+
+const MIME_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
 /**
  * Notifica fornecedor sobre nova cotação recebida.
  *
- * Com `loginRef` (token gerado por lib/quotationLink.ts) usa o template
- * nova_cotacao_fornecedor_v2, cujo botão aponta para /login?wa=<token> —
- * pré-preenche o email no login e abre direto a cotação após autenticar.
- * Se o v2 falhar (ex.: ainda não aprovado pela Meta), cai no template antigo.
+ * Três níveis, do melhor para o que sempre funciona:
+ *   v3 — anexa a planilha de resposta no cabeçalho do template. O fornecedor
+ *        preenche o preço e devolve o arquivo na própria conversa; o webhook
+ *        lê, monta a proposta e envia ao cliente (lib/cotacaoRespostaWhatsapp.ts).
+ *   v2 — botão /login?wa=<token>, que pré-preenche o email e abre a cotação.
+ *   v1 — texto puro com botão fixo para a plataforma.
  *
- * Templates: nova_cotacao_fornecedor[_v2] — {{1}} = número da cotação, {{2}} = obra.
+ * A degradação importa: template novo demora a ser aprovado pela Meta, e até
+ * lá a notificação não pode parar de sair.
+ *
+ * Templates: nova_cotacao_fornecedor[_v2|_v3] — {{1}} = número da cotação, {{2}} = obra.
  */
-export async function notifySupplierNewQuotation(phone: string, cotacaoNumero: string, obraNome: string, loginRef?: string): Promise<WhatsAppSendResult> {
+export async function notifySupplierNewQuotation(
+    phone: string,
+    cotacaoNumero: string,
+    obraNome: string,
+    loginRef?: string,
+    planilha?: PlanilhaCotacaoAnexo,
+): Promise<WhatsAppSendResult> {
+    if (planilha && loginRef) {
+        const upload = await uploadWhatsAppMedia(
+            planilha.conteudo,
+            planilha.filename,
+            planilha.mimeType || MIME_XLSX,
+        );
+
+        if (upload.success && upload.mediaId) {
+            const result = await sendWhatsAppTemplate({
+                to: phone,
+                templateName: 'nova_cotacao_fornecedor_v3',
+                language: 'pt_BR',
+                components: [
+                    {
+                        type: 'header',
+                        parameters: [
+                            { type: 'document', document: { id: upload.mediaId, filename: planilha.filename } },
+                        ],
+                    },
+                    ...bodyParams(cotacaoNumero, obraNome),
+                    {
+                        type: 'button',
+                        sub_type: 'url',
+                        index: '0',
+                        parameters: [{ type: 'text', text: loginRef }],
+                    },
+                ],
+            });
+            if (result.success) return result;
+            console.warn(`⚠️ WhatsApp: template v3 (com planilha) falhou (${result.error}), usando v2`);
+        } else {
+            console.warn(`⚠️ WhatsApp: planilha não subiu (${upload.error}), usando v2`);
+        }
+    }
+
     if (loginRef) {
         const result = await sendWhatsAppTemplate({
             to: phone,

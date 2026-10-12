@@ -19,6 +19,7 @@ import {
     type WhatsAppStatusUpdate,
 } from '@/lib/whatsappService';
 import { registrarRecebimento, registrarStatus } from '@/lib/whatsappCentral';
+import { processarRespostaDeCotacao } from '@/lib/cotacaoRespostaWhatsapp';
 import { logAuditEvent, AuditAction, extractRequestMetadata } from '@/lib/auditLog';
 
 // ============================================================
@@ -107,7 +108,7 @@ async function handleIncomingMessage(message: WhatsAppIncomingMessage) {
 
     // Guardar na Central: é o que o admin vê e responde em
     // /dashboard/admin → Central de WhatsApp
-    await registrarRecebimento({
+    const mensagemNova = await registrarRecebimento({
         telefone: message.from,
         nomeContato: message.name,
         waMessageId: message.messageId,
@@ -119,6 +120,19 @@ async function handleIncomingMessage(message: WhatsAppIncomingMessage) {
         mediaNome: message.mediaFilename,
         payload: message.raw,
     });
+
+    // Planilha de cotação devolvida pelo fornecedor: vira proposta e vai para
+    // o cliente sem ninguém abrir a plataforma (lib/cotacaoRespostaWhatsapp.ts).
+    //
+    // Só para mensagem gravada AGORA: a Meta reenvia o webhook quando não
+    // recebe 200 a tempo, e processar de novo notificaria o cliente duas vezes.
+    if (mensagemNova) {
+        try {
+            await processarRespostaDeCotacao(message);
+        } catch (error) {
+            console.error('❌ WhatsApp: falha ao processar resposta de cotação', error);
+        }
+    }
 }
 
 /**

@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveSupplierAccess } from '@/lib/supplierAccessServer';
 import { notifySupplierNewQuotation } from '@/lib/whatsappService';
+import { planilhasDeRespostaPorCotacao } from '@/lib/cotacaoRespostaWhatsapp';
 import { notifySupplierNewQuotationEmail } from '@/lib/emailService';
 import { encodeLoginRef, buildQuotationLoginUrl } from '@/lib/quotationLink';
 
@@ -857,6 +858,13 @@ export async function POST(req: NextRequest) {
                                     userEmailMap = new Map((userContacts || []).map((u: any) => [u.id, u.email]));
                                 }
 
+                                // Planilha de resposta que vai anexada na
+                                // notificação: o fornecedor preenche só o
+                                // preço e devolve o arquivo no WhatsApp.
+                                const planilhas = await planilhasDeRespostaPorCotacao(
+                                    [...supplierCotacaoId.values()]
+                                );
+
                                 await Promise.allSettled(
                                     (supplierContacts || []).map(async (supplier: any) => {
                                         const phone = supplier.whatsapp || supplier.telefone || (supplier.user_id ? userPhoneMap.get(supplier.user_id) : null);
@@ -870,7 +878,13 @@ export async function POST(req: NextRequest) {
                                         const cotacaoId = supplierCotacaoId.get(supplier.id);
                                         const loginRef = encodeLoginRef({ email: loginEmail || undefined, cotacaoId, role: 'fornecedor' });
                                         if (phone) {
-                                            await notifySupplierNewQuotation(phone, cotacaoNumero, obraLocal, loginRef || undefined);
+                                            await notifySupplierNewQuotation(
+                                                phone,
+                                                cotacaoNumero,
+                                                obraLocal,
+                                                loginRef || undefined,
+                                                cotacaoId ? planilhas.get(cotacaoId) : undefined
+                                            );
                                         }
                                         if (email) {
                                             await notifySupplierNewQuotationEmail(email, cotacaoNumero, obraLocal, buildQuotationLoginUrl({ email: loginEmail || undefined, cotacaoId, role: 'fornecedor' }));

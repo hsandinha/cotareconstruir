@@ -11,8 +11,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verificarAdmin } from '@/lib/adminApiAuth';
-
-const GRAPH_API = 'https://graph.facebook.com/v21.0';
+import { resolveWhatsAppMediaUrl } from '@/lib/whatsappService';
 
 export async function GET(req: NextRequest) {
     const auth = await verificarAdmin(req);
@@ -34,16 +33,15 @@ export async function GET(req: NextRequest) {
 
     try {
         // 1) ID → link temporário
-        const meta = await fetch(`${GRAPH_API}/${mediaId}`, { headers: authHeader });
-        if (!meta.ok) {
+        const meta = await resolveWhatsAppMediaUrl(mediaId);
+        if (!meta) {
             return NextResponse.json({ error: 'Mídia não encontrada ou expirada' }, { status: 404 });
         }
-        const { url, mime_type: mimeType } = await meta.json();
-        if (!url) {
-            return NextResponse.json({ error: 'Mídia sem URL' }, { status: 404 });
-        }
+        const { url, mimeType } = meta;
 
         // 2) Link → binário (o download também exige o token)
+        //    Fica aqui, e não em whatsappService, porque a Central repassa o
+        //    stream ao navegador em vez de carregar o arquivo na memória.
         const arquivo = await fetch(url, { headers: authHeader });
         if (!arquivo.ok || !arquivo.body) {
             return NextResponse.json({ error: 'Falha ao baixar a mídia' }, { status: 502 });

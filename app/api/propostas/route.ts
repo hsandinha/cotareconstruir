@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveSupplierAccess } from '@/lib/supplierAccessServer';
-import { notifyClientNewProposal } from '@/lib/whatsappService';
-import { notifyClientNewProposalEmail } from '@/lib/emailService';
-import { encodeLoginRef, buildQuotationLoginUrl } from '@/lib/quotationLink';
+import { criarOuAtualizarProposta } from '@/lib/propostaService';
 
 async function getAuthUser(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
@@ -71,69 +69,9 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: 'Fornecedor não encontrado' }, { status: 404 });
             }
 
-            const {
-                cotacao_id,
-                valor_total,
-                valor_frete,
-                valor_impostos,
-                valor_desconto,
-                prazo_entrega,
-                condicoes_pagamento,
-                observacoes,
-                data_validade,
-                itens,
-                anexos
-            } = body;
-
-            const prazoEntregaValue = Number.isInteger(prazo_entrega) && prazo_entrega >= 0
-                ? prazo_entrega
-                : null;
-            const impostosValue = parseFloat(valor_impostos) || 0;
-            // Desconto negociado (R$) — substitui o antigo "desconto à vista".
-            const descontoValue = Math.max(parseFloat(valor_desconto) || 0, 0);
-
-            if (!cotacao_id || !itens || !Array.isArray(itens)) {
+            if (!body.cotacao_id || !Array.isArray(body.itens)) {
                 return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 });
             }
-
-            // Verify cotação exists and is open
-            const { data: cotacao } = await supabaseAdmin
-                .from('cotacoes')
-                .select('id, status, user_id, numero')
-                .eq('id', cotacao_id)
-                .single();
-
-            if (!cotacao) {
-                return NextResponse.json({ error: 'Cotação não encontrada' }, { status: 404 });
-            }
-
-            // Allow updates on open cotações OR won closed cotações while pedido is still negotiable
-            let canEditProposal = cotacao.status === 'enviada' || cotacao.status === 'respondida';
-            let linkedPedido: any = null;
-
-            if (!canEditProposal && cotacao.status === 'fechada') {
-                const { data: pedidoData } = await supabaseAdmin
-                    .from('pedidos')
-                    .select('id, status')
-                    .eq('cotacao_id', cotacao_id)
-                    .eq('fornecedor_id', fornecedorId)
-                    .single();
-
-                linkedPedido = pedidoData || null;
-                canEditProposal = !!linkedPedido && ['pendente', 'aprovado', 'confirmado'].includes(linkedPedido.status);
-            }
-
-            if (!canEditProposal) {
-                return NextResponse.json({ error: 'Esta cotação/pedido não aceita mais atualização de proposta neste estágio' }, { status: 400 });
-            }
-
-            // Check if fornecedor already responded
-            const { data: existing } = await supabaseAdmin
-                .from('propostas')
-                .select('id')
-                .eq('cotacao_id', cotacao_id)
-                .eq('fornecedor_id', fornecedorId)
-                .limit(1);
 
             // Quem enviou a proposta: várias pessoas podem responder pelo
             // mesmo fornecedor, e a Ordem de Compra precisa mostrar o contato
@@ -144,279 +82,27 @@ export async function POST(req: NextRequest) {
                 .eq('id', user.id)
                 .single();
 
-            const propostaPayload = {
-                cotacao_id,
-                fornecedor_id: fornecedorId,
-                status: 'enviada',
-                valor_total: valor_total || 0,
-                valor_frete: valor_frete || 0,
-                impostos: impostosValue,
-                desconto: descontoValue,
-                prazo_entrega: prazoEntregaValue,
-                condicoes_pagamento: condicoes_pagamento || null,
-                observacoes: observacoes || null,
-                enviada_por_user_id: user.id,
-                enviada_por_nome: autorRow?.nome || autorRow?.email || null,
-                data_envio: new Date().toISOString(),
-                data_validade: data_validade || null
-            };
+            const resultado = await criarOuAtualizarProposta({
+                cotacaoId: body.cotacao_id,
+                fornecedorId,
+                autor: { userId: user.id, nome: autorRow?.nome || autorRow?.email || null },
+                valorTotal: body.valor_total,
+                valorFrete: body.valor_frete,
+                valorImpostos: parseFloat(body.valor_impostos),
+                valorDesconto: parseFloat(body.valor_desconto),
+                prazoEntrega: body.prazo_entrega,
+                condicoesPagamento: body.condicoes_pagamento,
+                observacoes: body.observacoes,
+                dataValidade: body.data_validade,
+                itens: body.itens,
+                anexos: Array.isArray(body.anexos) ? body.anexos : undefined,
+            });
 
-            let proposta: any = null;
-            let propostaError: any = null;
-
-            // 1. Create or update proposta
-            if (existing && existing.length > 0) {
-                const existingId = existing[0].id;
-                const updateRes = await supabaseAdmin
-                    .from('propostas')
-                    .update(propostaPayload)
-                    .eq('id', existingId)
-                    .select()
-                    .single();
-
-                proposta = updateRes.data;
-                propostaError = updateRes.error;
-
-                if (!propostaError) {
-                    await supabaseAdmin
-                        .from('proposta_itens')
-                        .delete()
-                        .eq('proposta_id', existingId);
-                }
-            } else {
-                const insertRes = await supabaseAdmin
-                    .from('propostas')
-                    .insert(propostaPayload)
-                    .select()
-                    .single();
-
-                proposta = insertRes.data;
-                propostaError = insertRes.error;
+            if (!resultado.ok) {
+                return NextResponse.json({ error: resultado.error }, { status: resultado.status });
             }
 
-            if (propostaError) {
-                console.error('Erro ao criar proposta:', propostaError);
-                return NextResponse.json({ error: propostaError.message }, { status: 500 });
-            }
-
-            // 2. Create proposta_itens
-            const propostaItens = itens.map((item: any) => ({
-                proposta_id: proposta.id,
-                cotacao_item_id: item.cotacao_item_id,
-                preco_unitario: item.preco_unitario || 0,
-                quantidade: item.quantidade,
-                subtotal: item.subtotal || 0,
-                disponibilidade: item.disponibilidade || 'indisponivel',
-                prazo_dias: item.prazo_dias ?? -1,
-                observacao: item.observacao || null
-            }));
-
-            const { error: itensError } = await supabaseAdmin
-                .from('proposta_itens')
-                .insert(propostaItens);
-
-            if (itensError) {
-                console.error('Erro ao criar proposta_itens:', itensError);
-                if (!(existing && existing.length > 0)) {
-                    await supabaseAdmin.from('propostas').delete().eq('id', proposta.id);
-                }
-                return NextResponse.json({ error: itensError.message }, { status: 500 });
-            }
-
-            // 2.05 Anexos da proposta: substitui a lista pela enviada
-            // (o formulário manda os mantidos + novos; removidos ficam de fora)
-            if (Array.isArray(anexos)) {
-                await supabaseAdmin
-                    .from('proposta_anexos')
-                    .delete()
-                    .eq('proposta_id', proposta.id);
-
-                const anexoRows = anexos
-                    .filter((a: any) => a && a.url && a.nome)
-                    .map((a: any) => ({
-                        proposta_id: proposta.id,
-                        nome: String(a.nome).slice(0, 255),
-                        url: String(a.url),
-                        tipo: a.tipo ? String(a.tipo) : null,
-                        tamanho: Number(a.tamanho) || null,
-                        uploaded_by: user.id,
-                    }));
-
-                if (anexoRows.length > 0) {
-                    const { error: anexosError } = await supabaseAdmin
-                        .from('proposta_anexos')
-                        .insert(anexoRows);
-                    if (anexosError) {
-                        console.error('Erro ao salvar anexos da proposta:', anexosError);
-                    }
-                }
-            }
-
-            // 2.1 If there's a linked won order still negotiable, sync pedido with updated negotiated values
-            const shouldSyncPedido = linkedPedido && ['pendente', 'aprovado', 'confirmado'].includes(linkedPedido.status);
-            if (shouldSyncPedido) {
-                const pedidoId = linkedPedido.id;
-
-                const { data: cotacaoItens } = await supabaseAdmin
-                    .from('cotacao_itens')
-                    .select('id, nome')
-                    .eq('cotacao_id', cotacao_id);
-
-                const cotacaoItemNameById = new Map((cotacaoItens || []).map((ci: any) => [ci.id, ci.nome]));
-
-                const { data: pedidoItens } = await supabaseAdmin
-                    .from('pedido_itens')
-                    .select('id, material_id, nome, unidade')
-                    .eq('pedido_id', pedidoId);
-
-                const itensByNome = new Map<string, any>();
-                (itens || []).forEach((item: any) => {
-                    const nome = cotacaoItemNameById.get(item.cotacao_item_id);
-                    if (nome) {
-                        itensByNome.set(nome, item);
-                    }
-                });
-
-                const updates = (pedidoItens || []).map((pedidoItem: any) => {
-                    const matched = itensByNome.get(pedidoItem.nome) as any;
-                    if (!matched) return null;
-
-                    return supabaseAdmin!
-                        .from('pedido_itens')
-                        .update({
-                            preco_unitario: matched.preco_unitario || 0,
-                            subtotal: matched.subtotal || 0,
-                            quantidade: matched.quantidade || 0,
-                            unidade: pedidoItem.unidade || 'UN'
-                        })
-                        .eq('id', pedidoItem.id);
-                }).filter(Boolean);
-
-                if (updates.length > 0) {
-                    await Promise.all(updates as any);
-                }
-
-                const { data: refreshedItens } = await supabaseAdmin
-                    .from('pedido_itens')
-                    .select('subtotal')
-                    .eq('pedido_id', pedidoId);
-
-                const subtotal = (refreshedItens || []).reduce((sum: number, item: any) => sum + (parseFloat(item.subtotal) || 0), 0);
-                const freight = parseFloat(valor_frete) || 0;
-                const taxes = impostosValue;
-                const desconto = Math.min(descontoValue, subtotal);
-                const totalPedido = subtotal - desconto + freight + taxes;
-
-                const { data: pedidoAtual } = await supabaseAdmin
-                    .from('pedidos')
-                    .select('endereco_entrega')
-                    .eq('id', pedidoId)
-                    .single();
-
-                const enderecoAtual = pedidoAtual?.endereco_entrega || {};
-                const summaryAtual = enderecoAtual.summary || {};
-
-                await supabaseAdmin
-                    .from('pedidos')
-                    .update({
-                        valor_total: totalPedido,
-                        impostos: taxes,
-                        desconto,
-                        condicoes_pagamento: condicoes_pagamento || null,
-                        endereco_entrega: {
-                            ...enderecoAtual,
-                            summary: {
-                                ...summaryAtual,
-                                subtotal,
-                                freight,
-                                // `impostos` é a chave lida pelas telas;
-                                // `taxes` fica por compatibilidade.
-                                impostos: taxes,
-                                taxes,
-                                desconto,
-                                deliveryDays: prazoEntregaValue,
-                                paymentMethod: condicoes_pagamento || null
-                            }
-                        },
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', pedidoId);
-            }
-
-            // 3. Create notification for the client
-            // A identidade do fornecedor só é revelada ao cliente após o
-            // fechamento do pedido; até lá, ele aparece como "Fornecedor N"
-            // (N = ordem de chegada das propostas nesta cotação).
-            if (cotacao.user_id) {
-                const { data: propostasDaCotacao } = await supabaseAdmin
-                    .from('propostas')
-                    .select('fornecedor_id, created_at')
-                    .eq('cotacao_id', cotacao_id)
-                    .order('created_at', { ascending: true });
-
-                const supplierOrder: string[] = [];
-                for (const p of propostasDaCotacao || []) {
-                    if (!supplierOrder.includes(p.fornecedor_id)) {
-                        supplierOrder.push(p.fornecedor_id);
-                    }
-                }
-                const supplierLabel = `Fornecedor ${supplierOrder.indexOf(fornecedorId) + 1}`;
-
-                await supabaseAdmin
-                    .from('notificacoes')
-                    .insert({
-                        user_id: cotacao.user_id,
-                        titulo: existing && existing.length > 0 ? 'Proposta Atualizada' : 'Nova Proposta Recebida',
-                        mensagem: existing && existing.length > 0
-                            ? `${supplierLabel} atualizou os valores da proposta.`
-                            : `${supplierLabel} enviou uma proposta para sua cotação.`,
-                        tipo: 'success',
-                        lida: false,
-                        link: `/dashboard/cliente?tab=pedidos&cotacaoId=${encodeURIComponent(cotacao_id)}`
-                    });
-
-                const { data: clientUser } = await supabaseAdmin
-                    .from('users')
-                    .select('telefone, email, cliente_id')
-                    .eq('id', cotacao.user_id)
-                    .single();
-
-                // WhatsApp do cadastro do cliente (preferido para notificação)
-                let clientWhatsapp: string | null = null;
-                if (clientUser?.cliente_id) {
-                    const { data: clienteRow } = await supabaseAdmin
-                        .from('clientes')
-                        .select('whatsapp')
-                        .eq('id', clientUser.cliente_id)
-                        .single();
-                    clientWhatsapp = clienteRow?.whatsapp || null;
-                }
-
-                const cotacaoNumeroProposta = String(cotacao.numero || cotacao_id);
-                // Deep-link para o painel do CLIENTE: pré-preenche o email e
-                // abre direto a cotação após login (ver lib/quotationLink.ts).
-                const clientLoginRef = encodeLoginRef({ email: clientUser?.email || undefined, cotacaoId: cotacao_id, role: 'cliente' });
-                const clientLoginUrl = buildQuotationLoginUrl({ email: clientUser?.email || undefined, cotacaoId: cotacao_id, role: 'cliente' });
-                const clientPhone = clientWhatsapp || clientUser?.telefone;
-                if (clientPhone) {
-                    await notifyClientNewProposal(
-                        clientPhone,
-                        cotacaoNumeroProposta,
-                        supplierLabel,
-                        clientLoginRef || undefined
-                    );
-                }
-                if (clientUser?.email) {
-                    await notifyClientNewProposalEmail(
-                        clientUser.email,
-                        cotacaoNumeroProposta,
-                        supplierLabel,
-                        clientLoginUrl
-                    );
-                }
-            }
-
-            return NextResponse.json({ success: true, data: proposta });
+            return NextResponse.json({ success: true, data: resultado.proposta });
         }
 
         return NextResponse.json({ error: 'Ação inválida' }, { status: 400 });

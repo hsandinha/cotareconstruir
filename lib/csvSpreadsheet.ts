@@ -64,7 +64,7 @@ function detectDelimiter(text: string): string {
  * UTF-8 (nosso modelo) e Windows-1252/ANSI (CSV salvo pelo Excel pt-BR).
  * Sem isso, acentos viram "�" e o casamento de nomes de materiais falha.
  */
-export function decodeSpreadsheetText(buffer: ArrayBuffer): string {
+export function decodeSpreadsheetText(buffer: ArrayBuffer | Uint8Array): string {
     try {
         const utf8 = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
         if (!utf8.includes("�")) return utf8;
@@ -202,27 +202,37 @@ export function isSpreadsheetFileName(fileName: string): boolean {
     return lower.endsWith(".xlsx") || lower.endsWith(".xls") || lower.endsWith(".xlsm") || lower.endsWith(".xlsb");
 }
 
-export async function parseSpreadsheetFile(file: File): Promise<ParsedCsvRow[]> {
-    const fileName = file?.name || "";
+/**
+ * Lê planilha ou CSV a partir dos bytes. Separado de `parseSpreadsheetFile`
+ * porque no servidor (resposta de cotação que chega pelo WhatsApp) existe o
+ * buffer, mas não existe `File`.
+ */
+export function parseSpreadsheetBuffer(buffer: ArrayBuffer | Uint8Array, fileName: string): ParsedCsvRow[] {
     if (isSpreadsheetFileName(fileName)) {
-        const buffer = await file.arrayBuffer();
         const workbook = XLSX.read(buffer, { type: "array" });
         const firstSheetName = workbook.SheetNames[0];
         if (!firstSheetName) return [];
-
-        const sheet = workbook.Sheets[firstSheetName];
-        const matrix = XLSX.utils.sheet_to_json<Array<unknown>>(sheet, {
-            header: 1,
-            blankrows: false,
-            defval: "",
-            raw: false,
-        });
-
-        return parseSpreadsheetMatrix(matrix || []);
+        return sheetToRows(workbook.Sheets[firstSheetName]);
     }
 
-    const buffer = await file.arrayBuffer();
     return parseCsv(decodeSpreadsheetText(buffer));
+}
+
+/** Uma aba do workbook virando linhas com cabeçalho. */
+export function sheetToRows(sheet: XLSX.WorkSheet): ParsedCsvRow[] {
+    const matrix = XLSX.utils.sheet_to_json<Array<unknown>>(sheet, {
+        header: 1,
+        blankrows: false,
+        defval: "",
+        raw: false,
+    });
+
+    return parseSpreadsheetMatrix(matrix || []);
+}
+
+export async function parseSpreadsheetFile(file: File): Promise<ParsedCsvRow[]> {
+    const buffer = await file.arrayBuffer();
+    return parseSpreadsheetBuffer(buffer, file?.name || "");
 }
 
 /**

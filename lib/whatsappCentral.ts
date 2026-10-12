@@ -78,6 +78,8 @@ const CORPO_TEMPLATES: Record<string, string> = {
         'Olá! Você recebeu uma nova cotação na Comprar e Construir.\n\n*Cotação:* #{{1}}\n*Obra:* {{2}}\n\nAcesse a plataforma para analisar os itens e enviar sua proposta.',
     nova_cotacao_fornecedor_v2:
         'Olá! Você recebeu uma nova cotação na Comprar e Construir.\n\n*Cotação:* #{{1}}\n*Obra:* {{2}}\n\nToque no botão abaixo para acessar a cotação e enviar sua proposta.',
+    nova_cotacao_fornecedor_v3:
+        'Olá! Você recebeu uma nova cotação na Comprar e Construir.\n\n*Cotação:* #{{1}}\n*Obra:* {{2}}\n\nA planilha em anexo já vem com todos os itens: preencha a coluna *preco_unitario*, salve e devolva o arquivo aqui mesmo. Nós montamos a proposta e enviamos ao cliente.\n\nPrefere responder pela plataforma? Toque no botão abaixo.',
     nova_mensagem_chat_fornecedor:
         'Olá! Um cliente iniciou uma conversa com você na Comprar e Construir.\n\n*Cliente:* {{1}}\n*Sobre:* {{2}}\n\nToque no botão abaixo para responder.',
     pedido_aprovado_fornecedor:
@@ -248,14 +250,17 @@ export interface RegistroRecebimento {
 /**
  * Grava uma mensagem recebida. Ignora repetida pelo wa_message_id: a Meta
  * reenvia o webhook quando não recebe 200 a tempo.
+ *
+ * Devolve `true` só quando a linha foi criada AGORA. É esse retorno que
+ * impede o reenvio da Meta de processar a mesma planilha duas vezes.
  */
-export async function registrarRecebimento(registro: RegistroRecebimento): Promise<void> {
+export async function registrarRecebimento(registro: RegistroRecebimento): Promise<boolean> {
     const supabase = db();
-    if (!supabase) return;
+    if (!supabase) return false;
 
     try {
         const conversaId = await garantirConversa(registro.telefone, registro.nomeContato);
-        if (!conversaId) return;
+        if (!conversaId) return false;
 
         const criadaEm = registro.timestamp
             ? new Date(Number(registro.timestamp) * 1000).toISOString()
@@ -280,8 +285,10 @@ export async function registrarRecebimento(registro: RegistroRecebimento): Promi
         if (error && error.code !== '23505') {
             console.error('❌ WhatsApp Central: erro ao registrar recebimento', error);
         }
+        return !error;
     } catch (error) {
         console.error('❌ WhatsApp Central: falha ao registrar recebimento', error);
+        return false;
     }
 }
 
