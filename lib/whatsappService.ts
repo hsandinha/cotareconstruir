@@ -432,10 +432,13 @@ const MIME_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 /**
  * Notifica fornecedor sobre nova cotação recebida.
  *
- * Quatro níveis, do melhor para o que sempre funciona:
- *   v4 — botão que abre o FORMULÁRIO de resposta (sem login, sem arquivo),
+ * Quatro níveis de envio, do melhor para o que sempre funciona:
+ *   v5 — botão que abre o FORMULÁRIO de resposta (sem login, sem arquivo),
  *        com a planilha anexada para quem ainda prefere o Excel. É o caminho
  *        mais curto até uma proposta e deve ser sempre o primeiro.
+ *        (O v4 é o mesmo template com a base do link sem `www`, que
+ *        redireciona; ficou na conta só para a Central conseguir renderizar
+ *        mensagem antiga, e não entra mais na cadeia de envio.)
  *   v3 — anexa a planilha de resposta no cabeçalho do template. O fornecedor
  *        preenche o preço e devolve o arquivo na própria conversa; o webhook
  *        lê, monta a proposta e envia ao cliente (lib/cotacaoRespostaWhatsapp.ts).
@@ -445,7 +448,7 @@ const MIME_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
  * A degradação importa: template novo demora a ser aprovado pela Meta, e até
  * lá a notificação não pode parar de sair.
  *
- * Templates: nova_cotacao_fornecedor[_v2|_v3|_v4] — {{1}} = número da cotação, {{2}} = obra.
+ * Templates: nova_cotacao_fornecedor[_v2|_v3|_v5] — {{1}} = número da cotação, {{2}} = obra.
  */
 export async function notifySupplierNewQuotation(
     phone: string,
@@ -467,7 +470,7 @@ export async function notifySupplierNewQuotation(
         if (upload.success && upload.mediaId) {
             const result = await sendWhatsAppTemplate({
                 to: phone,
-                templateName: 'nova_cotacao_fornecedor_v4',
+                templateName: 'nova_cotacao_fornecedor_v5',
                 language: 'pt_BR',
                 components: [
                     {
@@ -486,7 +489,10 @@ export async function notifySupplierNewQuotation(
                 ],
             });
             if (result.success) return result;
-            console.warn(`⚠️ WhatsApp: template v4 (link de resposta) falhou (${result.error}), usando v3`);
+            // Sem tentar o v4 no meio: a única diferença dele é a base do
+            // link SEM www, que responde com redirecionamento. Cair nele
+            // seria trocar uma falha por uma entrega pior.
+            console.warn(`⚠️ WhatsApp: template v5 (link de resposta) falhou (${result.error}), usando v3`);
         } else {
             console.warn(`⚠️ WhatsApp: planilha não subiu (${upload.error}), usando v3`);
         }

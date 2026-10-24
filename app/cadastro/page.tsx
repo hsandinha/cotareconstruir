@@ -68,6 +68,10 @@ function CadastroPageContent() {
     const [naFilaDeEspera, setNaFilaDeEspera] = useState<string | null>(null);
     const [convite, setConvite] = useState<{ nome: string; email: string } | null>(null);
     const [conviteInvalido, setConviteInvalido] = useState(false);
+    // Programa de afiliados: código digitado e o parceiro que ele resolve
+    const [codigoIndicacao, setCodigoIndicacao] = useState("");
+    const [parceiro, setParceiro] = useState<{ nome: string } | null>(null);
+    const [codigoNaoEncontrado, setCodigoNaoEncontrado] = useState(false);
 
     const set = (field: keyof Form, value: string) =>
         setForm((prev) => ({ ...prev, [field]: value }));
@@ -85,6 +89,44 @@ function CadastroPageContent() {
         const prefill = searchParams?.get("email") || "";
         if (prefill) setForm((prev) => (prev.email ? prev : { ...prev, email: prefill }));
     }, [searchParams]);
+
+    // Código de indicação: o cookie `cc_ref` é gravado pelo proxy quando a
+    // pessoa chega por um link de parceiro. Pré-preenche o campo, mas ela
+    // pode trocar — quem clicou no celular e se cadastrou no computador não
+    // tem cookie nenhum, e precisa poder digitar.
+    useEffect(() => {
+        const bruto = document.cookie.split("; ").find((c) => c.startsWith("cc_ref="))?.split("=")[1];
+        if (!bruto) return;
+        try {
+            const dados = JSON.parse(decodeURIComponent(bruto));
+            if (dados?.c) setCodigoIndicacao(String(dados.c).toUpperCase());
+        } catch {
+            // Cookie em outro formato: ignora, a pessoa digita se quiser
+        }
+    }, []);
+
+    // Confirma na tela de quem é o código. Sem isso a atribuição é invisível
+    // e uma falha só aparece quando o parceiro cobra a comissão.
+    useEffect(() => {
+        const codigo = codigoIndicacao.trim();
+        if (codigo.length < 4) {
+            setParceiro(null);
+            setCodigoNaoEncontrado(false);
+            return;
+        }
+        let cancelado = false;
+        const t = setTimeout(() => {
+            fetch(`/api/afiliados/resolver?codigo=${encodeURIComponent(codigo)}`)
+                .then((r) => (r.ok ? r.json() : null))
+                .then((d) => {
+                    if (cancelado) return;
+                    setParceiro(d?.encontrado ? { nome: d.nome } : null);
+                    setCodigoNaoEncontrado(!d?.encontrado);
+                })
+                .catch(() => { /* indicação é opcional: falhar não bloqueia o cadastro */ });
+        }, 400);
+        return () => { cancelado = true; clearTimeout(t); };
+    }, [codigoIndicacao]);
 
     // Convite da fila de espera: ?convite=<token> preenche nome e e-mail
     const conviteToken = searchParams?.get("convite") || "";
@@ -136,6 +178,7 @@ function CadastroPageContent() {
                     cpfCnpj: form.cpfCnpj.trim(),
                     password: form.password,
                     convite: conviteToken || undefined,
+                    codigoIndicacao: codigoIndicacao.trim() || undefined,
                 }),
             });
 
@@ -376,6 +419,31 @@ function CadastroPageContent() {
                         />
                         {form.confirmPassword.length > 0 && !passwordsMatch && (
                             <p className="mt-2 text-xs text-amber-300">As senhas não conferem.</p>
+                        )}
+                    </div>
+
+                    <div>
+                        <label className={labelClass} htmlFor="codigoIndicacao">
+                            Código de indicação <span className="font-normal normal-case tracking-normal text-[#A8A29E]">(opcional)</span>
+                        </label>
+                        <input
+                            id="codigoIndicacao"
+                            value={codigoIndicacao}
+                            onChange={(e) => setCodigoIndicacao(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20))}
+                            className={`${inputClass} font-mono tracking-wider`}
+                            placeholder="Quem te indicou?"
+                            autoComplete="off"
+                        />
+                        {parceiro && (
+                            <p className="mt-2 text-sm font-medium text-emerald-700">
+                                ✓ Indicado por {parceiro.nome}
+                            </p>
+                        )}
+                        {codigoNaoEncontrado && (
+                            <p className="mt-2 text-xs text-amber-600">
+                                Não encontramos este código. Confira com quem indicou — você pode
+                                criar a conta assim mesmo.
+                            </p>
                         )}
                     </div>
 

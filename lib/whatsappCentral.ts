@@ -78,6 +78,8 @@ const CORPO_TEMPLATES: Record<string, string> = {
         'Olá! Você recebeu uma nova cotação na Comprar e Construir.\n\n*Cotação:* #{{1}}\n*Obra:* {{2}}\n\nAcesse a plataforma para analisar os itens e enviar sua proposta.',
     nova_cotacao_fornecedor_v2:
         'Olá! Você recebeu uma nova cotação na Comprar e Construir.\n\n*Cotação:* #{{1}}\n*Obra:* {{2}}\n\nToque no botão abaixo para acessar a cotação e enviar sua proposta.',
+    nova_cotacao_fornecedor_v5:
+        'Olá! Você recebeu uma nova cotação na Comprar e Construir.\n\n*Cotação:* #{{1}}\n*Obra:* {{2}}\n\nToque no botão abaixo e preencha os preços direto na tela — sem baixar nada e sem fazer login. Leva poucos minutos.\n\nPrefere planilha? Ela está anexada nesta mensagem: preencha a coluna *preco_unitario* e devolva o arquivo aqui mesmo.',
     nova_cotacao_fornecedor_v4:
         'Olá! Você recebeu uma nova cotação na Comprar e Construir.\n\n*Cotação:* #{{1}}\n*Obra:* {{2}}\n\nToque no botão abaixo e preencha os preços direto na tela — sem baixar nada e sem fazer login. Leva poucos minutos.\n\nPrefere planilha? Ela está anexada nesta mensagem: preencha a coluna *preco_unitario* e devolva o arquivo aqui mesmo.',
     nova_cotacao_fornecedor_v3:

@@ -144,7 +144,8 @@ acrescentado lá também**, senão a mensagem aparece como `[template nome]`.
 
 | Template | Categoria | Para quê |
 | --- | --- | --- |
-| `nova_cotacao_fornecedor_v4` | UTILITY | Cotação com **link de resposta** no botão + planilha anexada. É o preferido. |
+| `nova_cotacao_fornecedor_v5` | UTILITY | Cotação com **link de resposta** no botão + planilha anexada. É o preferido. |
+| `nova_cotacao_fornecedor_v4` | UTILITY | Aposentado: mesmo conteúdo, link sem `www` (redireciona). Fica só para a Central renderizar mensagem antiga. |
 | `nova_cotacao_fornecedor_v3` | UTILITY | Fallback: planilha anexada, botão leva ao login. |
 | `nova_cotacao_fornecedor_v2` | UTILITY | Fallback: botão de deep-link, sem anexo. |
 | `nova_cotacao_fornecedor` | UTILITY | Fallback final: botão fixo. |
@@ -187,14 +188,14 @@ ou a notificação fica sem rede de proteção.
 
 A planilha resolve para quem usa Excel, mas no celular derruba a taxa de
 resposta — baixar o arquivo, achar um app que abra, preencher e devolver é
-muita etapa. Por isso o botão do `nova_cotacao_fornecedor_v4` abre
+muita etapa. Por isso o botão do `nova_cotacao_fornecedor_v5` abre
 `/proposta/<token>`: um formulário onde o fornecedor digita os preços na tela,
 sem login e sem arquivo. A planilha segue anexada para quem prefere.
 
 ```
 disparo da cotação
    gerarTokensDeResposta()      → 1 token por convite, hash no banco
-   template v4, botão → /proposta/<token>
+   template v5, botão → /proposta/<token>
         │
         ▼
    📱 fornecedor toca, preenche e envia
@@ -204,6 +205,17 @@ app/api/proposta-link/route.ts
    convite_por_token()          → token → (cotação, fornecedor)
    criarOuAtualizarProposta()   → origem 'link_publico'
 ```
+
+### A URL do botão fica congelada no template
+
+A base do link é parte do template aprovado — mudar exige submeter outro e
+esperar a Meta de novo. Foi o que aconteceu entre o v4 e o v5: o v4 saiu com
+`comprareconstruir.com`, que responde 307 para o `www`, e dentro do navegador
+do WhatsApp cada redirecionamento é mais uma chance de o fornecedor ver erro.
+
+Lição para o próximo template com link: conferir o domínio canônico **antes**
+de submeter. E `NEXT_PUBLIC_APP_URL` (que gera os links do admin) precisa
+apontar para a mesma base do template, senão os dois caminhos divergem.
 
 ### Por que o token é seguro o bastante para valer como senha
 

@@ -97,6 +97,8 @@ export async function POST(request: NextRequest) {
         const documento = sanitizeNumeric(String(body?.cpfCnpj || ''));
         // Token do convite da fila de espera (link enviado por e-mail)
         const conviteToken = sanitizeString(String(body?.convite || '')).trim() || null;
+        // Código de indicação digitado no formulário (ver atribuirCodigoDeAfiliado)
+        const codigoIndicacao = sanitizeString(String(body?.codigoIndicacao || '')).trim() || null;
 
         if (!nome) {
             return NextResponse.json({ error: 'Informe seu nome.' }, { status: 400 });
@@ -259,7 +261,7 @@ export async function POST(request: NextRequest) {
         // desfeito acima, e não pode deixar indicação órfã para trás.
         // `atribuirIndicacao` nunca lança — conta criada não pode falhar
         // porque a atribuição deu errado.
-        await atribuirCodigoDeAfiliado(request, authUser.id, cliente?.id || null);
+        await atribuirCodigoDeAfiliado(request, authUser.id, cliente?.id || null, codigoIndicacao);
 
         // Sem sessão = projeto exige confirmação de e-mail antes do primeiro login
         const needsEmailConfirmation = !signUpData?.session;
@@ -288,19 +290,34 @@ async function atribuirCodigoDeAfiliado(
     request: NextRequest,
     userId: string,
     clienteId: string | null,
+    codigoDigitado: string | null,
 ): Promise<void> {
     const bruto = request.cookies.get(COOKIE_REF)?.value;
-    if (!bruto) return;
 
     let codigo = '';
     let clicouEm: string | null = null;
-    try {
-        const dados = JSON.parse(bruto);
-        codigo = String(dados?.c || '');
-        if (Number.isFinite(dados?.t)) clicouEm = new Date(Number(dados.t)).toISOString();
-    } catch {
-        codigo = bruto;
+    if (bruto) {
+        try {
+            const dados = JSON.parse(bruto);
+            codigo = String(dados?.c || '');
+            if (Number.isFinite(dados?.t)) clicouEm = new Date(Number(dados.t)).toISOString();
+        } catch {
+            codigo = bruto;
+        }
     }
+
+    // O que a pessoa DIGITOU vence o cookie.
+    //
+    // O formulário já vem preenchido com o código do cookie, então digitar
+    // algo diferente é um ato deliberado de quem está se cadastrando — e ela
+    // sabe quem a indicou melhor que um cookie de até 90 dias atrás. Também é
+    // o que resolve o caso de clicar no link pelo celular e se cadastrar no
+    // computador, onde o cookie simplesmente não existe.
+    if (codigoDigitado && codigoDigitado.toUpperCase() !== codigo.toUpperCase()) {
+        codigo = codigoDigitado;
+        clicouEm = null;
+    }
+
     if (!codigo) return;
 
     const resultado = await atribuirIndicacao({ userId, clienteId, codigo, clicouEm });

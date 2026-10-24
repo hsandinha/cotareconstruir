@@ -129,13 +129,18 @@ const templates = [
             },
         ],
     },
+    // O `nova_cotacao_fornecedor_v4` existiu entre este arquivo e o v5: mesmo
+    // conteúdo, com a base do link SEM `www`, que responde redirecionamento.
+    // Continua aprovado na conta para a Central renderizar mensagem antiga,
+    // mas não deve ser criado de novo — por isso saiu daqui.
     {
-        // v4: o botão deixa de levar ao login e passa a abrir o FORMULÁRIO de
-        // resposta (/proposta/<token>). Nasceu de um fato observado: baixar
-        // .xlsx, preencher num app de planilha e devolver o arquivo é demais
-        // para quem está no celular, e a maioria simplesmente não respondia.
-        // A planilha continua anexada para quem prefere o Excel.
-        name: 'nova_cotacao_fornecedor_v4',
+        // v5: idêntico ao v4, só com a base do link em `www`.
+        //
+        // O domínio sem www responde 307 para o www, e a URL do botão fica
+        // CONGELADA no template aprovado — não dá para corrigir sem submeter
+        // de novo. Dentro do navegador do WhatsApp, cada redirecionamento é
+        // uma chance a mais de o fornecedor ver uma tela de erro.
+        name: 'nova_cotacao_fornecedor_v5',
         language: 'pt_BR',
         category: 'UTILITY',
         needsDocumentSample: true,
@@ -158,8 +163,8 @@ const templates = [
                         text: 'Responder cotação',
                         // Base fixa + token como variável: cada fornecedor
                         // recebe o link exclusivo dele.
-                        url: 'https://comprareconstruir.com/proposta/{{1}}',
-                        example: ['https://comprareconstruir.com/proposta/N3hQ7bK2mZr8TpLvW9yXcF4dJ6sA1gH0uE5iO2nRtY'],
+                        url: 'https://www.comprareconstruir.com/proposta/{{1}}',
+                        example: ['https://www.comprareconstruir.com/proposta/N3hQ7bK2mZr8TpLvW9yXcF4dJ6sA1gH0uE5iO2nRtY'],
                     },
                 ],
             },
