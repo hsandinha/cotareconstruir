@@ -1,13 +1,74 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { decodeLoginRef, quotationDeepLinkPath } from './lib/quotationLink'
+import { normalizarCodigo, codigoValido } from './lib/cobrancaModelo'
+
+/** Cookie que leva o código do parceiro da landing até o cadastro. */
+const COOKIE_REF = 'cc_ref'
+/** Id anônimo do visitante — liga clique a cadastro no funil do parceiro. */
+const COOKIE_VISITANTE = 'cc_vis'
+const DIAS_ATRIBUICAO = 90
 
 /**
  * Proxy de Segurança e Proteção de Rotas (Next.js 16+)
  * Atua como camada de rede que manipula requisições antes de chegar ao app
  * Usado para: autenticação, roteamento, redirecionamentos e segurança de borda
+ *
+ * Também captura o `?ref=` dos links de afiliado. Fica aqui, e não numa
+ * página, porque o parceiro divulga o link apontando para qualquer lugar do
+ * site — landing, /cadastro, uma página de conteúdo — e o código precisa ser
+ * guardado em todas elas.
  */
 export function proxy(request: NextRequest) {
+    const resposta = rotear(request)
+    return marcarAfiliado(request, resposta)
+}
+
+/**
+ * Guarda o código do parceiro no cookie.
+ *
+ * PRIMEIRO CLIQUE VENCE: se já existe um código gravado, um link novo não o
+ * substitui. Quem investiu para trazer a pessoa foi o primeiro; trocar no
+ * último clique premiaria quem só apareceu na hora da conversão (e o próprio
+ * site, se o visitante voltasse por um link sem ref).
+ *
+ * O cookie não é HttpOnly de propósito: o tracker do cliente precisa lê-lo
+ * para registrar a visita. Ele não carrega nada sensível — é um código
+ * público, que o parceiro distribui.
+ */
+function marcarAfiliado(request: NextRequest, resposta: NextResponse): NextResponse {
+    const bruto = request.nextUrl.searchParams.get('ref')
+        || request.nextUrl.searchParams.get('afiliado')
+    if (!bruto) return resposta
+
+    const codigo = normalizarCodigo(bruto)
+    if (!codigoValido(codigo)) return resposta
+
+    const maxAge = DIAS_ATRIBUICAO * 24 * 60 * 60
+
+    if (!request.cookies.get(COOKIE_REF)) {
+        resposta.cookies.set(COOKIE_REF, JSON.stringify({ c: codigo, t: Date.now() }), {
+            maxAge,
+            path: '/',
+            sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
+        })
+    }
+
+    if (!request.cookies.get(COOKIE_VISITANTE)) {
+        resposta.cookies.set(COOKIE_VISITANTE, crypto.randomUUID(), {
+            maxAge,
+            path: '/',
+            sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
+        })
+    }
+
+    return resposta
+}
+
+/** Roteamento e proteção de rotas — o comportamento original do proxy. */
+function rotear(request: NextRequest): NextResponse {
     const { pathname } = request.nextUrl
     const token = request.cookies.get('authToken')?.value || request.cookies.get('token')?.value
     const role = request.cookies.get('userRole')?.value || request.cookies.get('role')?.value

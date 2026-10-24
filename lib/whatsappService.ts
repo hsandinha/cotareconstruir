@@ -432,7 +432,10 @@ const MIME_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 /**
  * Notifica fornecedor sobre nova cotação recebida.
  *
- * Três níveis, do melhor para o que sempre funciona:
+ * Quatro níveis, do melhor para o que sempre funciona:
+ *   v4 — botão que abre o FORMULÁRIO de resposta (sem login, sem arquivo),
+ *        com a planilha anexada para quem ainda prefere o Excel. É o caminho
+ *        mais curto até uma proposta e deve ser sempre o primeiro.
  *   v3 — anexa a planilha de resposta no cabeçalho do template. O fornecedor
  *        preenche o preço e devolve o arquivo na própria conversa; o webhook
  *        lê, monta a proposta e envia ao cliente (lib/cotacaoRespostaWhatsapp.ts).
@@ -442,7 +445,7 @@ const MIME_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
  * A degradação importa: template novo demora a ser aprovado pela Meta, e até
  * lá a notificação não pode parar de sair.
  *
- * Templates: nova_cotacao_fornecedor[_v2|_v3] — {{1}} = número da cotação, {{2}} = obra.
+ * Templates: nova_cotacao_fornecedor[_v2|_v3|_v4] — {{1}} = número da cotação, {{2}} = obra.
  */
 export async function notifySupplierNewQuotation(
     phone: string,
@@ -450,7 +453,45 @@ export async function notifySupplierNewQuotation(
     obraNome: string,
     loginRef?: string,
     planilha?: PlanilhaCotacaoAnexo,
+    propostaToken?: string,
 ): Promise<WhatsAppSendResult> {
+    // v4: o botão abre o formulário de resposta direto, sem login e sem
+    // arquivo. A planilha continua anexada para quem prefere o Excel.
+    if (planilha && propostaToken) {
+        const upload = await uploadWhatsAppMedia(
+            planilha.conteudo,
+            planilha.filename,
+            planilha.mimeType || MIME_XLSX,
+        );
+
+        if (upload.success && upload.mediaId) {
+            const result = await sendWhatsAppTemplate({
+                to: phone,
+                templateName: 'nova_cotacao_fornecedor_v4',
+                language: 'pt_BR',
+                components: [
+                    {
+                        type: 'header',
+                        parameters: [
+                            { type: 'document', document: { id: upload.mediaId, filename: planilha.filename } },
+                        ],
+                    },
+                    ...bodyParams(cotacaoNumero, obraNome),
+                    {
+                        type: 'button',
+                        sub_type: 'url',
+                        index: '0',
+                        parameters: [{ type: 'text', text: propostaToken }],
+                    },
+                ],
+            });
+            if (result.success) return result;
+            console.warn(`⚠️ WhatsApp: template v4 (link de resposta) falhou (${result.error}), usando v3`);
+        } else {
+            console.warn(`⚠️ WhatsApp: planilha não subiu (${upload.error}), usando v3`);
+        }
+    }
+
     if (planilha && loginRef) {
         const upload = await uploadWhatsAppMedia(
             planilha.conteudo,
@@ -515,18 +556,22 @@ export async function notifySupplierNewQuotation(
 /**
  * Notifica cliente sobre nova proposta recebida.
  *
- * Com `loginRef` (token de lib/quotationLink.ts) usa o template
- * nova_proposta_cliente_v2, cujo botão aponta para /login?wa=<token> —
- * pré-preenche o email e abre direto a cotação no painel do cliente após
- * autenticar. Se o v2 falhar (ex.: ainda não aprovado pela Meta), cai no antigo.
+ * Três níveis, todos com o mesmo par de variáveis:
+ *   v3 — texto enquadrado como atualização da cotação do próprio cliente.
+ *        É o único da família classificado como UTILITY pela Meta; o v2 e o
+ *        v1 caíram em MARKETING, que custa mais e não entrega para quem optou
+ *        por não receber promoção (ver docs/cotacao-por-whatsapp.md).
+ *   v2 — mesmo botão de deep-link, mas MARKETING.
+ *   v1 — sem botão dinâmico, MARKETING.
  *
- * Templates: nova_proposta_cliente[_v2] — {{1}} = número da cotação, {{2}} = fornecedor.
+ * Templates: nova_proposta_cliente[_v2|_v3] — {{1}} = número da cotação,
+ * {{2}} = rótulo do fornecedor ("Fornecedor N" até o fechamento).
  */
 export async function notifyClientNewProposal(phone: string, cotacaoNumero: string, supplierName: string, loginRef?: string): Promise<WhatsAppSendResult> {
     if (loginRef) {
-        const result = await sendWhatsAppTemplate({
+        const comBotao = (templateName: string) => sendWhatsAppTemplate({
             to: phone,
-            templateName: 'nova_proposta_cliente_v2',
+            templateName,
             language: 'pt_BR',
             components: [
                 ...bodyParams(cotacaoNumero, supplierName),
@@ -538,8 +583,14 @@ export async function notifyClientNewProposal(phone: string, cotacaoNumero: stri
                 },
             ],
         });
-        if (result.success) return result;
-        console.warn(`⚠️ WhatsApp: template v2 falhou (${result.error}), usando nova_proposta_cliente`);
+
+        const v3 = await comBotao('nova_proposta_cliente_v3');
+        if (v3.success) return v3;
+        console.warn(`⚠️ WhatsApp: template v3 falhou (${v3.error}), usando nova_proposta_cliente_v2`);
+
+        const v2 = await comBotao('nova_proposta_cliente_v2');
+        if (v2.success) return v2;
+        console.warn(`⚠️ WhatsApp: template v2 falhou (${v2.error}), usando nova_proposta_cliente`);
     }
     return sendWhatsAppTemplate({
         to: phone,

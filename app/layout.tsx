@@ -7,6 +7,7 @@ import { ToastProvider } from "@/components/ToastProvider";
 import { ConfirmModalProvider } from "@/components/ConfirmModal";
 import { RegistraServiceWorker } from "@/components/RegistraServiceWorker";
 import { ConstructionIntro } from "@/components/ConstructionIntro";
+import { AfiliadoTracker } from "@/components/AfiliadoTracker";
 
 config.autoAddCss = false;
 
@@ -69,6 +70,7 @@ export default function RootLayout({
         </ToastProvider>
         <RegistraServiceWorker />
         <ConstructionIntro />
+        <AfiliadoTracker />
       </body>
     </html>
   );

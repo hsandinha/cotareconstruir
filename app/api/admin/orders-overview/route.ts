@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
         // 1. Load cotacoes (most recent first) — limit window for performance
         let cotacoesQuery = supabaseAdmin
             .from('cotacoes')
-            .select('id, pedido_geral_id, user_id, obra_id, status, data_envio, observacoes, created_at, cotacao_itens(id, nome, quantidade, unidade, grupo)')
+            .select('id, numero, pedido_geral_id, user_id, obra_id, status, data_envio, observacoes, created_at, cotacao_itens(id, nome, quantidade, unidade, grupo)')
             .order('created_at', { ascending: false })
             .limit(300);
 
@@ -259,6 +259,10 @@ export async function GET(req: NextRequest) {
 
                 return {
                     cotacao_id: cot.id,
+                    // É o código que o fornecedor recebe no WhatsApp e o cliente
+                    // vê no painel — sem ele não dá para cruzar o que cada um
+                    // está falando com a linha certa desta tela.
+                    numero: cot.numero || null,
                     grupo: extractGroupNameFromObservacoes(cot.observacoes) || (cot.cotacao_itens?.[0]?.grupo ?? 'Sem grupo'),
                     status: cot.status,
                     data_envio: cot.data_envio || cot.created_at,
@@ -289,6 +293,13 @@ export async function GET(req: NextRequest) {
 
             pedidos.push({
                 pedido_geral_id: first.pedido_geral_id || key,
+                // Os números das cotações que compõem este pedido, ordenados.
+                // A tela usa para montar o código do pedido geral e a busca
+                // casa contra eles.
+                numeros: subPedidos
+                    .map((sp) => sp.numero)
+                    .filter(Boolean)
+                    .sort((a: string, b: string) => Number(a) - Number(b)),
                 cliente,
                 obra,
                 data_envio: first.data_envio || first.created_at,

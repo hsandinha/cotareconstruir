@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { resolveSupplierAccess } from '@/lib/supplierAccessServer';
 import { notifySupplierNewQuotation } from '@/lib/whatsappService';
 import { planilhasDeRespostaPorCotacao } from '@/lib/cotacaoRespostaWhatsapp';
+import { gerarTokensDeResposta, chaveConvite } from '@/lib/propostaLink';
 import { notifySupplierNewQuotationEmail } from '@/lib/emailService';
 import { encodeLoginRef, buildQuotationLoginUrl } from '@/lib/quotationLink';
 
@@ -865,6 +866,17 @@ export async function POST(req: NextRequest) {
                                     [...supplierCotacaoId.values()]
                                 );
 
+                                // Link de resposta: o botão da notificação
+                                // abre o formulário já identificado, sem
+                                // login e sem arquivo. É o caminho mais curto
+                                // até uma proposta — a planilha vira opção.
+                                const tokensResposta = await gerarTokensDeResposta(
+                                    conviteRows.map((c) => ({
+                                        cotacaoId: c.cotacao_id,
+                                        fornecedorId: c.fornecedor_id,
+                                    }))
+                                );
+
                                 await Promise.allSettled(
                                     (supplierContacts || []).map(async (supplier: any) => {
                                         const phone = supplier.whatsapp || supplier.telefone || (supplier.user_id ? userPhoneMap.get(supplier.user_id) : null);
@@ -883,7 +895,10 @@ export async function POST(req: NextRequest) {
                                                 cotacaoNumero,
                                                 obraLocal,
                                                 loginRef || undefined,
-                                                cotacaoId ? planilhas.get(cotacaoId) : undefined
+                                                cotacaoId ? planilhas.get(cotacaoId) : undefined,
+                                                cotacaoId
+                                                    ? tokensResposta.get(chaveConvite(cotacaoId, supplier.id))
+                                                    : undefined
                                             );
                                         }
                                         if (email) {

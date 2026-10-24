@@ -7,6 +7,7 @@ import {
     Package, Search, RefreshCw, ChevronDown, ChevronUp,
     Eye, CheckCircle2, Clock, AlertCircle, Building2, MapPin, User, Filter, X
 } from "lucide-react";
+import { PropostaManualModal } from "@/components/dashboard/admin/PropostaManualModal";
 
 interface Fornecedor {
     fornecedor_id: string;
@@ -22,6 +23,8 @@ interface Fornecedor {
 
 interface SubPedido {
     cotacao_id: string;
+    /** Número da cotação (#10093) — o código que fornecedor e cliente veem. */
+    numero: string | null;
     grupo: string;
     status: string;
     data_envio: string;
@@ -38,6 +41,8 @@ interface SubPedido {
 
 interface PedidoGeral {
     pedido_geral_id: string;
+    /** Números das cotações deste pedido, em ordem. */
+    numeros: string[];
     cliente: { id: string; nome: string; email: string } | null;
     obra: { id: string; nome: string; cidade?: string; estado?: string } | null;
     data_envio: string;
@@ -143,6 +148,29 @@ export default function OrdersOverviewManagement() {
         fetchPedidos();
     }, [filterFornecedorId]);
 
+    /**
+     * Código do pedido geral, a partir dos números das cotações que o compõem.
+     *
+     * Sequência contínua vira intervalo (#10086–10093), que é o caso comum:
+     * um envio cria as cotações de uma vez e os números saem em sequência.
+     * Com buraco no meio, mostra o primeiro e quantos mais — dizer "10086 a
+     * 10093" ali seria afirmar que tudo entre os dois pertence ao pedido.
+     */
+    const codigoDoPedido = (numeros: string[]): string | null => {
+        if (!numeros || numeros.length === 0) return null;
+        if (numeros.length === 1) return `#${numeros[0]}`;
+
+        const primeiro = numeros[0];
+        const ultimo = numeros[numeros.length - 1];
+        const contiguo = Number(ultimo) - Number(primeiro) === numeros.length - 1;
+
+        return contiguo ? `#${primeiro}–${ultimo}` : `#${primeiro} +${numeros.length - 1}`;
+    };
+
+    // Fornecedor clicado na lista: abre o modal para lançar a proposta dele
+    // ou mandar o link de resposta.
+    const [propostaAlvo, setPropostaAlvo] = useState<{ cotacaoId: string; fornecedorId: string } | null>(null);
+
     const filteredPedidos = useMemo(() => {
         const q = search.trim().toLowerCase();
         if (!q) return pedidos;
@@ -150,7 +178,11 @@ export default function OrdersOverviewManagement() {
             const inCliente = p.cliente?.nome?.toLowerCase().includes(q) || p.cliente?.email?.toLowerCase().includes(q);
             const inObra = p.obra?.nome?.toLowerCase().includes(q);
             const inGrupo = p.sub_pedidos.some(s => s.grupo.toLowerCase().includes(q));
-            return inCliente || inObra || inGrupo;
+            // Digitar "10093" tem que achar o pedido: é o número que chega
+            // pelo WhatsApp quando um fornecedor pergunta de uma cotação.
+            const semCerquilha = q.replace(/^#/, '');
+            const inNumero = (p.numeros || []).some(n => n.includes(semCerquilha));
+            return inCliente || inObra || inGrupo || inNumero;
         });
     }, [pedidos, search]);
 
@@ -193,7 +225,7 @@ export default function OrdersOverviewManagement() {
                             type="text"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Buscar por cliente, obra ou grupo..."
+                            placeholder="Buscar por número (#10093), cliente, obra ou grupo..."
                             className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
                         />
                     </div>
@@ -273,6 +305,11 @@ export default function OrdersOverviewManagement() {
                                             <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
                                                 <Package className="h-3 w-3" /> Pedido Geral
                                             </span>
+                                            {codigoDoPedido(pedido.numeros) && (
+                                                <span className="rounded-md bg-slate-900 px-2 py-0.5 font-mono text-[11px] font-bold tracking-tight text-white">
+                                                    {codigoDoPedido(pedido.numeros)}
+                                                </span>
+                                            )}
                                             <span className="text-xs text-slate-500">{formatDate(pedido.data_envio)}</span>
                                         </div>
                                         <div className="mt-2 flex items-center gap-4 flex-wrap text-sm">
@@ -315,6 +352,11 @@ export default function OrdersOverviewManagement() {
                                                     >
                                                         <div className="flex-1 min-w-0">
                                                             <div className="flex items-center gap-2 flex-wrap">
+                                                                {sp.numero && (
+                                                                    <span className="rounded-md bg-slate-900 px-2 py-0.5 font-mono text-[11px] font-bold tracking-tight text-white">
+                                                                        #{sp.numero}
+                                                                    </span>
+                                                                )}
                                                                 <span className="text-sm font-semibold text-slate-800">{sp.grupo}</span>
                                                                 <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_BADGE[sp.status] || 'bg-slate-100 text-slate-700'}`}>
                                                                     {sp.status}
@@ -346,9 +388,21 @@ export default function OrdersOverviewManagement() {
                                                                 </div>
                                                             )}
 
-                                                            <FornecedoresTabela title="Responderam" color="emerald" lista={sp.fornecedores.responded} showProposta />
-                                                            <FornecedoresTabela title="Visualizaram (sem resposta)" color="amber" lista={sp.fornecedores.viewed.filter(f => !sp.fornecedores.responded.some(r => r.fornecedor_id === f.fornecedor_id))} />
-                                                            <FornecedoresTabela title="Notificados (sem visualizar)" color="blue" lista={sp.fornecedores.not_responded.filter(f => !f.visualizado_em)} />
+                                                            <FornecedoresTabela
+                                                                title="Responderam" color="emerald"
+                                                                lista={sp.fornecedores.responded} showProposta
+                                                                onFornecedor={(fid) => setPropostaAlvo({ cotacaoId: sp.cotacao_id, fornecedorId: fid })}
+                                                            />
+                                                            <FornecedoresTabela
+                                                                title="Visualizaram (sem resposta)" color="amber"
+                                                                lista={sp.fornecedores.viewed.filter(f => !sp.fornecedores.responded.some(r => r.fornecedor_id === f.fornecedor_id))}
+                                                                onFornecedor={(fid) => setPropostaAlvo({ cotacaoId: sp.cotacao_id, fornecedorId: fid })}
+                                                            />
+                                                            <FornecedoresTabela
+                                                                title="Notificados (sem visualizar)" color="blue"
+                                                                lista={sp.fornecedores.not_responded.filter(f => !f.visualizado_em)}
+                                                                onFornecedor={(fid) => setPropostaAlvo({ cotacaoId: sp.cotacao_id, fornecedorId: fid })}
+                                                            />
                                                         </div>
                                                     )}
                                                 </div>
@@ -360,6 +414,16 @@ export default function OrdersOverviewManagement() {
                         );
                     })}
                 </div>
+            )}
+
+            {propostaAlvo && (
+                <PropostaManualModal
+                    cotacaoId={propostaAlvo.cotacaoId}
+                    fornecedorId={propostaAlvo.fornecedorId}
+                    onFechar={() => setPropostaAlvo(null)}
+                    // Proposta lançada muda os contadores de quem respondeu
+                    onSalvo={() => fetchPedidos()}
+                />
             )}
         </div>
     );
@@ -406,7 +470,7 @@ function MiniPill({ children, color }: { children: React.ReactNode; color: strin
     return <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${map[color] || 'bg-slate-50 text-slate-600'}`}>{children}</span>;
 }
 
-function FornecedoresTabela({ title, color, lista, showProposta }: { title: string; color: string; lista: Fornecedor[]; showProposta?: boolean }) {
+function FornecedoresTabela({ title, color, lista, showProposta, onFornecedor }: { title: string; color: string; lista: Fornecedor[]; showProposta?: boolean; onFornecedor?: (fornecedorId: string) => void }) {
     if (lista.length === 0) return null;
     const headerColor: Record<string, string> = {
         emerald: 'text-emerald-700',
@@ -433,7 +497,17 @@ function FornecedoresTabela({ title, color, lista, showProposta }: { title: stri
                         {lista.map(f => (
                             <tr key={f.fornecedor_id} className="border-t border-slate-100">
                                 <td className="px-2 py-1.5 text-slate-800">
-                                    {supplierName(f)}
+                                    {onFornecedor ? (
+                                        <button
+                                            onClick={() => onFornecedor(f.fornecedor_id)}
+                                            className="text-left font-medium text-slate-800 underline decoration-slate-300 decoration-dotted underline-offset-2 hover:text-orange-600 hover:decoration-orange-400"
+                                            title="Lançar proposta ou enviar link de resposta"
+                                        >
+                                            {supplierName(f)}
+                                        </button>
+                                    ) : (
+                                        supplierName(f)
+                                    )}
                                     {f.cnpj && <span className="block text-[10px] text-slate-400">{f.cnpj}</span>}
                                 </td>
                                 <td className="px-2 py-1.5 text-slate-600">{formatDate(f.notificado_em)}</td>

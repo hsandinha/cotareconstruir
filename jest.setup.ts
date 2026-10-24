@@ -9,6 +9,14 @@ Object.assign(globalThis, {
     TextDecoder: globalThis.TextDecoder ?? TextDecoder,
 });
 
+// `lib/supabase.ts` cria o cliente no topo do módulo e estoura sem URL. Com
+// estes valores de mentira, qualquer lib do servidor pode ser importada num
+// teste — o cliente não abre conexão nenhuma ao ser construído.
+process.env.NEXT_PUBLIC_SUPABASE_URL ||= 'http://localhost:54321';
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||= 'chave-de-teste';
+// Sem service role de propósito: `supabaseAdmin` fica null e teste nenhum
+// consegue tocar banco por acidente.
+
 jest.mock('next/navigation', () => {
     return {
         useRouter: () => ({

@@ -27,6 +27,7 @@ import {
     validateCPF,
     validateCNPJ,
 } from '@/lib/validation';
+import { atribuirIndicacao, COOKIE_REF } from '@/lib/afiliados';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -251,6 +252,15 @@ export async function POST(request: NextRequest) {
             console.error('[SIGNUP] Conta criada sem reserva de vaga:', email);
         }
 
+        // Programa de afiliados: o código veio no cookie que o proxy gravou
+        // quando o visitante chegou pelo link do parceiro.
+        //
+        // Depois da reserva de propósito: cadastro que vira fila de espera é
+        // desfeito acima, e não pode deixar indicação órfã para trás.
+        // `atribuirIndicacao` nunca lança — conta criada não pode falhar
+        // porque a atribuição deu errado.
+        await atribuirCodigoDeAfiliado(request, authUser.id, cliente?.id || null);
+
         // Sem sessão = projeto exige confirmação de e-mail antes do primeiro login
         const needsEmailConfirmation = !signUpData?.session;
 
@@ -265,5 +275,36 @@ export async function POST(request: NextRequest) {
     } catch (error: any) {
         console.error('Erro no cadastro:', error);
         return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
+    }
+}
+
+/**
+ * Lê o cookie `cc_ref` e carimba o cadastro como indicação do parceiro.
+ *
+ * O cookie é gravado em `proxy.ts` no formato {"c":"CODIGO","t":<ms>}; `t` é
+ * o instante do clique, que a atribuição usa para respeitar a janela.
+ */
+async function atribuirCodigoDeAfiliado(
+    request: NextRequest,
+    userId: string,
+    clienteId: string | null,
+): Promise<void> {
+    const bruto = request.cookies.get(COOKIE_REF)?.value;
+    if (!bruto) return;
+
+    let codigo = '';
+    let clicouEm: string | null = null;
+    try {
+        const dados = JSON.parse(bruto);
+        codigo = String(dados?.c || '');
+        if (Number.isFinite(dados?.t)) clicouEm = new Date(Number(dados.t)).toISOString();
+    } catch {
+        codigo = bruto;
+    }
+    if (!codigo) return;
+
+    const resultado = await atribuirIndicacao({ userId, clienteId, codigo, clicouEm });
+    if (!resultado.ok && resultado.motivo !== 'sem-codigo') {
+        console.warn(`[SIGNUP] Indicação não atribuída (${resultado.motivo}) para código ${codigo}`);
     }
 }

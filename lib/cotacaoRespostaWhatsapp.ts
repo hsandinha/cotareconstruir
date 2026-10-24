@@ -218,6 +218,7 @@ export async function processarRespostaDeCotacao(
             cotacaoId: cotacao.id,
             fornecedorId: fornecedor.id,
             autor: { userId: fornecedor.userId, nome: fornecedor.nome },
+            origem: 'planilha_whatsapp',
             valorTotal: mercadoria - desconto + frete + impostos,
             valorFrete: frete,
             valorImpostos: impostos,

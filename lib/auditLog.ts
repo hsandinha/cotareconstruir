@@ -59,6 +59,12 @@ export enum AuditAction {
 
     // Chat
     CHAT_MESSAGE_BLOCKED = 'CHAT_MESSAGE_BLOCKED',
+
+    // Cobrança e afiliados — dinheiro precisa de rastro de quem mexeu
+    BILLING_CONFIG_UPDATED = 'BILLING_CONFIG_UPDATED',
+    AFFILIATE_CREATED = 'AFFILIATE_CREATED',
+    AFFILIATE_UPDATED = 'AFFILIATE_UPDATED',
+    COMMISSION_PAID = 'COMMISSION_PAID',
 }
 
 export interface AuditLogEntry {

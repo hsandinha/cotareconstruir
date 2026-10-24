@@ -144,27 +144,91 @@ acrescentado lá também**, senão a mensagem aparece como `[template nome]`.
 
 | Template | Categoria | Para quê |
 | --- | --- | --- |
-| `nova_cotacao_fornecedor_v3` | UTILITY | Cotação **com a planilha anexada**. É o preferido. |
+| `nova_cotacao_fornecedor_v4` | UTILITY | Cotação com **link de resposta** no botão + planilha anexada. É o preferido. |
+| `nova_cotacao_fornecedor_v3` | UTILITY | Fallback: planilha anexada, botão leva ao login. |
 | `nova_cotacao_fornecedor_v2` | UTILITY | Fallback: botão de deep-link, sem anexo. |
 | `nova_cotacao_fornecedor` | UTILITY | Fallback final: botão fixo. |
 | `nova_mensagem_chat_fornecedor` | UTILITY | Cliente abriu conversa no chat (só na 1ª mensagem da sala). |
 | `pedido_aprovado_fornecedor_v2` / `_v1` | UTILITY | Pedido aprovado. |
-| `nova_proposta_cliente_v2` | UTILITY | Nova proposta para o cliente. |
-| `nova_proposta_cliente` | MARKETING | Fallback do anterior — ver abaixo. |
+| `nova_proposta_cliente_v3` | UTILITY | Nova resposta na cotação do cliente. |
+| `nova_proposta_cliente_v2` / `_v1` | MARKETING | Fallbacks — ver abaixo. |
 
-### Categoria aprovada não muda
+### Categoria quem decide é a Meta, e aprovada não muda mais
 
-`nova_proposta_cliente` foi classificado pela Meta como **MARKETING**, o que
-numa notificação transacional é problema: custa mais e não entrega para quem
-optou por não receber promoção. A API recusa a correção em template já
-aprovado (subcode 3835031).
+`nova_proposta_cliente` e `nova_proposta_cliente_v2` foram **submetidos como
+UTILITY e aprovados como MARKETING**: o classificador sobrepõe o que o script
+pede. Em notificação transacional isso é problema real — custa mais e não
+entrega para quem optou por não receber promoção.
 
-A saída foi o `nova_proposta_cliente_v2`, criado já como UTILITY. Como
-`notifyClientNewProposal` sempre recebe `loginRef` (o papel do destinatário
-sempre entra no token, então ele nunca vem vazio), o v2 é sempre tentado
-primeiro e o v1 só é alcançado se o v2 falhar. Depois que o v2 estiver
-`APPROVED` dá para apagar o v1 — **não antes**, ou a notificação fica sem rede
-de proteção.
+Corrigir depois não dá: a API recusa mudança de categoria em template já
+aprovado (code 100, subcode 3835031). **Texto aprovado pode ser editado;
+categoria não.**
+
+O que separa UTILITY de MARKETING nesta conta é o enquadramento:
+
+| Corpo | Veredito |
+| --- | --- |
+| "Você recebeu uma nova **cotação**… envie sua proposta" | UTILITY |
+| "Seu **pedido** foi aprovado" | UTILITY |
+| "Você recebeu uma nova **proposta**… *Fornecedor:* X" | MARKETING |
+| "**Sua cotação** #X recebeu uma nova resposta" | UTILITY ✓ |
+
+A regra se confirmou na prática: mensagem lida como atualização de algo que o
+destinatário **pediu** passa como UTILITY; mensagem lida como alguém
+**oferecendo** algo a ele cai em MARKETING. O v3, só reescrito nesse sentido e
+sem mudar nada da mecânica, foi aprovado como UTILITY.
+
+`notifyClientNewProposal` tenta v3 → v2 → v1. Como `loginRef` nunca vem vazio
+(o papel do destinatário sempre entra no token), o v3 é sempre o primeiro.
+Depois que ele estiver `APPROVED` dá para apagar o v2 e o v1 — **não antes**,
+ou a notificação fica sem rede de proteção.
+
+## O caminho curto: responder pelo link
+
+A planilha resolve para quem usa Excel, mas no celular derruba a taxa de
+resposta — baixar o arquivo, achar um app que abra, preencher e devolver é
+muita etapa. Por isso o botão do `nova_cotacao_fornecedor_v4` abre
+`/proposta/<token>`: um formulário onde o fornecedor digita os preços na tela,
+sem login e sem arquivo. A planilha segue anexada para quem prefere.
+
+```
+disparo da cotação
+   gerarTokensDeResposta()      → 1 token por convite, hash no banco
+   template v4, botão → /proposta/<token>
+        │
+        ▼
+   📱 fornecedor toca, preenche e envia
+        │
+        ▼
+app/api/proposta-link/route.ts
+   convite_por_token()          → token → (cotação, fornecedor)
+   criarOuAtualizarProposta()   → origem 'link_publico'
+```
+
+### Por que o token é seguro o bastante para valer como senha
+
+- 32 bytes de entropia; o banco guarda **só o SHA-256**. Ler a tabela não
+  permite responder no lugar de ninguém.
+- Vale para **um** par (cotação, fornecedor) e expira em 30 dias.
+- O servidor nunca aceita `cotacao_id`/`fornecedor_id` do corpo da requisição:
+  saem do token. Aceitá-los deixaria um fornecedor com token legítimo
+  responder pelo concorrente.
+- O link não mostra nome, e-mail ou telefone do cliente, endereço exato da
+  obra, nem proposta de terceiros — só bairro/cidade, como a notificação.
+
+Abrir o link marca `visualizado_em` no convite, então o Acompanhamento conta
+quem abriu junto com quem entrou pela plataforma.
+
+### Proposta lançada pelo administrador
+
+Fornecedor manda preço por telefone, áudio e foto de papel. No Acompanhamento,
+clicar no nome dele abre um modal que faz as duas coisas: lançar a proposta
+(mesmo formulário, `origem = 'admin'` + `lancada_por_admin`) ou gerar e enviar
+o link. A marca de origem importa — sem ela, "o fornecedor cotou errado" e
+"alguém digitou errado aqui dentro" ficam indistinguíveis.
+
+O envio automático do link só entrega dentro da janela de 24h da Meta; fora
+dela o modal diz que falhou e o admin copia o link.
 
 ## Conferir a planilha sem disparar cotação
 

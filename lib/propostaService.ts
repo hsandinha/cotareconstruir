@@ -35,11 +35,21 @@ export interface AnexoPropostaInput {
     tamanho?: number | null;
 }
 
+/**
+ * Por onde a proposta entrou. Guardado porque muda como se lê uma divergência
+ * de preço depois: "o fornecedor cotou errado" e "alguém digitou errado aqui
+ * dentro" são coisas diferentes.
+ */
+export type OrigemProposta = 'painel' | 'planilha_whatsapp' | 'link_publico' | 'admin';
+
 export interface CriarPropostaInput {
     cotacaoId: string;
     fornecedorId: string;
     /** Quem assinou a proposta. Pela planilha do WhatsApp pode não haver user. */
     autor: { userId?: string | null; nome?: string | null };
+    origem?: OrigemProposta;
+    /** Preenchido só quando o administrador lançou pelo fornecedor. */
+    lancadaPorAdmin?: string | null;
     valorTotal?: number;
     valorFrete?: number;
     valorImpostos?: number;
@@ -148,6 +158,8 @@ export async function criarOuAtualizarProposta(input: CriarPropostaInput): Promi
         observacoes: input.observacoes || null,
         enviada_por_user_id: input.autor.userId || null,
         enviada_por_nome: input.autor.nome || null,
+        origem: input.origem || 'painel',
+        lancada_por_admin: input.lancadaPorAdmin || null,
         data_envio: new Date().toISOString(),
         data_validade: input.dataValidade || null,
     };

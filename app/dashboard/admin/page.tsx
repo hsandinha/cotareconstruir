@@ -21,6 +21,8 @@ import {
     Rocket,
     MessageSquareQuote,
     MessageCircle,
+    CreditCard,
+    Handshake,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseAuth";
 import { MobileBottomNav, MenuMaisSheet, type ItemMenu } from "@/components/MobileBottomNav";
@@ -36,6 +38,8 @@ import SupplierApiKeysManagement from "@/components/dashboard/admin/SupplierApiK
 import { ManufacturersSection } from "@/components/dashboard/admin/ManufacturersSection";
 import { MaterialSynonymsSection } from "@/components/dashboard/admin/MaterialSynonymsSection";
 import { LancamentoManagement } from "@/components/dashboard/admin/LancamentoManagement";
+import { CobrancaManagement } from "@/components/dashboard/admin/CobrancaManagement";
+import { AfiliadosManagement } from "@/components/dashboard/admin/AfiliadosManagement";
 import { DepoimentosManagement } from "@/components/dashboard/admin/DepoimentosManagement";
 import MaterialRequestsManagement from "@/components/dashboard/admin/MaterialRequestsManagement";
 import WhatsAppCentral from "@/components/dashboard/admin/WhatsAppCentral";
@@ -74,6 +78,8 @@ type AdminTabId =
     | "profile"
     | "gestao-obra"
     | "lancamento"
+    | "cobranca"
+    | "afiliados"
     | "depoimentos";
 
 type NavItem = { id: AdminTabId; label: string; icon: React.ComponentType<{ className?: string }>; badge?: number };
@@ -135,6 +141,13 @@ export default function AdminDashboard() {
                 { id: "users", label: "Usuários", icon: Users },
                 { id: "lancamento", label: "Turma de Lançamento", icon: Rocket },
                 { id: "depoimentos", label: "Depoimentos", icon: MessageSquareQuote },
+            ],
+        },
+        {
+            title: "Financeiro",
+            items: [
+                { id: "cobranca", label: "Cobrança", icon: CreditCard },
+                { id: "afiliados", label: "Parceiros / Afiliados", icon: Handshake },
             ],
         },
         {
@@ -568,6 +581,8 @@ export default function AdminDashboard() {
                         {activeTab === "fabricantes" && <ManufacturersSection />}
                         {activeTab === "sinonimos" && <MaterialSynonymsSection />}
                         {activeTab === "lancamento" && <LancamentoManagement />}
+                        {activeTab === "cobranca" && <CobrancaManagement />}
+                        {activeTab === "afiliados" && <AfiliadosManagement />}
                         {activeTab === "depoimentos" && <DepoimentosManagement />}
                         {activeTab === "materiais-novos" && <MaterialRequestsManagement />}
                         {activeTab === "acompanhamento" && <OrdersOverviewManagement />}

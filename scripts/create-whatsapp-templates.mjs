@@ -130,6 +130,42 @@ const templates = [
         ],
     },
     {
+        // v4: o botão deixa de levar ao login e passa a abrir o FORMULÁRIO de
+        // resposta (/proposta/<token>). Nasceu de um fato observado: baixar
+        // .xlsx, preencher num app de planilha e devolver o arquivo é demais
+        // para quem está no celular, e a maioria simplesmente não respondia.
+        // A planilha continua anexada para quem prefere o Excel.
+        name: 'nova_cotacao_fornecedor_v4',
+        language: 'pt_BR',
+        category: 'UTILITY',
+        needsDocumentSample: true,
+        components: [
+            {
+                type: 'HEADER',
+                format: 'DOCUMENT',
+                example: { header_handle: ['__HEADER_HANDLE__'] },
+            },
+            {
+                type: 'BODY',
+                text: 'Olá! Você recebeu uma nova cotação na Comprar e Construir.\n\n*Cotação:* #{{1}}\n*Obra:* {{2}}\n\nToque no botão abaixo e preencha os preços direto na tela — sem baixar nada e sem fazer login. Leva poucos minutos.\n\nPrefere planilha? Ela está anexada nesta mensagem: preencha a coluna *preco_unitario* e devolva o arquivo aqui mesmo.',
+                example: { body_text: [['1024', 'Residencial Jardim das Flores']] },
+            },
+            {
+                type: 'BUTTONS',
+                buttons: [
+                    {
+                        type: 'URL',
+                        text: 'Responder cotação',
+                        // Base fixa + token como variável: cada fornecedor
+                        // recebe o link exclusivo dele.
+                        url: 'https://comprareconstruir.com/proposta/{{1}}',
+                        example: ['https://comprareconstruir.com/proposta/N3hQ7bK2mZr8TpLvW9yXcF4dJ6sA1gH0uE5iO2nRtY'],
+                    },
+                ],
+            },
+        ],
+    },
+    {
         // Só na PRIMEIRA mensagem de cada conversa — a partir daí o
         // fornecedor está na janela de 24h e recebe pela plataforma.
         name: 'nova_mensagem_chat_fornecedor',
@@ -233,6 +269,35 @@ const templates = [
                     {
                         type: 'URL',
                         text: 'Ver proposta',
+                        url: `${PLATFORM_URL}?wa={{1}}`,
+                        example: [`${PLATFORM_URL}?wa=JTdCJTIyZSUyMiUzQSUyMmNsaWVudGUlNDBlbWFpbC5jb20lMjIlMkMlMjJjJTIyJTNBJTIyMTAyNCUyMiU3RA`],
+                    },
+                ],
+            },
+        ],
+    },
+    {
+        // v3: mesmo conteúdo do v2, reescrito para a Meta reconhecer como
+        // UTILITY. O v2 e o v1 pediram UTILITY e vieram MARKETING — o
+        // classificador lê "você recebeu uma proposta de um fornecedor" como
+        // oferta comercial. Enquadrar como atualização de algo que o próprio
+        // cliente pediu ("sua cotação recebeu uma resposta") é o que separa
+        // este dos outros dois.
+        name: 'nova_proposta_cliente_v3',
+        language: 'pt_BR',
+        category: 'UTILITY',
+        components: [
+            {
+                type: 'BODY',
+                text: 'Sua cotação #{{1}} recebeu uma nova resposta na Comprar e Construir.\n\n*Fornecedor:* {{2}}\n\nToque no botão abaixo para ver os valores no mapa comparativo.',
+                example: { body_text: [['1024', 'Fornecedor 2']] },
+            },
+            {
+                type: 'BUTTONS',
+                buttons: [
+                    {
+                        type: 'URL',
+                        text: 'Ver no comparativo',
                         url: `${PLATFORM_URL}?wa={{1}}`,
                         example: [`${PLATFORM_URL}?wa=JTdCJTIyZSUyMiUzQSUyMmNsaWVudGUlNDBlbWFpbC5jb20lMjIlMkMlMjJjJTIyJTNBJTIyMTAyNCUyMiU3RA`],
                     },
